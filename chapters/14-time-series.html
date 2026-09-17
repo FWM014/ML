@@ -47,7 +47,7 @@
   <li><a href="#quiz">Quiz &amp; exercises</a></li>
 </ol></div>
 
-<p>A running example threads through the chapter. You work for a retailer that sells a cold-brew coffee maker. You have <strong>eight years of monthly unit sales</strong> (96 numbers) and procurement needs a <strong>12-month-ahead forecast</strong> every quarter, with a range they can plan stock against. Every method below is fitted to this series, tested on the same final 12 months, and compared in one table at the end. The series is synthetic so you can regenerate it exactly, but its shape (growth, a summer peak, sticky noise) is what real demand looks like.</p>
+<p>A running example threads through the chapter. You work for a retailer that sells a cold-brew coffee maker. You have <strong>eight years of monthly unit sales</strong> (96 numbers) and procurement needs a <strong>12-month-ahead forecast</strong> with a range they can plan stock against. Every method below is fitted to this series, tested on the same final 12 months, and compared in one table. The series is synthetic so you can regenerate it exactly, but its shape (growth, a summer peak, sticky noise) is what real demand looks like.</p>
 
 <!-- ============================================================ -->
 <h2 id="s1">1. What makes time series different</h2>
@@ -105,7 +105,7 @@
 
 <p>Before modelling anything, take the series apart. Nearly every business series is a sum (or a product) of four things:</p>
 
-<div class="grid2">
+<div class="grid2" style="grid-template-columns:repeat(2,minmax(0,1fr))">
   <div class="card accent"><h4>Trend</h4><p>The slow, long-run direction. Our coffee maker sells about 2.5 more units every month than the month before: the business is growing.</p></div>
   <div class="card accent"><h4>Seasonality</h4><p>A pattern that repeats with a <em>fixed, known period</em>: 12 for monthly, 7 for daily, 24 for hourly. Cold brew peaks in June and troughs in December, every year.</p></div>
   <div class="card"><h4>Cycles</h4><p>Ups and downs with <em>no fixed period</em>: business cycles, product hype waves, multi-year commodity swings. Harder to model because you can't set a calendar to them. Often folded into "trend."</p></div>
@@ -287,7 +287,8 @@ tr = dec.trend.dropna()
 <pre class="code" data-lang="python"><code><span class="cm"># Stationarity check and autocorrelations on the running example</span>
 <span class="kw">import</span> numpy <span class="kw">as</span> np, pandas <span class="kw">as</span> pd, warnings; warnings.filterwarnings(<span class="st">"ignore"</span>)
 <span class="kw">from</span> statsmodels.tsa.stattools <span class="kw">import</span> adfuller, acf, pacf
-rng = np.random.default_rng(<span class="nu">42</span>); idx = pd.date_range(<span class="st">"2017-01-01"</span>, periods=<span class="nu">96</span>, freq=<span class="st">"MS"</span>); t = np.arange(<span class="nu">96</span>)
+rng = np.random.default_rng(<span class="nu">42</span>); t = np.arange(<span class="nu">96</span>)
+idx = pd.date_range(<span class="st">"2017-01-01"</span>, periods=<span class="nu">96</span>, freq=<span class="st">"MS"</span>)
 e = rng.normal(<span class="nu">0</span>, <span class="nu">10</span>, size=<span class="nu">96</span>); noise = np.zeros(<span class="nu">96</span>)
 <span class="kw">for</span> i <span class="kw">in</span> <span class="fn">range</span>(<span class="nu">1</span>, <span class="nu">96</span>): noise[i] = <span class="nu">0.6</span> * noise[i - <span class="nu">1</span>] + e[i]
 y = pd.Series(<span class="nu">200</span> + <span class="nu">2.5</span>*t + <span class="nu">40</span>*np.sin(<span class="nu">2</span>*np.pi*(t - <span class="nu">2</span>)/<span class="nu">12</span>) + noise, index=idx, name=<span class="st">"units"</span>)
@@ -314,7 +315,7 @@ ad = acf(y.diff().dropna(), nlags=<span class="nu">24</span>)
 <!-- ============================================================ -->
 <h2 id="s4">4. Baselines you must beat</h2>
 
-<p>Forecasting has a humbling secret: dumb methods are strong. In the M-competitions (the field's benchmark series, run since 1982), simple methods routinely beat sophisticated ones, and in industry a large share of "ML forecasting" projects never beat seasonal naive. So before any model, compute these four. They cost nothing and they are your <em>units of progress</em>: a model that is 30% better than seasonal naive is a result; a model with "MAE = 12.3" is a number without meaning.</p>
+<p>Forecasting has a humbling secret: dumb methods are strong. In the M-competitions (the field's benchmarks since 1982) simple methods routinely beat sophisticated ones, and in industry many "ML forecasting" projects never beat seasonal naive. So before any model, compute these four. They cost nothing and they are your <em>units of progress</em>: "30% better than seasonal naive" is a result; "MAE = 12.3" is a number without meaning.</p>
 
 <div class="callout math"><div class="title">The math: the four baselines</div>
 <div class="formula">Naive: ŷ<sub>T+h</sub> = y<sub>T</sub> &nbsp;&nbsp;&nbsp; Seasonal naive: ŷ<sub>T+h</sub> = y<sub>T+h−m</sub> &nbsp;&nbsp;&nbsp; Drift: ŷ<sub>T+h</sub> = y<sub>T</sub> + h · (y<sub>T</sub> − y<sub>1</sub>)/(T − 1) &nbsp;&nbsp;&nbsp; Moving average: ŷ<sub>T+h</sub> = (1/k) ∑<sub>i=0</sub><sup>k−1</sup> y<sub>T−i</sub></div>
@@ -338,12 +339,12 @@ ad = acf(y.diff().dropna(), nlags=<span class="nu">24</span>)
   <text x="80" y="245" class="lbl">Jan 2021</text><text x="500" y="245" text-anchor="middle" class="lbl">Dec 2023</text><text x="650" y="245" text-anchor="end" class="lbl">Dec 2024</text>
   <!-- legend -->
   <g font-size="11">
-    <line x1="680" y1="60" x2="700" y2="60" stroke="var(--ink)" stroke-width="2.5"/><text x="706" y="64" class="lbl">actual</text>
-    <line x1="680" y1="82" x2="700" y2="82" stroke="var(--s4)" stroke-width="2" stroke-dasharray="4 3"/><text x="706" y="86" class="lbl">naive  59.1</text>
-    <line x1="680" y1="104" x2="700" y2="104" stroke="var(--s3)" stroke-width="2" stroke-dasharray="7 3"/><text x="706" y="108" class="lbl">drift  47.4</text>
-    <line x1="680" y1="126" x2="700" y2="126" stroke="var(--s1)" stroke-width="2"/><text x="706" y="130" class="lbl">seasonal naive  27.7</text>
-    <line x1="680" y1="148" x2="700" y2="148" stroke="var(--s2)" stroke-width="2.5"/><text x="706" y="152" class="lbl">s. naive + drift  6.5</text>
-    <text x="680" y="176" class="lbl" font-size="10">(numbers = MAE, units)</text>
+    <line x1="668" y1="60" x2="686" y2="60" stroke="var(--ink)" stroke-width="2.5"/><text x="692" y="64" class="lbl">actual</text>
+    <line x1="668" y1="82" x2="686" y2="82" stroke="var(--s4)" stroke-width="2" stroke-dasharray="4 3"/><text x="692" y="86" class="lbl">naive 59.1</text>
+    <line x1="668" y1="104" x2="686" y2="104" stroke="var(--s3)" stroke-width="2" stroke-dasharray="7 3"/><text x="692" y="108" class="lbl">drift 47.4</text>
+    <line x1="668" y1="126" x2="686" y2="126" stroke="var(--s1)" stroke-width="2"/><text x="692" y="130" class="lbl">s. naive 27.7</text>
+    <line x1="668" y1="148" x2="686" y2="148" stroke="var(--s2)" stroke-width="2.5"/><text x="692" y="152" class="lbl">+ drift 6.5</text>
+    <text x="668" y="176" class="lbl" font-size="10">(MAE, units)</text>
   </g>
 </svg>
 <figcaption><strong>Figure 14.5 — Four baselines on the 12-month holdout.</strong> Naive and drift ignore the season and miss the summer peak by 60 to 100 units. Seasonal naive has the right shape but sits a year of growth too low. Seasonal naive plus drift fixes both and scores an MAE of 6.5, which every "real" model below has to beat.</figcaption>
@@ -351,7 +352,8 @@ ad = acf(y.diff().dropna(), nlags=<span class="nu">24</span>)
 
 <pre class="code" data-lang="python"><code><span class="cm"># The baselines every forecast must beat, scored on the final 12 months</span>
 <span class="kw">import</span> numpy <span class="kw">as</span> np, pandas <span class="kw">as</span> pd
-rng = np.random.default_rng(<span class="nu">42</span>); idx = pd.date_range(<span class="st">"2017-01-01"</span>, periods=<span class="nu">96</span>, freq=<span class="st">"MS"</span>); t = np.arange(<span class="nu">96</span>)
+rng = np.random.default_rng(<span class="nu">42</span>); t = np.arange(<span class="nu">96</span>)
+idx = pd.date_range(<span class="st">"2017-01-01"</span>, periods=<span class="nu">96</span>, freq=<span class="st">"MS"</span>)
 e = rng.normal(<span class="nu">0</span>, <span class="nu">10</span>, size=<span class="nu">96</span>); noise = np.zeros(<span class="nu">96</span>)
 <span class="kw">for</span> i <span class="kw">in</span> <span class="fn">range</span>(<span class="nu">1</span>, <span class="nu">96</span>): noise[i] = <span class="nu">0.6</span> * noise[i - <span class="nu">1</span>] + e[i]
 y = pd.Series(<span class="nu">200</span> + <span class="nu">2.5</span>*t + <span class="nu">40</span>*np.sin(<span class="nu">2</span>*np.pi*(t - <span class="nu">2</span>)/<span class="nu">12</span>) + noise, index=idx, name=<span class="st">"units"</span>)
@@ -430,7 +432,8 @@ baselines = {
 <pre class="code" data-lang="python"><code><span class="cm"># Simple, Holt, and Holt-Winters exponential smoothing (statsmodels)</span>
 <span class="kw">import</span> numpy <span class="kw">as</span> np, pandas <span class="kw">as</span> pd
 <span class="kw">from</span> statsmodels.tsa.holtwinters <span class="kw">import</span> SimpleExpSmoothing, Holt, ExponentialSmoothing
-rng = np.random.default_rng(<span class="nu">42</span>); idx = pd.date_range(<span class="st">"2017-01-01"</span>, periods=<span class="nu">96</span>, freq=<span class="st">"MS"</span>); t = np.arange(<span class="nu">96</span>)
+rng = np.random.default_rng(<span class="nu">42</span>); t = np.arange(<span class="nu">96</span>)
+idx = pd.date_range(<span class="st">"2017-01-01"</span>, periods=<span class="nu">96</span>, freq=<span class="st">"MS"</span>)
 e = rng.normal(<span class="nu">0</span>, <span class="nu">10</span>, size=<span class="nu">96</span>); noise = np.zeros(<span class="nu">96</span>)
 <span class="kw">for</span> i <span class="kw">in</span> <span class="fn">range</span>(<span class="nu">1</span>, <span class="nu">96</span>): noise[i] = <span class="nu">0.6</span> * noise[i - <span class="nu">1</span>] + e[i]
 y = pd.Series(<span class="nu">200</span> + <span class="nu">2.5</span>*t + <span class="nu">40</span>*np.sin(<span class="nu">2</span>*np.pi*(t - <span class="nu">2</span>)/<span class="nu">12</span>) + noise, index=idx, name=<span class="st">"units"</span>)
@@ -453,7 +456,7 @@ p = hw.params
 <span class="out"># 2024-02-01    380.5</span>
 <span class="out"># 2024-03-01    406.0</span></code></pre>
 
-<p>Read those parameters like a detective. Simple smoothing chose α = 1: it collapsed into the naive forecast, because on a strongly seasonal series "the last value" is the best a level-only model can do. Holt is <em>worse</em> than naive: with β = 0.93 it treats the December-to-January seasonal drop as a trend and extrapolates it downhill for a year. Holt-Winters, the only one with a seasonal component, is the only one that works. <strong>A model that lacks a component the data has will find a wrong way to fake it.</strong> Options to note: <code>damped_trend=True</code> flattens the trend as h grows (safer for long horizons, and a reliable default in the M-competitions), and <code>seasonal="mul"</code> for growing seasonal swings.</p>
+<p>Read those parameters like a detective. Simple smoothing chose α = 1: it collapsed into the naive forecast, the best a level-only model can do on a seasonal series. Holt is <em>worse</em> than naive: with β = 0.93 it treats the December-to-January seasonal drop as a trend and extrapolates it downhill for a year. Only Holt-Winters, the one with a seasonal component, works. <strong>A model that lacks a component the data has will find a wrong way to fake it.</strong> Two options to know: <code>damped_trend=True</code> flattens the trend as h grows (safer for long horizons), and <code>seasonal="mul"</code> for growing seasonal swings.</p>
 
 <div class="widget" id="w-smooth">
   <div class="w-title">Interactive: smoothing and the lag it buys you</div>
@@ -492,7 +495,8 @@ p = hw.params
 <pre class="code" data-lang="python"><code><span class="cm"># ARIMA vs SARIMA, plus a 95% prediction interval from the seasonal model</span>
 <span class="kw">import</span> numpy <span class="kw">as</span> np, pandas <span class="kw">as</span> pd, warnings; warnings.filterwarnings(<span class="st">"ignore"</span>)
 <span class="kw">from</span> statsmodels.tsa.statespace.sarimax <span class="kw">import</span> SARIMAX
-rng = np.random.default_rng(<span class="nu">42</span>); idx = pd.date_range(<span class="st">"2017-01-01"</span>, periods=<span class="nu">96</span>, freq=<span class="st">"MS"</span>); t = np.arange(<span class="nu">96</span>)
+rng = np.random.default_rng(<span class="nu">42</span>); t = np.arange(<span class="nu">96</span>)
+idx = pd.date_range(<span class="st">"2017-01-01"</span>, periods=<span class="nu">96</span>, freq=<span class="st">"MS"</span>)
 e = rng.normal(<span class="nu">0</span>, <span class="nu">10</span>, size=<span class="nu">96</span>); noise = np.zeros(<span class="nu">96</span>)
 <span class="kw">for</span> i <span class="kw">in</span> <span class="fn">range</span>(<span class="nu">1</span>, <span class="nu">96</span>): noise[i] = <span class="nu">0.6</span> * noise[i - <span class="nu">1</span>] + e[i]
 y = pd.Series(<span class="nu">200</span> + <span class="nu">2.5</span>*t + <span class="nu">40</span>*np.sin(<span class="nu">2</span>*np.pi*(t - <span class="nu">2</span>)/<span class="nu">12</span>) + noise, index=idx, name=<span class="st">"units"</span>)
@@ -521,7 +525,7 @@ out = pd.concat([fc.predicted_mean.rename(<span class="st">"forecast"</span>), b
 <span class="out"># 2024-12-01     393.5        371.5        415.5</span>
 <span class="out"># share of actuals inside the 95% band: 1.0</span></code></pre>
 
-<p>Non-seasonal ARIMA is a disaster here (MAE 64, worse than naive) because it has no way to know about June. Add the seasonal part and it lands at 6.6, tied with seasonal naive plus drift. Two expert readings of the parameters: <code>ar.L1 = 0.56</code> is the model finding the sticky AR(1) noise we built in, and <code>ma.L1 ≈ −0.97</code>, an MA coefficient near −1, is the classic signature of <em>over-differencing</em>: the trend in this series is a deterministic straight line, so first-differencing it was slightly too much and the MA term is undoing it. Harmless for the forecast, but it's why the interval barely widens across the horizon (≈ ±17 at h = 1, ±22 at h = 12); on a genuinely random-walk series the band would fan out much faster.</p>
+<p>Non-seasonal ARIMA is a disaster here (MAE 64, worse than naive) because it has no way to know about June. Add the seasonal part and it lands at 6.6, tied with seasonal naive plus drift. Two expert readings: <code>ar.L1 = 0.56</code> is the model finding the sticky AR(1) noise we built in, and <code>ma.L1 ≈ −0.97</code>, an MA coefficient near −1, is the signature of <em>over-differencing</em>: the trend is a deterministic straight line, so first-differencing was slightly too much and the MA term undoes it. Harmless for the forecast, but it is why the interval barely widens with the horizon (±17 at h = 1, ±22 at h = 12); on a random-walk series the band fans out much faster.</p>
 
 <h3>When ARIMA is the right tool</h3>
 <ul>
@@ -537,7 +541,7 @@ out = pd.concat([fc.predicted_mean.rename(<span class="st">"forecast"</span>), b
 <!-- ============================================================ -->
 <h2 id="s7">7. The ML approach: lag features + boosting</h2>
 
-<p>Here is the idea that turned forecasting into a machine-learning problem and won most recent forecasting competitions (M5 was won by LightGBM ensembles): <strong>rewrite the series as a supervised table.</strong> Each row is one time step. The target is y<sub>t</sub>. The features are things you knew <em>before</em> t: previous values (lags), summaries of previous values (rolling statistics), the calendar (month, day of week, holidays), and external drivers (price, promotions, weather forecasts). Then any regressor from Chapters 5 to 10 can be trained on it. Gradient boosting (Chapter 10) is the usual winner because it handles nonlinearity, interactions and mixed feature types without fuss.</p>
+<p>Here is the idea that turned forecasting into a machine-learning problem and won the M5 competition (LightGBM ensembles): <strong>rewrite the series as a supervised table.</strong> Each row is one time step, the target is y<sub>t</sub>, and the features are things you knew <em>before</em> t: previous values (lags), summaries of them (rolling statistics), the calendar (month, day of week, holidays), and external drivers (price, promotions, weather forecasts). Any regressor from Chapters 5 to 10 can then be trained on it. Gradient boosting (Chapter 10) usually wins because it handles nonlinearity, interactions and mixed feature types without fuss.</p>
 
 <figure class="fig">
 <svg viewBox="0 0 800 330" role="img" aria-label="A single column of monthly values on the left is unrolled into a supervised table on the right whose columns are lag 1, lag 2, lag 12, a rolling mean, the month, and the target; arrows show how each lag column is the series shifted down.">
@@ -604,7 +608,8 @@ out = pd.concat([fc.predicted_mean.rename(<span class="st">"forecast"</span>), b
 <span class="kw">import</span> numpy <span class="kw">as</span> np, pandas <span class="kw">as</span> pd
 <span class="kw">from</span> sklearn.ensemble <span class="kw">import</span> HistGradientBoostingRegressor
 <span class="kw">from</span> sklearn.model_selection <span class="kw">import</span> TimeSeriesSplit
-rng = np.random.default_rng(<span class="nu">42</span>); idx = pd.date_range(<span class="st">"2017-01-01"</span>, periods=<span class="nu">96</span>, freq=<span class="st">"MS"</span>); t = np.arange(<span class="nu">96</span>)
+rng = np.random.default_rng(<span class="nu">42</span>); t = np.arange(<span class="nu">96</span>)
+idx = pd.date_range(<span class="st">"2017-01-01"</span>, periods=<span class="nu">96</span>, freq=<span class="st">"MS"</span>)
 e = rng.normal(<span class="nu">0</span>, <span class="nu">10</span>, size=<span class="nu">96</span>); noise = np.zeros(<span class="nu">96</span>)
 <span class="kw">for</span> i <span class="kw">in</span> <span class="fn">range</span>(<span class="nu">1</span>, <span class="nu">96</span>): noise[i] = <span class="nu">0.6</span> * noise[i - <span class="nu">1</span>] + e[i]
 y = pd.Series(<span class="nu">200</span> + <span class="nu">2.5</span>*t + <span class="nu">40</span>*np.sin(<span class="nu">2</span>*np.pi*(t - <span class="nu">2</span>)/<span class="nu">12</span>) + noise, index=idx, name=<span class="st">"units"</span>)
@@ -639,7 +644,7 @@ tscv = TimeSeriesSplit(n_splits=<span class="nu">5</span>, test_size=<span class
 <span class="out"># target=y              fold MAEs=[43.8, 56.5, 36.2, 35.1, 32.3]  mean=40.8</span>
 <span class="out"># target=y_minus_lag12  fold MAEs=[9.8, 11.8, 14.4, 8.0, 5.7]  mean=9.9</span></code></pre>
 
-<p>Look at that first line: boosting on the raw target scores <strong>40.8</strong>, worse than seasonal naive. This is the single most common failure of ML forecasting on a growing series, and you need to understand it cold. <strong>Trees cannot extrapolate.</strong> A tree's prediction is always an average of training targets in some leaf. If every training value is below 430 and next June's true value is 470, the model can at best say "about 430". Linear models and ARIMA extend a trend; trees flatten at the edge of what they have seen. The cure is to make the <em>target</em> stationary: predict the change from the same month last year (<code>y − lag_12</code>), let the trees model that, then add <code>lag_12</code> back. Mean MAE drops to 9.9, and on the last fold, our holdout, to 5.7, the best of anything so far. Alternatives that do the same job: predict <code>y − lag_1</code>, predict <code>y / rolling_mean_12</code>, or fit a linear trend first and boost the residuals.</p>
+<p>Look at the first result: boosting on the raw target scores <strong>40.8</strong>, worse than seasonal naive. This is the most common failure of ML forecasting on a growing series. <strong>Trees cannot extrapolate.</strong> A tree's prediction is an average of training targets in some leaf: if every training value is below 430 and next June's true value is 470, the model can at best say "about 430". Linear models and ARIMA extend a trend; trees flatten at the edge of what they have seen. The cure is a stationary <em>target</em>: predict the change from the same month last year (<code>y − lag_12</code>), then add <code>lag_12</code> back. Mean MAE drops to 9.9, and on the last fold, our holdout, to 5.7, the best so far. Equivalent tricks: predict <code>y − lag_1</code>, predict <code>y / rolling_mean_12</code>, or fit a linear trend first and boost the residuals.</p>
 
 <div class="callout key"><div class="title">Key idea</div>
 <p><strong>Give the tree a target that lives in a stable range.</strong> Growth, inflation, and expanding user bases all push tomorrow's values outside yesterday's range. Differences, ratios and detrended residuals live in a range the model has seen. This one transform separates the forecasting projects that work from the ones that quietly under-forecast every peak.</p>
@@ -766,7 +771,8 @@ tscv = TimeSeriesSplit(n_splits=<span class="nu">5</span>, test_size=<span class
 <span class="kw">from</span> statsmodels.tsa.holtwinters <span class="kw">import</span> ExponentialSmoothing
 <span class="kw">from</span> statsmodels.tsa.statespace.sarimax <span class="kw">import</span> SARIMAX
 <span class="kw">from</span> sklearn.ensemble <span class="kw">import</span> HistGradientBoostingRegressor
-rng = np.random.default_rng(<span class="nu">42</span>); idx = pd.date_range(<span class="st">"2017-01-01"</span>, periods=<span class="nu">96</span>, freq=<span class="st">"MS"</span>); t = np.arange(<span class="nu">96</span>)
+rng = np.random.default_rng(<span class="nu">42</span>); t = np.arange(<span class="nu">96</span>)
+idx = pd.date_range(<span class="st">"2017-01-01"</span>, periods=<span class="nu">96</span>, freq=<span class="st">"MS"</span>)
 e = rng.normal(<span class="nu">0</span>, <span class="nu">10</span>, size=<span class="nu">96</span>); noise = np.zeros(<span class="nu">96</span>)
 <span class="kw">for</span> i <span class="kw">in</span> <span class="fn">range</span>(<span class="nu">1</span>, <span class="nu">96</span>): noise[i] = <span class="nu">0.6</span> * noise[i - <span class="nu">1</span>] + e[i]
 y = pd.Series(<span class="nu">200</span> + <span class="nu">2.5</span>*t + <span class="nu">40</span>*np.sin(<span class="nu">2</span>*np.pi*(t - <span class="nu">2</span>)/<span class="nu">12</span>) + noise, index=idx, name=<span class="st">"units"</span>)
@@ -812,7 +818,7 @@ fc[<span class="st">"GBM (lags, recursive)"</span>] = hist[test.index].values
 <span class="out"># SARIMA                      6.6    8.6   1.6%   1.6%   0.22</span>
 <span class="out"># GBM (lags, recursive)       5.7    7.8   1.4%   1.4%   0.19</span></code></pre>
 
-<p>Three lessons from the table. First, the ranking is consistent across metrics here, but it will not always be; when MAE and RMSE disagree, one method is making a few large misses. Second, the enhanced baseline is within a whisker of the best model. On a clean series like this one, that's expected: there is only so much signal, and the noise floor (residual std ≈ 7) caps everyone. The boosting model earns its keep on messier real data with promotions, price changes and multiple series, where its features can carry information the classical models cannot see. Third, <strong>this table is from one origin</strong>. Before you believe the 5.7 versus 6.5 ordering, run the five-fold backtest of Section 8 for every method. (The fold-by-fold GBM numbers were 9.8, 11.8, 14.4, 8.0, 5.7: the last fold was its easiest.)</p>
+<p>Three lessons. First, the ranking is consistent across metrics here, but when MAE and RMSE disagree, one method is making a few large misses. Second, the enhanced baseline is within a whisker of the best model: on a clean series the noise floor (residual std ≈ 7) caps everyone. Boosting earns its keep on messier data with promotions, price changes and many series, where its features carry information the classical models cannot see. Third, <strong>this table is from one origin</strong>. Before believing the 5.7 versus 6.5 ordering, run the five-fold backtest of Section 8 for every method (the GBM's fold MAEs were 9.8, 11.8, 14.4, 8.0, 5.7: the last fold was its easiest).</p>
 
 <h3>Why point forecasts aren't enough</h3>
 <p>Procurement does not need "463 units in June". They need "somewhere between 440 and 485, and we'll size safety stock to the top of that range". A forecast without a range is a guess wearing a suit. <strong>Prediction intervals</strong> express how wrong you expect to be, and they must widen with the horizon, because uncertainty accumulates.</p>
@@ -868,16 +874,16 @@ fc[<span class="st">"GBM (lags, recursive)"</span>] = hist[test.index].values
 </div>
 
 <h3>Global models: one model, many series</h3>
-<p>Real forecasting problems are rarely one series. They're 2,000 SKUs × 50 stores, or every customer's monthly usage. Fitting 100,000 SARIMAs is slow, and most of those series are short and noisy on their own. The modern answer is a <strong>global model</strong>: stack all series into one long table (Figure 14.7 with an extra column for series ID), add the ID and its attributes (category, store size, region) as features, and train <em>one</em> boosting model. The model learns "how a series with these lags and this month typically moves" from all series at once, and short series borrow strength from long ones. This is the M5-winning recipe. Practical notes: scale each series' target (divide by its own mean, or predict y − lag_12 as before) so a blockbuster and a niche product live in the same range; use the series ID as a categorical feature so the model can still learn per-series quirks; and evaluate with MASE so that big and small series count equally.</p>
+<p>Real forecasting problems are rarely one series: 2,000 SKUs × 50 stores, or every customer's monthly usage. Fitting 100,000 SARIMAs is slow, and most of those series are short and noisy alone. The modern answer is a <strong>global model</strong>: stack all series into one long table (Figure 14.7 plus a series-ID column), add the ID and its attributes (category, store, region) as features, and train <em>one</em> boosting model. It learns "how a series with these lags and this month typically moves" from all series at once, so short series borrow strength from long ones. This is the M5-winning recipe. Practical notes: scale each series' target (divide by its own mean, or predict y − lag_12) so a blockbuster and a niche product live in the same range; keep the series ID as a categorical feature for per-series quirks; evaluate with MASE so big and small series count equally.</p>
 
-<p><strong>Hierarchical forecasting</strong> is the related problem of consistency: your SKU forecasts should sum to the category forecast, which should sum to the company total. Forecasting each level independently gives numbers that don't add up, which finance will notice. The standard fixes are bottom-up (forecast the leaves, sum), top-down (forecast the total, split by historical shares), or <em>reconciliation</em> (forecast every level, then adjust all of them by least squares so they cohere; the <code>hierarchicalforecast</code> library does this). Reconciled forecasts are usually <em>more</em> accurate at every level, not just consistent.</p>
+<p><strong>Hierarchical forecasting</strong> is the related problem of consistency: SKU forecasts should sum to the category, which should sum to the company total, and independently forecast levels never add up. The fixes are bottom-up (forecast leaves, sum), top-down (forecast the total, split by historical shares), or <em>reconciliation</em> (forecast every level, then adjust all by least squares so they cohere; the <code>hierarchicalforecast</code> library does this). Reconciled forecasts are usually <em>more</em> accurate at every level, not just consistent.</p>
 
 <h3>Deep learning for time series: an honest section</h3>
-<p>LSTMs (Chapter 18) were the first neural models to gain traction for sequences; <strong>N-BEATS</strong> and <strong>N-HiTS</strong> are pure-MLP architectures that won on M4-style benchmarks; the <strong>Temporal Fusion Transformer (TFT)</strong> mixes attention with gating and handles static, known-future and observed covariates elegantly; and since 2023 <strong>foundation models</strong> for time series (TimesFM, Chronos, Moirai, TimeGPT) offer zero-shot forecasting: point them at a series they've never seen and they produce a reasonable forecast with no training at all.</p>
-<p>When is this worth it? The evidence, including the M5 results and several careful 2023–2024 benchmark papers, says: deep models win when you have <strong>many related series with long histories</strong> (thousands of series, hundreds of points each), <strong>rich covariates</strong>, and the engineering budget to tune them. On a single monthly series with 96 points, they lose to Holt-Winters. Boosting on lag features is the sweet spot for most companies: nearly deep-learning accuracy on large panels, a fraction of the complexity, and it runs on a laptop. Foundation models are genuinely useful as a <em>fast baseline</em> for a new panel (zero-shot, no feature engineering) and for cold-start series with no history, but you should still backtest them against seasonal naive before trusting them, and most of them cannot use your exogenous features.</p>
+<p>LSTMs (Chapter 18) were the first neural models to gain traction for sequences; <strong>N-BEATS</strong> and <strong>N-HiTS</strong> are pure-MLP architectures that won on M4-style benchmarks; the <strong>Temporal Fusion Transformer (TFT)</strong> mixes attention with gating and handles static, known-future and observed covariates elegantly; and since 2023 <strong>foundation models</strong> (TimesFM, Chronos, Moirai, TimeGPT) forecast series they have never seen, zero-shot.</p>
+<p>When is this worth it? The evidence says deep models win when you have <strong>many related series with long histories</strong>, <strong>rich covariates</strong>, and the engineering budget to tune them. On a single monthly series with 96 points, they lose to Holt-Winters. Boosting on lag features is the sweet spot for most companies: near deep-learning accuracy on large panels at a fraction of the complexity, on a laptop. Foundation models are a useful <em>fast baseline</em> for a new panel and for cold-start series, but backtest them against seasonal naive before trusting them, and most cannot use your exogenous features.</p>
 
 <h3>Anomaly detection on time series</h3>
-<p>Once you have a forecast with an interval, you have an anomaly detector: any actual that lands outside the 99% band is an anomaly. This "forecast-then-flag" approach is how most production monitoring works (traffic drops, sensor drift, fraud spikes). Its quality is the quality of your forecast: a model that doesn't know about Black Friday will flag Black Friday every year. Alternatives: robust decomposition (STL) followed by a threshold on the residual; isolation forests over windows of lag features (Chapter 22); and, for change-point detection (the level shifted permanently, rather than one point being odd), dedicated algorithms such as PELT or Bayesian online change-point detection. Set thresholds by the cost of a missed anomaly versus a false alarm, never by "3 sigma" reflex.</p>
+<p>A forecast with an interval is an anomaly detector: any actual outside the 99% band is an anomaly. This "forecast-then-flag" approach is how most production monitoring works (traffic drops, sensor drift, fraud spikes), and it is only as good as the forecast: a model that doesn't know about Black Friday flags Black Friday every year. Alternatives: robust decomposition (STL) plus a threshold on the residual; isolation forests over windows of lag features (Chapter 22); and, when the level shifts permanently rather than one point being odd, change-point algorithms such as PELT. Set thresholds by the cost of a miss versus a false alarm, never by "3 sigma" reflex.</p>
 
 <!-- ============================================================ -->
 <h2 id="s11">11. Which one do I use at work?</h2>
@@ -899,13 +905,13 @@ fc[<span class="st">"GBM (lags, recursive)"</span>] = hist[test.index].values
 
 <h3>The forecasting project checklist</h3>
 <ol class="steps">
-  <li><strong>Pin the decision.</strong> Who consumes the forecast, at what granularity (SKU-week? region-month?), how far ahead, how often is it refreshed, and what does an error cost in each direction? This decides horizon, metric and whether you need intervals. For demand: stock-out cost versus holding cost. For capacity: cost of idle servers versus outage. For finance: the board wants a range and a story, not a point.</li>
+  <li><strong>Pin the decision.</strong> Who consumes the forecast, at what granularity, how far ahead, refreshed how often, and what does an error cost in each direction? This fixes horizon, metric and whether you need intervals. Demand: stock-out versus holding cost. Capacity: idle servers versus outage. Finance: the board wants a range and a story, not a point.</li>
   <li><strong>Assemble a point-in-time dataset.</strong> Reconstruct what was knowable at each forecast origin: data latency, revisions, planned promotions. This is where most of the effort goes.</li>
   <li><strong>Plot everything.</strong> Decompose. Check the ACF. Look at outliers and level shifts (the pandemic months?). Decide additive vs multiplicative. Decide whether to model the whole history or only the recent regime.</li>
-  <li><strong>Compute the baselines</strong> with a rolling-origin backtest at the real horizon and gap. Write the seasonal-naive MASE on the wall.</li>
-  <li><strong>Fit the classical models</strong> (Holt-Winters, SARIMA). Often good enough; always a useful second opinion.</li>
-  <li><strong>Build the lag table</strong> with a detrended target and calendar/driver features. Boost. Check feature importance for leaks (a suspiciously perfect feature <em>is</em> a leak).</li>
-  <li><strong>Backtest all candidates identically</strong>, compare per horizon, and check interval coverage. Prefer the simplest model within noise of the best.</li>
+  <li><strong>Compute the baselines.</strong> Rolling-origin backtest at the real horizon and gap. Write the seasonal-naive MASE on the wall.</li>
+  <li><strong>Fit the classical models.</strong> Holt-Winters and SARIMA: often good enough, always a useful second opinion.</li>
+  <li><strong>Build the lag table and boost.</strong> Detrended target, calendar and driver features. Check feature importance for leaks (a suspiciously perfect feature <em>is</em> a leak).</li>
+  <li><strong>Backtest all candidates identically.</strong> Compare per horizon, check interval coverage, and prefer the simplest model within noise of the best.</li>
   <li><strong>Ship with monitoring.</strong> Log every forecast and its interval; compare with actuals as they arrive; alert when coverage or MASE drifts (Chapter 21). Retrain on a schedule matched to how fast the process changes.</li>
 </ol>
 
@@ -990,21 +996,21 @@ fc[<span class="st">"GBM (lags, recursive)"</span>] = hist[test.index].values
 <div class="exercise"><div class="title">Exercise 14.1 — Break the GBM, then fix it</div>
 <p>In the lag-feature block of Section 7, change <code>df["roll_mean_3"] = df["y"].shift(1).rolling(3).mean()</code> to <code>df["y"].rolling(3, center=True).mean()</code> and re-run the backtest on the raw target. Then restore it. What happens to the fold MAEs, and why is the "improvement" fake? Then try a third target: <code>y_minus_lag1 = y − lag_1</code> (add <code>lag_1</code> back at prediction time). Does it beat <code>y − lag_12</code>?</p>
 <details class="answer"><summary>Show answer</summary>
-<p>With <code>center=True</code> the rolling mean for row t includes y<sub>t</sub> and y<sub>t+1</sub>: the feature contains the answer, and fold MAEs collapse to a few units even on the raw target. That would never be available at forecast time, so the score is meaningless. Restoring <code>shift(1)</code> brings the honest numbers back. The <code>y − lag_1</code> target also removes the trend and typically backtests in the same neighbourhood as <code>y − lag_12</code> (around 10 mean MAE); it relies more on the momentum features and less on the seasonal anchor, so it tends to be a little worse at the turning points (the June peak) and a little better right after a level shift. Try both on your own data; the backtest decides.</p>
+<p>With <code>center=True</code> the rolling mean for row t includes y<sub>t</sub> and y<sub>t+1</sub>: the feature contains the answer, and fold MAEs collapse to a few units even on the raw target. None of that is available at forecast time, so the score is meaningless; restoring <code>shift(1)</code> brings the honest numbers back. The <code>y − lag_1</code> target also removes the trend and backtests in the same neighbourhood as <code>y − lag_12</code>; it leans on momentum rather than the seasonal anchor, so it is a little worse at turning points (the June peak) and a little better right after a level shift. The backtest decides.</p>
 </details>
 </div>
 
 <div class="exercise"><div class="title">Exercise 14.2 — Backtest everything, per horizon</div>
 <p>Extend the comparison table so that every method (both baselines, Holt-Winters, SARIMA, GBM) is evaluated with the same five expanding-window folds, and report MAE <em>per horizon step</em> (h = 1 … 12) averaged over folds. Plot MAE against h for each method. Which methods degrade fastest with horizon? Add <code>damped_trend=True</code> to Holt-Winters and see whether it helps at h = 12.</p>
 <details class="answer"><summary>Show answer</summary>
-<p>Wrap each method in a function <code>forecast(train, h)</code>, loop over <code>TimeSeriesSplit(n_splits=5, test_size=12).split(y)</code>, collect a 5 × 12 matrix of absolute errors per method, and average over axis 0. On this series the recursive GBM's error grows with h because prediction errors are fed back as lags; SARIMA and seasonal naive + drift grow slowly because they use only actual history; Holt-Winters is roughly flat but higher. Damping shrinks the trend contribution at long horizons; on a series with a genuinely linear trend it slightly hurts at h = 12, on real series it usually helps. The point of the exercise: a single-origin table (Section 9) can reorder when you average over origins and horizons.</p>
+<p>Wrap each method in a function <code>forecast(train, h)</code>, loop over <code>TimeSeriesSplit(n_splits=5, test_size=12).split(y)</code>, collect a 5 × 12 matrix of absolute errors per method, and average over folds. The recursive GBM's error grows with h because its own errors are fed back as lags; SARIMA and seasonal naive + drift grow slowly; Holt-Winters is flatter but higher. Damping shrinks the trend at long horizons: it slightly hurts on a genuinely linear trend, and usually helps on real series. The point: a single-origin table can reorder once you average over origins and horizons.</p>
 </details>
 </div>
 
 <div class="exercise"><div class="title">Exercise 14.3 — Do it at work: the forecast you already have</div>
 <p>Find a number your team forecasts today (a budget line, a headcount plan, a capacity estimate, a sales target). Get at least 24 historical periods of actuals and the forecasts that were made at the time. (a) Compute the MAE and MASE of the existing process against seasonal naive. (b) Build seasonal naive + drift and Holt-Winters with a rolling-origin backtest at the real horizon. (c) Write one page: current process error, baseline error, best simple model error, and a fan chart for the next planning cycle.</p>
 <details class="answer"><summary>Show answer</summary>
-<p>There is no single right answer, but there is a common outcome: the existing human forecast has a MASE around 1 (no better than copying last year) with a systematic optimism bias, and Holt-Winters or seasonal naive + drift lands at 0.5–0.8 with honest intervals. The one-page write-up, with the seasonal-naive number as the anchor, is the deliverable that gets a forecasting project funded. Keep the point-in-time discipline: only use actuals that were available at each historical forecast date.</p>
+<p>No single right answer, but a common outcome: the existing human forecast has a MASE around 1 (no better than copying last year) with a systematic optimism bias, while Holt-Winters or seasonal naive + drift lands at 0.5–0.8 with honest intervals. The one-page write-up, anchored on the seasonal-naive number, is what gets a forecasting project funded. Keep the point-in-time discipline: only use actuals that were available at each historical forecast date.</p>
 </details>
 </div>
 
