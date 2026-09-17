@@ -1,0 +1,1386 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>04 · The Python Toolkit — ML: Zero to Expert</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body data-chapter="04">
+<header class="topbar"></header>
+<div class="progress-track"><div></div></div>
+<div class="shell">
+<nav class="sidebar"></nav>
+<main class="content"><div class="container">
+
+<header class="ch-header">
+  <div class="kicker">Part I · Foundations · Chapter 04</div>
+  <h1>The Python Toolkit</h1>
+  <p class="lede">Four libraries do 95% of applied ML: NumPy for arrays, pandas for tables, matplotlib for pictures, scikit-learn for models. This chapter teaches the handful of ideas in each that you will use every single day, and ends with a complete, runnable, save-and-reload project.</p>
+  <div class="meta"><span class="level">Beginner</span> <span>⏱ 75 min read</span> <span>·</span> <span>Prereqs: Ch 1–3</span></div>
+</header>
+
+<div class="objectives">
+  <h3>By the end of this chapter you will be able to</h3>
+  <ul>
+    <li>Set up a clean, reproducible Python environment and project folder that a colleague can run.</li>
+    <li>Think in arrays: shapes, dtypes, slicing, boolean masks, broadcasting, and why vectorized code is 30× faster than loops.</li>
+    <li>Load, inspect, filter, group, merge and clean a pandas DataFrame without falling into the classic traps.</li>
+    <li>Make the five plots every project needs with matplotlib.</li>
+    <li>Explain scikit-learn's Estimator API and why a <code>Pipeline</code> is the only leak-proof way to preprocess.</li>
+    <li>Build, evaluate, save, reload and re-use a model end to end — and read the ten most common error messages without panic.</li>
+  </ul>
+</div>
+
+<div class="toc-inline"><strong>In this chapter</strong>
+<ol>
+  <li><a href="#s1">Setting up</a></li>
+  <li><a href="#s2">NumPy: thinking in arrays</a></li>
+  <li><a href="#s3">pandas: thinking in tables</a></li>
+  <li><a href="#s4">pandas gotchas that bite everyone</a></li>
+  <li><a href="#s5">matplotlib: the five plots</a></li>
+  <li><a href="#s6">scikit-learn's design</a></li>
+  <li><a href="#s7">Your first complete project</a></li>
+  <li><a href="#s8">Reproducibility &amp; debugging</a></li>
+  <li><a href="#quiz">Quiz &amp; exercises</a></li>
+</ol></div>
+
+<!-- ============================================================ -->
+<h2 id="s1">1. Setting up</h2>
+
+<p>You cannot become expert at ML while fighting your tools. A one-hour investment here saves weeks of "it works on my machine". The setup has four decisions: which Python, where packages live, where you write code, and how the folder is organised.</p>
+
+<h3>Python version and packages</h3>
+<p>Use a recent stable Python (3.11 or 3.12 as of this writing; check that scikit-learn and PyTorch support it before jumping to the newest release). Then create one <strong>isolated environment per project</strong>. An environment is simply a private folder of packages, so project A can use pandas 2.2 while project B uses pandas 3.0 without either breaking.</p>
+
+<div class="callout eli9"><div class="title">Explain it like I'm 9</div>
+<p>A virtual environment is a lunchbox. Every project gets its own lunchbox with exactly the snacks (packages) it needs. If you throw everything into one big bag, one project's peanut butter ends up on another project's sandwich, and nobody can tell whose snack broke.</p>
+</div>
+
+<pre class="code" data-lang="bash"><code><span class="cm"># Option A: venv + pip (built into Python, works everywhere)</span>
+python -m venv .venv
+source .venv/bin/activate          <span class="cm"># Windows: .venv\Scripts\activate</span>
+pip install numpy pandas scikit-learn matplotlib jupyter joblib pyarrow
+pip freeze &gt; requirements.txt      <span class="cm"># pin exact versions for teammates</span>
+
+<span class="cm"># Option B: conda / mamba (better when you need compiled libs like CUDA)</span>
+conda create -n myproj python=3.11 numpy pandas scikit-learn matplotlib jupyter
+conda activate myproj</code></pre>
+
+<p><code>pip</code> installs packages from PyPI; <code>conda</code> can also install non-Python dependencies (compilers, GPU drivers). Either is fine at work; what is not fine is installing into the system Python with no environment at all.</p>
+
+<h3>Jupyter vs. VS Code</h3>
+<p>A <strong>Jupyter notebook</strong> runs code in cells and shows tables and plots inline. It is unbeatable for exploration: look at the data, tweak, look again. It is terrible for anything that must run twice in the same way, because cells can be executed out of order and hidden state accumulates. <strong>VS Code</strong> (or PyCharm) edits plain <code>.py</code> files that run top to bottom, with a debugger and tests. The professional pattern is: <em>explore in notebooks, then move anything you will run again into <code>.py</code> modules</em>. VS Code can also open notebooks directly, so you rarely need both tools open.</p>
+
+<div class="callout pro"><div class="title">At work</div>
+<p>Before you share a notebook, click <em>Restart kernel &amp; run all</em>. If it does not run cleanly top to bottom, it is not done. A notebook that only works because cell 14 was run before cell 9 will humiliate you in a review.</p>
+</div>
+
+<h3>A sane project folder</h3>
+<figure class="fig">
+<svg viewBox="0 0 780 330" role="img" aria-label="A recommended project folder tree: README, requirements.txt, data with raw and processed, notebooks, src, models, reports">
+  <text x="30" y="30" class="lbl-strong" font-size="14">churn-project/</text>
+  <line x1="42" y1="38" x2="42" y2="304" class="grid" stroke-dasharray="3 3"/>
+  <g class="lbl" font-family="ui-monospace, Menlo, monospace" font-size="13">
+    <text x="60" y="60">README.md</text>          <text x="300" y="60" fill="var(--ink-3)">what, why, how to run — written first, not last</text>
+    <text x="60" y="86">requirements.txt</text>   <text x="300" y="86" fill="var(--ink-3)">pinned versions: numpy==2.4.6, pandas==3.0.5 …</text>
+    <text x="60" y="112">data/</text>
+    <text x="90" y="136">raw/</text>              <text x="300" y="136" fill="var(--critical)">read-only. Never edit a raw file by hand.</text>
+    <text x="90" y="160">processed/</text>        <text x="300" y="160" fill="var(--ink-3)">outputs of your cleaning code (Parquet)</text>
+    <text x="60" y="186">notebooks/</text>        <text x="300" y="186" fill="var(--ink-3)">01_explore.ipynb, 02_features.ipynb — numbered</text>
+    <text x="60" y="212">src/</text>              <text x="300" y="212" fill="var(--ink-3)">features.py, train.py — code you run more than once</text>
+    <text x="60" y="238">models/</text>           <text x="300" y="238" fill="var(--ink-3)">churn_v3.joblib + a metrics.json next to it</text>
+    <text x="60" y="264">reports/figures/</text>  <text x="300" y="264" fill="var(--ink-3)">every chart that goes into a slide</text>
+    <text x="60" y="290">tests/</text>            <text x="300" y="290" fill="var(--ink-3)">test_features.py — even three tests catch regressions</text>
+  </g>
+  <g stroke="var(--ink-3)" stroke-width="1">
+    <line x1="42" y1="56" x2="54" y2="56"/><line x1="42" y1="82" x2="54" y2="82"/><line x1="42" y1="108" x2="54" y2="108"/>
+    <line x1="72" y1="120" x2="72" y2="156"/><line x1="72" y1="132" x2="84" y2="132"/><line x1="72" y1="156" x2="84" y2="156"/>
+    <line x1="42" y1="182" x2="54" y2="182"/><line x1="42" y1="208" x2="54" y2="208"/><line x1="42" y1="234" x2="54" y2="234"/><line x1="42" y1="260" x2="54" y2="260"/><line x1="42" y1="286" x2="54" y2="286"/>
+  </g>
+  <rect x="290" y="120" width="470" height="24" fill="var(--critical)" fill-opacity=".07" rx="4"/>
+</svg>
+<figcaption><strong>Figure 4.1 — A project folder that survives handover.</strong> Raw data is immutable, notebooks are numbered, reusable code lives in <code>src/</code>, and the saved model sits next to the metrics that justify it.</figcaption>
+</figure>
+
+<p>The structure is not bureaucracy. It encodes three habits: raw data never changes (so you can always re-run from scratch), code that runs twice lives in modules (so it can be tested), and artefacts are versioned next to their evidence. We will use this exact layout in the capstone (Chapter 23).</p>
+
+<!-- ============================================================ -->
+<h2 id="s2">2. NumPy: thinking in arrays</h2>
+
+<p>Everything in ML is an array. A dataset is a 2-D array (rows × features). An image is a 3-D array (height × width × colour). A model's weights are arrays. NumPy gives Python one object, the <code>ndarray</code>, plus fast operations that run in compiled C. pandas, scikit-learn and PyTorch are all built on, or mimic, NumPy. Learn it once and the others feel familiar.</p>
+
+<h3>Arrays, shapes, dtypes</h3>
+<p>An array has a <strong>shape</strong> (a tuple of sizes, one per axis) and a <strong>dtype</strong> (the type of every element, the same for all of them). A 1-D array of 8 numbers has shape <code>(8,)</code>. A table of 2 rows and 3 columns has shape <code>(2, 3)</code>: axis 0 runs down the rows, axis 1 runs across the columns. The single dtype is what makes NumPy fast: a Python list can hold anything, so every element must be inspected; an array of <code>float64</code> is a solid block of memory the CPU can chew through.</p>
+
+<figure class="fig">
+<svg viewBox="0 0 780 300" role="img" aria-label="Anatomy of a 2-D NumPy array of shape (3,4): axis 0 down the rows, axis 1 across the columns, one highlighted element M[1,2], a highlighted column M[:,0], and a boolean mask selecting elements greater than 5">
+  <defs><marker id="arr-f42" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+  <text x="150" y="26" text-anchor="middle" class="lbl-strong" font-size="14">M = np.arange(12).reshape(3, 4)</text>
+  <text x="150" y="44" text-anchor="middle" class="lbl">shape (3, 4) · dtype int64</text>
+  <!-- grid -->
+  <g>
+    <rect x="70" y="70" width="50" height="40" fill="var(--s1)" fill-opacity=".25" stroke="var(--border)"/>
+    <rect x="120" y="70" width="50" height="40" fill="var(--surface-2)" stroke="var(--border)"/>
+    <rect x="170" y="70" width="50" height="40" fill="var(--surface-2)" stroke="var(--border)"/>
+    <rect x="220" y="70" width="50" height="40" fill="var(--surface-2)" stroke="var(--border)"/>
+    <rect x="70" y="110" width="50" height="40" fill="var(--s1)" fill-opacity=".25" stroke="var(--border)"/>
+    <rect x="120" y="110" width="50" height="40" fill="var(--surface-2)" stroke="var(--border)"/>
+    <rect x="170" y="110" width="50" height="40" fill="var(--s2)" fill-opacity=".45" stroke="var(--s2)" stroke-width="2"/>
+    <rect x="220" y="110" width="50" height="40" fill="var(--surface-2)" stroke="var(--border)"/>
+    <rect x="70" y="150" width="50" height="40" fill="var(--s1)" fill-opacity=".25" stroke="var(--border)"/>
+    <rect x="120" y="150" width="50" height="40" fill="var(--surface-2)" stroke="var(--border)"/>
+    <rect x="170" y="150" width="50" height="40" fill="var(--surface-2)" stroke="var(--border)"/>
+    <rect x="220" y="150" width="50" height="40" fill="var(--surface-2)" stroke="var(--border)"/>
+  </g>
+  <g class="lbl-strong" font-size="14" text-anchor="middle">
+    <text x="95" y="95">0</text><text x="145" y="95">1</text><text x="195" y="95">2</text><text x="245" y="95">3</text>
+    <text x="95" y="135">4</text><text x="145" y="135">5</text><text x="195" y="135">6</text><text x="245" y="135">7</text>
+    <text x="95" y="175">8</text><text x="145" y="175">9</text><text x="195" y="175">10</text><text x="245" y="175">11</text>
+  </g>
+  <!-- axis labels -->
+  <line x1="50" y1="72" x2="50" y2="186" class="arrow" marker-end="url(#arr-f42)"/>
+  <text x="38" y="135" text-anchor="middle" class="lbl" transform="rotate(-90 38 135)">axis 0 (rows)</text>
+  <line x1="72" y1="204" x2="266" y2="204" class="arrow" marker-end="url(#arr-f42)"/>
+  <text x="170" y="222" text-anchor="middle" class="lbl">axis 1 (columns)</text>
+  <text x="95" y="66" text-anchor="middle" class="lbl" font-size="10">col 0</text><text x="195" y="66" text-anchor="middle" class="lbl" font-size="10">col 2</text>
+  <text x="285" y="135" class="lbl" font-size="10">row 1</text>
+  <!-- right side: explanations -->
+  <rect x="340" y="62" width="14" height="14" fill="var(--s2)" fill-opacity=".45" stroke="var(--s2)"/>
+  <text x="362" y="74" class="lbl-strong" font-family="ui-monospace, Menlo, monospace">M[1, 2]  →  6</text>
+  <text x="362" y="92" class="lbl">row index first, then column index; both start at 0</text>
+  <rect x="340" y="110" width="14" height="14" fill="var(--s1)" fill-opacity=".25" stroke="var(--s1)"/>
+  <text x="362" y="122" class="lbl-strong" font-family="ui-monospace, Menlo, monospace">M[:, 0]  →  [0, 4, 8]</text>
+  <text x="362" y="140" class="lbl">":" means "every index on this axis" — a whole column</text>
+  <text x="362" y="170" class="lbl-strong" font-family="ui-monospace, Menlo, monospace">M.sum(axis=0) → [12, 15, 18, 21]</text>
+  <text x="362" y="188" class="lbl">axis=0 collapses the rows → one value per column</text>
+  <text x="362" y="216" class="lbl-strong" font-family="ui-monospace, Menlo, monospace">M[M &gt; 5] → [6, 7, 8, 9, 10, 11]</text>
+  <text x="362" y="234" class="lbl">boolean mask: M &gt; 5 is a (3, 4) array of True/False</text>
+  <text x="362" y="262" class="lbl-strong" font-family="ui-monospace, Menlo, monospace">M.reshape(-1, 1).shape → (12, 1)</text>
+  <text x="362" y="280" class="lbl">-1 = "work it out"; a column vector for sklearn</text>
+</svg>
+<figcaption><strong>Figure 4.2 — Anatomy of a 2-D array.</strong> Indexing is <code>[row, column]</code>, a colon selects an entire axis, <code>axis=0</code> in a reduction means "squash the rows", and a boolean mask is itself an array.</figcaption>
+</figure>
+
+<pre class="code" data-lang="python"><code><span class="kw">import</span> numpy <span class="kw">as</span> np
+
+a = np.array([<span class="nu">3</span>, <span class="nu">1</span>, <span class="nu">4</span>, <span class="nu">1</span>, <span class="nu">5</span>, <span class="nu">9</span>, <span class="nu">2</span>, <span class="nu">6</span>])          <span class="cm"># 1-D array (a vector)</span>
+M = np.array([[<span class="nu">1</span>, <span class="nu">2</span>, <span class="nu">3</span>], [<span class="nu">4</span>, <span class="nu">5</span>, <span class="nu">6</span>]])            <span class="cm"># 2-D array (a matrix)</span>
+<span class="fn">print</span>(a.shape, M.shape, M.dtype)
+<span class="out"># (8,) (2, 3) int64</span>
+
+<span class="cm"># indexing &amp; slicing: [start:stop:step]; negative counts from the end; stop is exclusive</span>
+<span class="fn">print</span>(a[<span class="nu">0</span>], a[-<span class="nu">1</span>], a[<span class="nu">2</span>:<span class="nu">5</span>], a[::<span class="nu">2</span>])
+<span class="out"># 3 6 [4 1 5] [3 4 5 2]</span>
+<span class="fn">print</span>(M[<span class="nu">1</span>, <span class="nu">2</span>], M[:, <span class="nu">0</span>], M[<span class="nu">0</span>, :])                <span class="cm"># row 1 col 2 / first column / first row</span>
+<span class="out"># 6 [1 4] [1 2 3]</span>
+
+<span class="cm"># boolean mask: a True/False array used as a filter</span>
+mask = a &gt; <span class="nu">3</span>
+<span class="fn">print</span>(mask)
+<span class="out"># [False False  True False  True  True False  True]</span>
+<span class="fn">print</span>(a[mask])                                   <span class="cm"># keep only elements where mask is True</span>
+<span class="out"># [4 5 9 6]</span>
+
+<span class="cm"># reshaping is free (no copy); -1 means "figure this dimension out"</span>
+<span class="fn">print</span>(a.reshape(<span class="nu">2</span>, <span class="nu">4</span>))
+<span class="out"># [[3 1 4 1]</span>
+<span class="out">#  [5 9 2 6]]</span>
+<span class="fn">print</span>(a.reshape(-<span class="nu">1</span>, <span class="nu">1</span>).shape)                   <span class="cm"># a column vector: the shape sklearn wants for X</span>
+<span class="out"># (8, 1)</span>
+
+<span class="cm"># dtypes: one type per array, chosen at creation; mixing text and numbers gives you text</span>
+<span class="fn">print</span>(np.array([<span class="nu">1</span>, <span class="nu">2</span>, <span class="nu">3</span>]).dtype, np.array([<span class="nu">1.0</span>, <span class="nu">2</span>, <span class="nu">3</span>]).dtype, np.array([<span class="st">"a"</span>, <span class="nu">1</span>]).dtype)
+<span class="out"># int64 float64 &lt;U21</span></code></pre>
+
+<div class="callout key"><div class="title">Key idea</div>
+<p><strong>A boolean mask is the universal filter.</strong> <code>a[a &gt; 3]</code>, <code>df[df["amount"] &gt; 50]</code>, <code>X[y == 1]</code> — NumPy, pandas and scikit-learn all use the same trick: compare to get a True/False array, then index with it. Master it here and half of pandas is already done.</p>
+</div>
+
+<h3>Broadcasting: how shapes stretch</h3>
+<p>What does <code>X - mu</code> mean when <code>X</code> is (3, 2) and <code>mu</code> is (2,)? NumPy <strong>broadcasts</strong>: it lines the shapes up from the right, and any axis of size 1 (or a missing axis) is stretched, without copying, to match the other array. If two axes disagree and neither is 1, you get the famous <code>operands could not be broadcast together</code> error.</p>
+
+<div class="callout eli9"><div class="title">Explain it like I'm 9</div>
+<p>You have a row of 4 cups and a column of 3 syrups. "Add every syrup to every cup" gives a 3×4 tray of drinks. NumPy does that automatically: it pretends the row of cups is copied 3 times and the column of syrups 4 times, then adds cell by cell. It only refuses when the counts do not line up, like 3 syrups and 2 rows of cups.</p>
+</div>
+
+<figure class="fig">
+<svg viewBox="0 0 780 290" role="img" aria-label="Broadcasting a (3,1) column against a (1,4) row: each is stretched (shown as faded ghost cells) to (3,4), then added cell by cell">
+  <defs><marker id="arr-f43" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+  <!-- A: (3,1) -->
+  <text x="95" y="30" text-anchor="middle" class="lbl-strong">A  shape (3, 1)</text>
+  <g>
+    <rect x="70" y="50" width="46" height="36" fill="var(--s1)" fill-opacity=".35" stroke="var(--s1)"/><text x="93" y="74" text-anchor="middle" class="lbl-strong">10</text>
+    <rect x="70" y="86" width="46" height="36" fill="var(--s1)" fill-opacity=".35" stroke="var(--s1)"/><text x="93" y="110" text-anchor="middle" class="lbl-strong">20</text>
+    <rect x="70" y="122" width="46" height="36" fill="var(--s1)" fill-opacity=".35" stroke="var(--s1)"/><text x="93" y="146" text-anchor="middle" class="lbl-strong">30</text>
+    <!-- ghost stretch -->
+    <g fill="var(--s1)" fill-opacity=".08" stroke="var(--s1)" stroke-dasharray="3 2" stroke-opacity=".6">
+      <rect x="116" y="50" width="46" height="36"/><rect x="162" y="50" width="46" height="36"/><rect x="208" y="50" width="46" height="36"/>
+      <rect x="116" y="86" width="46" height="36"/><rect x="162" y="86" width="46" height="36"/><rect x="208" y="86" width="46" height="36"/>
+      <rect x="116" y="122" width="46" height="36"/><rect x="162" y="122" width="46" height="36"/><rect x="208" y="122" width="46" height="36"/>
+    </g>
+    <g class="lbl" fill="var(--s1)" text-anchor="middle" font-size="11">
+      <text x="139" y="74">10</text><text x="185" y="74">10</text><text x="231" y="74">10</text>
+      <text x="139" y="110">20</text><text x="185" y="110">20</text><text x="231" y="110">20</text>
+      <text x="139" y="146">30</text><text x="185" y="146">30</text><text x="231" y="146">30</text>
+    </g>
+  </g>
+  <text x="162" y="180" text-anchor="middle" class="lbl">stretched along axis 1 →</text>
+  <text x="270" y="108" text-anchor="middle" class="lbl-strong" font-size="22">+</text>
+  <!-- B: (1,4) -->
+  <text x="390" y="30" text-anchor="middle" class="lbl-strong">B  shape (1, 4)</text>
+  <g>
+    <rect x="298" y="50" width="46" height="36" fill="var(--s2)" fill-opacity=".35" stroke="var(--s2)"/><text x="321" y="74" text-anchor="middle" class="lbl-strong">1</text>
+    <rect x="344" y="50" width="46" height="36" fill="var(--s2)" fill-opacity=".35" stroke="var(--s2)"/><text x="367" y="74" text-anchor="middle" class="lbl-strong">2</text>
+    <rect x="390" y="50" width="46" height="36" fill="var(--s2)" fill-opacity=".35" stroke="var(--s2)"/><text x="413" y="74" text-anchor="middle" class="lbl-strong">3</text>
+    <rect x="436" y="50" width="46" height="36" fill="var(--s2)" fill-opacity=".35" stroke="var(--s2)"/><text x="459" y="74" text-anchor="middle" class="lbl-strong">4</text>
+    <g fill="var(--s2)" fill-opacity=".08" stroke="var(--s2)" stroke-dasharray="3 2" stroke-opacity=".6">
+      <rect x="298" y="86" width="46" height="36"/><rect x="344" y="86" width="46" height="36"/><rect x="390" y="86" width="46" height="36"/><rect x="436" y="86" width="46" height="36"/>
+      <rect x="298" y="122" width="46" height="36"/><rect x="344" y="122" width="46" height="36"/><rect x="390" y="122" width="46" height="36"/><rect x="436" y="122" width="46" height="36"/>
+    </g>
+    <g class="lbl" fill="var(--s2)" text-anchor="middle" font-size="11">
+      <text x="321" y="110">1</text><text x="367" y="110">2</text><text x="413" y="110">3</text><text x="459" y="110">4</text>
+      <text x="321" y="146">1</text><text x="367" y="146">2</text><text x="413" y="146">3</text><text x="459" y="146">4</text>
+    </g>
+  </g>
+  <text x="390" y="180" text-anchor="middle" class="lbl">stretched along axis 0 ↓</text>
+  <text x="510" y="108" text-anchor="middle" class="lbl-strong" font-size="22">=</text>
+  <!-- result -->
+  <text x="640" y="30" text-anchor="middle" class="lbl-strong">A + B  shape (3, 4)</text>
+  <g fill="var(--s7)" fill-opacity=".18" stroke="var(--s7)">
+    <rect x="548" y="50" width="46" height="36"/><rect x="594" y="50" width="46" height="36"/><rect x="640" y="50" width="46" height="36"/><rect x="686" y="50" width="46" height="36"/>
+    <rect x="548" y="86" width="46" height="36"/><rect x="594" y="86" width="46" height="36"/><rect x="640" y="86" width="46" height="36"/><rect x="686" y="86" width="46" height="36"/>
+    <rect x="548" y="122" width="46" height="36"/><rect x="594" y="122" width="46" height="36"/><rect x="640" y="122" width="46" height="36"/><rect x="686" y="122" width="46" height="36"/>
+  </g>
+  <g class="lbl-strong" text-anchor="middle">
+    <text x="571" y="74">11</text><text x="617" y="74">12</text><text x="663" y="74">13</text><text x="709" y="74">14</text>
+    <text x="571" y="110">21</text><text x="617" y="110">22</text><text x="663" y="110">23</text><text x="709" y="110">24</text>
+    <text x="571" y="146">31</text><text x="617" y="146">32</text><text x="663" y="146">33</text><text x="709" y="146">34</text>
+  </g>
+  <!-- rule -->
+  <rect x="70" y="205" width="662" height="66" class="box"/>
+  <text x="401" y="228" text-anchor="middle" class="lbl-strong">The rule: align shapes from the right. Each pair of axes must be equal, or one of them must be 1 (or missing).</text>
+  <text x="401" y="250" text-anchor="middle" class="lbl">(3, 1) vs (1, 4) → OK → (3, 4)      (3, 2) vs (2,) → OK → (3, 2)      (3, 2) vs (3,) → ✗ 2 ≠ 3, neither is 1</text>
+  <text x="401" y="266" text-anchor="middle" class="lbl" font-size="10">Fix a (3,) that should be a column with  v[:, None]  or  v.reshape(-1, 1)  → (3, 1)</text>
+</svg>
+<figcaption><strong>Figure 4.3 — Broadcasting.</strong> Size-1 axes are stretched (the faded cells) until both shapes match, then the operation runs cell by cell. No data is copied; the stretching is virtual.</figcaption>
+</figure>
+
+<pre class="code" data-lang="python"><code><span class="kw">import</span> numpy <span class="kw">as</span> np
+
+col = np.array([[<span class="nu">10</span>], [<span class="nu">20</span>], [<span class="nu">30</span>]])      <span class="cm"># shape (3, 1)</span>
+row = np.array([[<span class="nu">1</span>, <span class="nu">2</span>, <span class="nu">3</span>, <span class="nu">4</span>]])          <span class="cm"># shape (1, 4)</span>
+<span class="fn">print</span>((col + row).shape)
+<span class="out"># (3, 4)</span>
+
+<span class="cm"># the everyday use: standardize every column of a feature matrix in one line</span>
+X = np.array([[<span class="nu">1.0</span>, <span class="nu">100.0</span>], [<span class="nu">2.0</span>, <span class="nu">200.0</span>], [<span class="nu">3.0</span>, <span class="nu">300.0</span>]])   <span class="cm"># shape (3, 2)</span>
+mu = X.mean(axis=<span class="nu">0</span>)                     <span class="cm"># shape (2,)  -&gt; broadcasts against (3, 2)</span>
+sd = X.std(axis=<span class="nu">0</span>)
+Z = (X - mu) / sd
+<span class="fn">print</span>(Z.round(<span class="nu">3</span>))
+<span class="out"># [[-1.225 -1.225]</span>
+<span class="out">#  [ 0.     0.   ]</span>
+<span class="out">#  [ 1.225  1.225]]</span>
+
+<span class="cm"># a pair of shapes that cannot broadcast</span>
+<span class="kw">try</span>:
+    np.ones((<span class="nu">3</span>, <span class="nu">2</span>)) + np.ones((<span class="nu">3</span>,))
+<span class="kw">except</span> ValueError <span class="kw">as</span> e:
+    <span class="fn">print</span>(<span class="st">"ValueError:"</span>, e)
+<span class="out"># ValueError: operands could not be broadcast together with shapes (3,2) (3,)</span></code></pre>
+
+<div class="widget" id="w-bcast">
+  <div class="w-title">Interactive: broadcasting visualizer</div>
+  <div class="controls">
+    <label>Shape of A
+      <select id="bc-a">
+        <option value="3,1">(3, 1)</option><option value="1,4">(1, 4)</option><option value="3,4">(3, 4)</option>
+        <option value="4">(4,)</option><option value="3">(3,)</option><option value="1">(1,) scalar-like</option>
+        <option value="2,3">(2, 3)</option><option value="3,2">(3, 2)</option>
+      </select></label>
+    <label>Shape of B
+      <select id="bc-b">
+        <option value="3,1">(3, 1)</option><option value="1,4" selected>(1, 4)</option><option value="3,4">(3, 4)</option>
+        <option value="4">(4,)</option><option value="3">(3,)</option><option value="1">(1,) scalar-like</option>
+        <option value="2,3">(2, 3)</option><option value="3,2">(3, 2)</option>
+      </select></label>
+    <span>Result: <span class="readout" id="bc-r">–</span></span>
+  </div>
+  <svg viewBox="0 0 760 240" id="bc-svg" role="img" aria-label="Two arrays and their broadcast sum, or an error when shapes are incompatible"></svg>
+  <div class="note">A holds values 10, 20, 30…; B holds 1, 2, 3…. Faded cells are the virtual copies broadcasting makes. Try (3,) + (3, 2): that is the error you will meet most often, and <code>[:, None]</code> is the fix.</div>
+</div>
+
+<h3>Vectorize: never loop over rows</h3>
+<p>The single biggest speed lesson in Python data work: <strong>do not write <code>for</code> loops over elements</strong>. A Python loop pays interpreter overhead on every iteration (type checks, object boxing, bytecode dispatch). A NumPy expression like <code>x * x</code> runs one tight C loop over contiguous memory, and it usually beats the Python loop by 30–100×.</p>
+
+<pre class="code" data-lang="python"><code><span class="kw">import</span> numpy <span class="kw">as</span> np, time
+
+n = <span class="nu">1_000_000</span>
+x = np.random.default_rng(<span class="nu">0</span>).random(n)
+
+t0 = time.perf_counter()
+total = <span class="nu">0.0</span>
+<span class="kw">for</span> v <span class="kw">in</span> x:                    <span class="cm"># pure Python loop: one interpreter step per element</span>
+    total += v * v
+t_loop = time.perf_counter() - t0
+
+t0 = time.perf_counter()
+total_vec = np.sum(x * x)      <span class="cm"># vectorized: one C loop over contiguous memory</span>
+t_vec = time.perf_counter() - t0
+
+<span class="fn">print</span>(<span class="st">f"loop: {t_loop*1000:6.1f} ms   vectorized: {t_vec*1000:5.2f} ms   speed-up ≈ {t_loop/t_vec:.0f}×"</span>)
+<span class="out"># loop:  130.0 ms   vectorized:  4.00 ms   speed-up ≈ 33×     (your numbers will differ; the ratio won't much)</span>
+<span class="fn">print</span>(np.isclose(total, total_vec))
+<span class="out"># True</span></code></pre>
+
+<figure class="fig">
+<svg viewBox="0 0 780 250" role="img" aria-label="Bar chart comparing milliseconds: Python loop about 130 ms versus NumPy 4 ms on one million squares, and pandas apply 34 ms versus numpy where 2.4 ms on 200 thousand rows">
+  <text x="20" y="26" class="lbl-strong" font-size="14">Same result, different cost (typical laptop, one run)</text>
+  <!-- pair 1 -->
+  <text x="20" y="62" class="lbl-strong">Σ x² over 1,000,000 floats</text>
+  <text x="200" y="88" text-anchor="end" class="lbl">Python for-loop</text>
+  <rect x="210" y="76" width="520" height="18" fill="var(--critical)" fill-opacity=".8"/>
+  <text x="725" y="89" text-anchor="end" font-size="11" fill="#fff" font-weight="700">≈ 130 ms</text>
+  <text x="200" y="114" text-anchor="end" class="lbl">np.sum(x * x)</text>
+  <rect x="210" y="102" width="16" height="18" fill="var(--s1)"/>
+  <text x="232" y="115" class="lbl-strong" fill="var(--s1)">≈ 4 ms  (33× faster)</text>
+  <!-- pair 2 -->
+  <text x="20" y="156" class="lbl-strong">"add 20% if amount &gt; 50" over 200,000 rows</text>
+  <text x="200" y="182" text-anchor="end" class="lbl">Series.apply(lambda)</text>
+  <rect x="210" y="170" width="520" height="18" fill="var(--critical)" fill-opacity=".8"/>
+  <text x="725" y="183" text-anchor="end" font-size="11" fill="#fff" font-weight="700">≈ 34 ms</text>
+  <text x="200" y="208" text-anchor="end" class="lbl">np.where(mask, a*1.2, a)</text>
+  <rect x="210" y="196" width="37" height="18" fill="var(--s1)"/>
+  <text x="253" y="209" class="lbl-strong" fill="var(--s1)">≈ 2.4 ms  (14× faster)</text>
+  <text x="400" y="240" text-anchor="middle" class="lbl" font-size="11">bars scaled within each pair · the loop cost grows linearly with data, so at 100 M rows the gap is minutes vs seconds</text>
+</svg>
+<figcaption><strong>Figure 4.4 — Loops vs. vectorized code.</strong> The vectorized version is not "a bit faster"; it is a different order of magnitude, and the gap widens with data size. <code>apply</code> with a lambda is a Python loop in disguise.</figcaption>
+</figure>
+
+<h3>Random numbers you can reproduce</h3>
+<p>ML is full of randomness: shuffling, sampling, initial weights. Modern NumPy uses a <code>Generator</code> object created by <code>np.random.default_rng(seed)</code>. Seed it once at the top of your script and every "random" number is reproducible on any machine. Avoid the legacy <code>np.random.seed()</code> / <code>np.random.rand()</code> global functions in new code; they share hidden global state that any library can disturb.</p>
+
+<pre class="code" data-lang="python"><code><span class="kw">import</span> numpy <span class="kw">as</span> np
+
+rng = np.random.default_rng(seed=<span class="nu">42</span>)     <span class="cm"># one Generator object, seeded once</span>
+<span class="fn">print</span>(rng.integers(<span class="nu">0</span>, <span class="nu">10</span>, size=<span class="nu">5</span>))       <span class="cm"># 5 ints in [0, 10)</span>
+<span class="out"># [0 7 6 4 4]</span>
+<span class="fn">print</span>(rng.normal(loc=<span class="nu">0</span>, scale=<span class="nu">1</span>, size=<span class="nu">3</span>).round(<span class="nu">3</span>))
+<span class="out"># [ 0.941 -1.951 -1.302]</span>
+<span class="fn">print</span>(rng.choice([<span class="st">"a"</span>, <span class="st">"b"</span>, <span class="st">"c"</span>], size=<span class="nu">4</span>))
+<span class="out"># ['c' 'c' 'c' 'c']</span>
+
+<span class="cm"># same seed -&gt; same numbers, every time, on every machine</span>
+rng2 = np.random.default_rng(seed=<span class="nu">42</span>)
+<span class="fn">print</span>(rng2.integers(<span class="nu">0</span>, <span class="nu">10</span>, size=<span class="nu">5</span>))
+<span class="out"># [0 7 6 4 4]</span>
+
+<span class="cm"># shuffle rows of X (and y!) with one permutation so they stay aligned</span>
+X = np.arange(<span class="nu">12</span>).reshape(<span class="nu">6</span>, <span class="nu">2</span>)
+idx = rng.permutation(<span class="fn">len</span>(X))
+<span class="fn">print</span>(idx, X[idx][:<span class="nu">3</span>].tolist())
+<span class="out"># [0 1 4 2 5 3] [[0, 1], [2, 3], [8, 9]]</span></code></pre>
+
+<!-- ============================================================ -->
+<h2 id="s3">3. pandas: thinking in tables</h2>
+
+<p>NumPy arrays are anonymous grids of one type. Real data has named columns of <em>different</em> types: a customer id, a text region, a float amount, a date. pandas adds exactly that: a <strong>DataFrame</strong> is a dictionary of named columns (each a <strong>Series</strong>, which is a 1-D array plus an index), and every column can have its own dtype.</p>
+
+<div class="callout eli9"><div class="title">Explain it like I'm 9</div>
+<p>A NumPy array is a chessboard: every square holds the same kind of thing. A DataFrame is a spreadsheet: each column has a name and its own kind of thing (words, numbers, dates), and every row has a label so you can find it again. Nearly every pandas operation is "pick some rows, pick some columns, do maths on the columns."</p>
+</div>
+
+<figure class="fig">
+<svg viewBox="0 0 780 290" role="img" aria-label="Anatomy of a DataFrame: the index on the left, column names on top, one highlighted column which is a Series, a dtype per column, and one row">
+  <defs><marker id="arr-f45" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+  <text x="20" y="26" class="lbl-strong" font-size="14">orders  — a DataFrame</text>
+  <!-- header row -->
+  <rect x="60" y="44" width="60" height="30" fill="var(--surface-3)" stroke="var(--border)"/>
+  <rect x="120" y="44" width="110" height="30" fill="var(--accent-soft)" stroke="var(--border)"/>
+  <rect x="230" y="44" width="100" height="30" fill="var(--accent-soft)" stroke="var(--border)"/>
+  <rect x="330" y="44" width="100" height="30" fill="var(--s2)" fill-opacity=".3" stroke="var(--s2)" stroke-width="1.5"/>
+  <rect x="430" y="44" width="120" height="30" fill="var(--accent-soft)" stroke="var(--border)"/>
+  <g class="lbl-strong" text-anchor="middle" font-family="ui-monospace, Menlo, monospace" font-size="12">
+    <text x="90" y="64" fill="var(--ink-3)">index</text><text x="175" y="64">order_id</text><text x="280" y="64">customer</text><text x="380" y="64">amount</text><text x="490" y="64">ordered</text>
+  </g>
+  <!-- rows -->
+  <g class="lbl" text-anchor="middle" font-family="ui-monospace, Menlo, monospace" font-size="12">
+    <rect x="60" y="74" width="60" height="28" fill="var(--surface-2)" stroke="var(--border)"/><rect x="120" y="74" width="430" height="28" fill="none" stroke="var(--border)"/>
+    <text x="90" y="93" fill="var(--ink-3)">0</text><text x="175" y="93">101</text><text x="280" y="93">ana</text><text x="380" y="93">120.0</text><text x="490" y="93">2024-01-05</text>
+    <rect x="60" y="102" width="60" height="28" fill="var(--surface-2)" stroke="var(--border)"/><rect x="120" y="102" width="430" height="28" fill="var(--s7)" fill-opacity=".12" stroke="var(--s7)" stroke-width="1.5"/>
+    <text x="90" y="121" fill="var(--ink-3)">1</text><text x="175" y="121">102</text><text x="280" y="121">ben</text><text x="380" y="121">80.0</text><text x="490" y="121">2024-01-06</text>
+    <rect x="60" y="130" width="60" height="28" fill="var(--surface-2)" stroke="var(--border)"/><rect x="120" y="130" width="430" height="28" fill="none" stroke="var(--border)"/>
+    <text x="90" y="149" fill="var(--ink-3)">2</text><text x="175" y="149">103</text><text x="280" y="149">ana</text><text x="380" y="149">NaN</text><text x="490" y="149">2024-02-11</text>
+    <rect x="60" y="158" width="60" height="28" fill="var(--surface-2)" stroke="var(--border)"/><rect x="120" y="158" width="430" height="28" fill="none" stroke="var(--border)"/>
+    <text x="90" y="177" fill="var(--ink-3)">3</text><text x="175" y="177">104</text><text x="280" y="177">cy</text><text x="380" y="177">200.0</text><text x="490" y="177">2024-02-14</text>
+  </g>
+  <!-- column highlight -->
+  <rect x="330" y="74" width="100" height="112" fill="var(--s2)" fill-opacity=".12" stroke="var(--s2)" stroke-width="1.5" stroke-dasharray="4 3"/>
+  <!-- dtype row -->
+  <g class="lbl" text-anchor="middle" font-size="11" fill="var(--ink-3)">
+    <text x="90" y="206">RangeIndex</text><text x="175" y="206">int64</text><text x="280" y="206">str</text><text x="380" y="206">float64</text><text x="490" y="206">datetime64</text>
+  </g>
+  <text x="30" y="206" class="lbl" font-size="11">dtype</text>
+  <!-- callouts -->
+  <line x1="565" y1="116" x2="600" y2="116" class="arrow" marker-end="url(#arr-f45)"/>
+  <text x="606" y="112" class="lbl-strong" font-size="12">one row = orders.loc[1]</text>
+  <text x="606" y="128" class="lbl" font-size="11">(a Series, index = column names)</text>
+  <line x1="380" y1="190" x2="380" y2="228" class="arrow" stroke="var(--s2)" marker-end="url(#arr-f45)"/>
+  <text x="380" y="248" text-anchor="middle" class="lbl-strong" fill="var(--s2)" font-size="12">one column = orders["amount"]  (a Series)</text>
+  <text x="380" y="266" text-anchor="middle" class="lbl" font-size="11">a NumPy array + an index + a name; NaN marks a missing value</text>
+  <text x="90" y="232" text-anchor="middle" class="lbl" font-size="11">row labels;</text>
+  <text x="90" y="246" text-anchor="middle" class="lbl" font-size="11">.loc uses them,</text>
+  <text x="90" y="260" text-anchor="middle" class="lbl" font-size="11">.iloc uses positions</text>
+</svg>
+<figcaption><strong>Figure 4.5 — Anatomy of a DataFrame.</strong> Columns are Series with their own dtype; rows are addressed by index label (<code>.loc</code>) or position (<code>.iloc</code>). <code>NaN</code> is the standard marker for "missing".</figcaption>
+</figure>
+
+<h3>Reading data and the first three commands</h3>
+<p><code>pd.read_csv</code> reads text files; <code>pd.read_parquet</code> reads Parquet, a compressed columnar format that keeps dtypes, loads 10–50× faster and is what you should write to <code>data/processed/</code>. After loading, always run the same three commands: <code>head()</code> to see real rows, <code>info()</code> to see dtypes and missing counts, <code>describe()</code> to see ranges and spot impossible values (a negative age, a 1970 date).</p>
+
+<pre class="code" data-lang="python"><code><span class="kw">import</span> pandas <span class="kw">as</span> pd
+<span class="kw">import</span> numpy <span class="kw">as</span> np
+
+orders = pd.DataFrame({
+    <span class="st">"order_id"</span>: [<span class="nu">101</span>, <span class="nu">102</span>, <span class="nu">103</span>, <span class="nu">104</span>, <span class="nu">105</span>, <span class="nu">106</span>],
+    <span class="st">"customer"</span>: [<span class="st">"ana"</span>, <span class="st">"ben"</span>, <span class="st">"ana"</span>, <span class="st">"cy"</span>, <span class="st">"ben"</span>, <span class="st">"ana"</span>],
+    <span class="st">"region"</span>:   [<span class="st">"north"</span>, <span class="st">"south"</span>, <span class="st">"north"</span>, <span class="st">"east"</span>, <span class="st">"south"</span>, <span class="st">"north"</span>],
+    <span class="st">"amount"</span>:   [<span class="nu">120.0</span>, <span class="nu">80.0</span>, np.nan, <span class="nu">200.0</span>, <span class="nu">65.0</span>, <span class="nu">40.0</span>],
+    <span class="st">"ordered"</span>:  [<span class="st">"2024-01-05"</span>, <span class="st">"2024-01-06"</span>, <span class="st">"2024-02-11"</span>, <span class="st">"2024-02-14"</span>, <span class="st">"2024-03-01"</span>, <span class="st">"2024-03-09"</span>],
+})
+orders.to_csv(<span class="st">"orders.csv"</span>, index=<span class="kw">False</span>)                  <span class="cm"># round-trip through disk, like real life</span>
+orders = pd.read_csv(<span class="st">"orders.csv"</span>, parse_dates=[<span class="st">"ordered"</span>])  <span class="cm"># tell pandas which columns are dates</span>
+
+<span class="fn">print</span>(orders.dtypes)
+<span class="out"># order_id             int64</span>
+<span class="out"># customer               str        (pandas &lt; 3 shows "object" here)</span>
+<span class="out"># region                 str</span>
+<span class="out"># amount             float64</span>
+<span class="out"># ordered     datetime64[us]</span>
+<span class="fn">print</span>(orders.head(<span class="nu">3</span>))
+<span class="out">#    order_id customer region  amount    ordered</span>
+<span class="out"># 0       101      ana  north   120.0 2024-01-05</span>
+<span class="out"># 1       102      ben  south    80.0 2024-01-06</span>
+<span class="out"># 2       103      ana  north     NaN 2024-02-11</span>
+<span class="fn">print</span>(orders[<span class="st">"amount"</span>].describe().round(<span class="nu">1</span>))
+<span class="out"># count      5.0      &lt;- only 5: one NaN is silently skipped</span>
+<span class="out"># mean     101.0</span>
+<span class="out"># std       62.5</span>
+<span class="out"># min       40.0</span>
+<span class="out"># 25%       65.0</span>
+<span class="out"># 50%       80.0</span>
+<span class="out"># 75%      120.0</span>
+<span class="out"># max      200.0</span>
+orders.info()                                            <span class="cm"># dtypes + non-null counts + memory in one screen</span></code></pre>
+
+<h3>Selecting, filtering, sorting, new columns</h3>
+<p>Two accessors do all row/column selection. <code>.loc[rows, cols]</code> uses <em>labels</em> (index values and column names, and label slices are inclusive). <code>.iloc[rows, cols]</code> uses <em>integer positions</em>, exactly like NumPy. Filtering is a boolean mask in square brackets, combined with <code>&amp;</code>, <code>|</code>, <code>~</code> and <strong>always parenthesised</strong>, because <code>&amp;</code> binds tighter than <code>&gt;</code>. New columns are created by assignment, and datetime and string columns get special <code>.dt</code> and <code>.str</code> accessors.</p>
+
+<pre class="code" data-lang="python"><code><span class="kw">import</span> pandas <span class="kw">as</span> pd, numpy <span class="kw">as</span> np
+orders = pd.DataFrame({
+    <span class="st">"order_id"</span>: [<span class="nu">101</span>, <span class="nu">102</span>, <span class="nu">103</span>, <span class="nu">104</span>, <span class="nu">105</span>, <span class="nu">106</span>],
+    <span class="st">"customer"</span>: [<span class="st">"ana"</span>, <span class="st">"ben"</span>, <span class="st">"ana"</span>, <span class="st">"cy"</span>, <span class="st">"ben"</span>, <span class="st">"ana"</span>],
+    <span class="st">"region"</span>:   [<span class="st">"north"</span>, <span class="st">"south"</span>, <span class="st">"north"</span>, <span class="st">"east"</span>, <span class="st">"south"</span>, <span class="st">"north"</span>],
+    <span class="st">"amount"</span>:   [<span class="nu">120.0</span>, <span class="nu">80.0</span>, np.nan, <span class="nu">200.0</span>, <span class="nu">65.0</span>, <span class="nu">40.0</span>],
+    <span class="st">"ordered"</span>:  pd.to_datetime([<span class="st">"2024-01-05"</span>, <span class="st">"2024-01-06"</span>, <span class="st">"2024-02-11"</span>, <span class="st">"2024-02-14"</span>, <span class="st">"2024-03-01"</span>, <span class="st">"2024-03-09"</span>]),
+})
+<span class="cm"># ---- selecting: loc = by label, iloc = by position ---------------------------</span>
+<span class="fn">print</span>(orders.loc[<span class="nu">0</span>, <span class="st">"customer"</span>], orders.iloc[<span class="nu">0</span>, <span class="nu">1</span>])         <span class="cm"># same cell, two ways</span>
+<span class="out"># ana ana</span>
+<span class="fn">print</span>(orders.iloc[:<span class="nu">2</span>, :<span class="nu">3</span>])                                  <span class="cm"># first 2 rows, first 3 columns</span>
+<span class="out">#    order_id customer region</span>
+<span class="out"># 0       101      ana  north</span>
+<span class="out"># 1       102      ben  south</span>
+
+<span class="cm"># ---- filtering with boolean masks (combine with &amp; | ~, ALWAYS parenthesize) --</span>
+big_north = orders[(orders[<span class="st">"amount"</span>] &gt; <span class="nu">50</span>) &amp; (orders[<span class="st">"region"</span>] == <span class="st">"north"</span>)]
+<span class="fn">print</span>(big_north[[<span class="st">"order_id"</span>, <span class="st">"amount"</span>]])
+<span class="out">#    order_id  amount</span>
+<span class="out"># 0       101   120.0            &lt;- the NaN row fails "&gt; 50": NaN compares False to everything</span>
+
+<span class="cm"># ---- sorting and new columns ------------------------------------------------</span>
+orders = orders.sort_values(<span class="st">"amount"</span>, ascending=<span class="kw">False</span>)
+orders[<span class="st">"amount_k"</span>] = orders[<span class="st">"amount"</span>] / <span class="nu">1000</span>                <span class="cm"># vectorized: whole column at once</span>
+orders[<span class="st">"big"</span>] = orders[<span class="st">"amount"</span>] &gt;= <span class="nu">100</span>
+orders[<span class="st">"month"</span>] = orders[<span class="st">"ordered"</span>].dt.month                <span class="cm"># .dt accessor for datetimes</span>
+orders[<span class="st">"cust_upper"</span>] = orders[<span class="st">"customer"</span>].str.upper()       <span class="cm"># .str accessor for text</span>
+<span class="fn">print</span>(orders[[<span class="st">"order_id"</span>, <span class="st">"amount_k"</span>, <span class="st">"big"</span>, <span class="st">"month"</span>, <span class="st">"cust_upper"</span>]].head(<span class="nu">3</span>))
+<span class="out">#    order_id  amount_k    big  month cust_upper</span>
+<span class="out"># 3       104      0.20   True      2         CY</span>
+<span class="out"># 0       101      0.12   True      1        ANA</span>
+<span class="out"># 1       102      0.08  False      1        BEN</span></code></pre>
+
+<div class="callout warn"><div class="title">Common mistake</div>
+<p>Notice the index after <code>sort_values</code>: 3, 0, 1. Sorting reorders rows but <strong>keeps their original labels</strong>. So <code>orders.loc[0]</code> is still order 101, while <code>orders.iloc[0]</code> is now order 104. When you no longer care about the old labels, call <code>.reset_index(drop=True)</code>. Forgetting this is the root of many "my rows got shuffled" bugs.</p>
+</div>
+
+<h3>Missing values, groupby, merge, chaining</h3>
+<p>Three operations turn raw rows into features. <strong>Missing values</strong> are found with <code>isna()</code> and handled with <code>fillna</code> or <code>dropna</code> (Chapter 8 covers the principled choices). <strong>groupby</strong> implements <em>split-apply-combine</em>: split the table into groups by a key, apply an aggregation to each group, combine the results into a new table. <strong>merge</strong> is SQL's JOIN: combine two tables on a shared key.</p>
+
+<figure class="fig">
+<svg viewBox="0 0 780 300" role="img" aria-label="Split-apply-combine: a table of orders is split into three groups by customer, a sum is applied to each group, and the three sums are combined into a result table">
+  <defs><marker id="arr-f46" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+  <!-- original table -->
+  <text x="95" y="24" text-anchor="middle" class="lbl-strong">orders</text>
+  <g font-family="ui-monospace, Menlo, monospace" font-size="12">
+    <rect x="30" y="34" width="130" height="24" fill="var(--surface-3)" stroke="var(--border)"/>
+    <text x="65" y="51" text-anchor="middle" class="lbl-strong">cust</text><text x="128" y="51" text-anchor="middle" class="lbl-strong">amt</text>
+    <g class="lbl" text-anchor="middle">
+      <rect x="30" y="58" width="130" height="24" fill="var(--s1)" fill-opacity=".18" stroke="var(--border)"/><text x="65" y="75">ana</text><text x="128" y="75">120</text>
+      <rect x="30" y="82" width="130" height="24" fill="var(--s2)" fill-opacity=".18" stroke="var(--border)"/><text x="65" y="99">ben</text><text x="128" y="99">80</text>
+      <rect x="30" y="106" width="130" height="24" fill="var(--s1)" fill-opacity=".18" stroke="var(--border)"/><text x="65" y="123">ana</text><text x="128" y="123">80</text>
+      <rect x="30" y="130" width="130" height="24" fill="var(--s3)" fill-opacity=".18" stroke="var(--border)"/><text x="65" y="147">cy</text><text x="128" y="147">200</text>
+      <rect x="30" y="154" width="130" height="24" fill="var(--s2)" fill-opacity=".18" stroke="var(--border)"/><text x="65" y="171">ben</text><text x="128" y="171">65</text>
+      <rect x="30" y="178" width="130" height="24" fill="var(--s1)" fill-opacity=".18" stroke="var(--border)"/><text x="65" y="195">ana</text><text x="128" y="195">40</text>
+    </g>
+  </g>
+  <!-- split arrows -->
+  <line x1="165" y1="118" x2="230" y2="118" class="arrow" marker-end="url(#arr-f46)"/>
+  <text x="197" y="108" text-anchor="middle" class="lbl-strong" fill="var(--accent)">SPLIT</text>
+  <text x="197" y="136" text-anchor="middle" class="lbl" font-size="10">by "cust"</text>
+  <!-- groups -->
+  <g font-family="ui-monospace, Menlo, monospace" font-size="12" class="lbl" text-anchor="middle">
+    <rect x="240" y="34" width="120" height="72" fill="var(--s1)" fill-opacity=".18" stroke="var(--s1)" rx="4"/>
+    <text x="300" y="52">ana 120</text><text x="300" y="72">ana  80</text><text x="300" y="92">ana  40</text>
+    <rect x="240" y="118" width="120" height="52" fill="var(--s2)" fill-opacity=".18" stroke="var(--s2)" rx="4"/>
+    <text x="300" y="138">ben  80</text><text x="300" y="158">ben  65</text>
+    <rect x="240" y="182" width="120" height="32" fill="var(--s3)" fill-opacity=".18" stroke="var(--s3)" rx="4"/>
+    <text x="300" y="203">cy  200</text>
+  </g>
+  <!-- apply arrows -->
+  <line x1="365" y1="70" x2="430" y2="70" class="arrow" marker-end="url(#arr-f46)"/>
+  <line x1="365" y1="144" x2="430" y2="144" class="arrow" marker-end="url(#arr-f46)"/>
+  <line x1="365" y1="198" x2="430" y2="198" class="arrow" marker-end="url(#arr-f46)"/>
+  <text x="397" y="26" text-anchor="middle" class="lbl-strong" fill="var(--accent)">APPLY</text>
+  <text x="397" y="40" text-anchor="middle" class="lbl" font-size="10">sum()</text>
+  <g font-family="ui-monospace, Menlo, monospace" font-size="12" text-anchor="middle" class="lbl-strong">
+    <rect x="440" y="54" width="80" height="32" fill="var(--s1)" fill-opacity=".3" stroke="var(--s1)" rx="4"/><text x="480" y="75">240</text>
+    <rect x="440" y="128" width="80" height="32" fill="var(--s2)" fill-opacity=".3" stroke="var(--s2)" rx="4"/><text x="480" y="149">145</text>
+    <rect x="440" y="182" width="80" height="32" fill="var(--s3)" fill-opacity=".3" stroke="var(--s3)" rx="4"/><text x="480" y="203">200</text>
+  </g>
+  <!-- combine -->
+  <path d="M525,70 L575,118" class="arrow" marker-end="url(#arr-f46)"/>
+  <path d="M525,144 L575,136" class="arrow" marker-end="url(#arr-f46)"/>
+  <path d="M525,198 L575,154" class="arrow" marker-end="url(#arr-f46)"/>
+  <text x="560" y="26" text-anchor="middle" class="lbl-strong" fill="var(--accent)">COMBINE</text>
+  <g font-family="ui-monospace, Menlo, monospace" font-size="12">
+    <rect x="590" y="82" width="160" height="24" fill="var(--surface-3)" stroke="var(--border)"/>
+    <text x="630" y="99" text-anchor="middle" class="lbl-strong">cust</text><text x="710" y="99" text-anchor="middle" class="lbl-strong">amt</text>
+    <g class="lbl" text-anchor="middle">
+      <rect x="590" y="106" width="160" height="24" fill="var(--s1)" fill-opacity=".18" stroke="var(--border)"/><text x="630" y="123">ana</text><text x="710" y="123">240</text>
+      <rect x="590" y="130" width="160" height="24" fill="var(--s2)" fill-opacity=".18" stroke="var(--border)"/><text x="630" y="147">ben</text><text x="710" y="147">145</text>
+      <rect x="590" y="154" width="160" height="24" fill="var(--s3)" fill-opacity=".18" stroke="var(--border)"/><text x="630" y="171">cy</text><text x="710" y="171">200</text>
+    </g>
+  </g>
+  <text x="670" y="200" text-anchor="middle" class="lbl" font-size="11">index = the group key</text>
+  <rect x="30" y="232" width="720" height="48" class="box"/>
+  <text x="390" y="252" text-anchor="middle" class="lbl-strong" font-family="ui-monospace, Menlo, monospace" font-size="12">orders.groupby("cust")["amt"].sum()</text>
+  <text x="390" y="270" text-anchor="middle" class="lbl" font-size="11">one row per group; swap sum for mean / count / max / agg([...]) — or several at once with named aggregation</text>
+</svg>
+<figcaption><strong>Figure 4.6 — Split-apply-combine.</strong> <code>groupby</code> partitions the rows by key, runs the aggregation inside each partition, and stacks the answers with the key as the index. Every "per customer", "per day", "per store" feature is built this way.</figcaption>
+</figure>
+
+<div class="widget" id="w-sac">
+  <div class="w-title">Interactive: split-apply-combine stepper</div>
+  <div class="controls">
+    <button class="btn primary" id="sac-step">Step ▶</button>
+    <button class="btn" id="sac-reset">Reset</button>
+    <label>Aggregation
+      <select id="sac-agg"><option value="sum">sum</option><option value="mean">mean</option><option value="count">count</option><option value="max">max</option></select></label>
+    <span>Stage: <span class="readout" id="sac-stage">0 · original table</span></span>
+  </div>
+  <svg viewBox="0 0 760 230" id="sac-svg" role="img" aria-label="Animated groupby: original table, split into groups, aggregate applied, combined result"></svg>
+  <div class="note">Press <em>Step</em> four times. Change the aggregation and step again: the split and combine stages are identical; only the apply stage changes. That is why pandas can offer dozens of aggregations through one <code>groupby</code>.</div>
+</div>
+
+<figure class="fig">
+<svg viewBox="0 0 780 300" role="img" aria-label="Four merge types between an orders table with customers ana, ben, cy and a customers table with ana, ben, dee: inner keeps ana and ben; left keeps all orders with NaN tier for cy; right keeps all customers with NaN for dee's orders; outer keeps everyone">
+  <!-- source tables -->
+  <g font-family="ui-monospace, Menlo, monospace" font-size="12">
+    <text x="90" y="24" text-anchor="middle" class="lbl-strong">left = orders</text>
+    <rect x="30" y="32" width="120" height="22" fill="var(--surface-3)" stroke="var(--border)"/><text x="60" y="48" text-anchor="middle" class="lbl-strong">cust</text><text x="120" y="48" text-anchor="middle" class="lbl-strong">amt</text>
+    <g class="lbl" text-anchor="middle">
+      <rect x="30" y="54" width="120" height="22" fill="var(--s1)" fill-opacity=".15" stroke="var(--border)"/><text x="60" y="70">ana</text><text x="120" y="70">120</text>
+      <rect x="30" y="76" width="120" height="22" fill="var(--s1)" fill-opacity=".15" stroke="var(--border)"/><text x="60" y="92">ben</text><text x="120" y="92">80</text>
+      <rect x="30" y="98" width="120" height="22" fill="var(--s1)" fill-opacity=".15" stroke="var(--border)"/><text x="60" y="114">cy</text><text x="120" y="114">200</text>
+    </g>
+    <text x="90" y="150" text-anchor="middle" class="lbl-strong">right = customers</text>
+    <rect x="30" y="158" width="120" height="22" fill="var(--surface-3)" stroke="var(--border)"/><text x="60" y="174" text-anchor="middle" class="lbl-strong">cust</text><text x="120" y="174" text-anchor="middle" class="lbl-strong">tier</text>
+    <g class="lbl" text-anchor="middle">
+      <rect x="30" y="180" width="120" height="22" fill="var(--s2)" fill-opacity=".15" stroke="var(--border)"/><text x="60" y="196">ana</text><text x="120" y="196">gold</text>
+      <rect x="30" y="202" width="120" height="22" fill="var(--s2)" fill-opacity=".15" stroke="var(--border)"/><text x="60" y="218">ben</text><text x="120" y="218">silver</text>
+      <rect x="30" y="224" width="120" height="22" fill="var(--s2)" fill-opacity=".15" stroke="var(--border)"/><text x="60" y="240">dee</text><text x="120" y="240">gold</text>
+    </g>
+  </g>
+  <text x="90" y="278" text-anchor="middle" class="lbl" font-size="11">key: cust · cy only on left, dee only on right</text>
+  <!-- four panels -->
+  <g>
+    <!-- inner -->
+    <text x="260" y="24" text-anchor="middle" class="lbl-strong">how="inner"</text>
+    <circle cx="245" cy="70" r="30" fill="none" stroke="var(--s1)" stroke-width="2"/><circle cx="275" cy="70" r="30" fill="none" stroke="var(--s2)" stroke-width="2"/>
+    <path d="M260,44 A30,30 0 0,1 260,96 A30,30 0 0,1 260,44 z" fill="var(--s7)" fill-opacity=".45"/>
+    <text x="260" y="120" text-anchor="middle" class="lbl" font-size="11">ana, ben</text>
+    <text x="260" y="134" text-anchor="middle" class="lbl" font-size="11">only keys in both (default)</text>
+    <!-- left -->
+    <text x="420" y="24" text-anchor="middle" class="lbl-strong">how="left"</text>
+    <circle cx="405" cy="70" r="30" fill="var(--s7)" fill-opacity=".45" stroke="var(--s1)" stroke-width="2"/><circle cx="435" cy="70" r="30" fill="none" stroke="var(--s2)" stroke-width="2"/>
+    <text x="420" y="120" text-anchor="middle" class="lbl" font-size="11">ana, ben, cy (tier = NaN)</text>
+    <text x="420" y="134" text-anchor="middle" class="lbl" font-size="11">keep every order</text>
+    <!-- right -->
+    <text x="580" y="24" text-anchor="middle" class="lbl-strong">how="right"</text>
+    <circle cx="565" cy="70" r="30" fill="none" stroke="var(--s1)" stroke-width="2"/><circle cx="595" cy="70" r="30" fill="var(--s7)" fill-opacity=".45" stroke="var(--s2)" stroke-width="2"/>
+    <text x="580" y="120" text-anchor="middle" class="lbl" font-size="11">ana, ben, dee (amt = NaN)</text>
+    <text x="580" y="134" text-anchor="middle" class="lbl" font-size="11">keep every customer</text>
+    <!-- outer -->
+    <text x="720" y="24" text-anchor="middle" class="lbl-strong">how="outer"</text>
+    <circle cx="705" cy="70" r="30" fill="var(--s7)" fill-opacity=".45" stroke="var(--s1)" stroke-width="2"/><circle cx="735" cy="70" r="30" fill="var(--s7)" fill-opacity=".45" stroke="var(--s2)" stroke-width="2"/>
+    <text x="720" y="120" text-anchor="middle" class="lbl" font-size="11">ana, ben, cy, dee</text>
+    <text x="720" y="134" text-anchor="middle" class="lbl" font-size="11">keep everyone, NaN-fill</text>
+  </g>
+  <!-- result for left join (the one you use most) -->
+  <text x="490" y="168" text-anchor="middle" class="lbl-strong">pd.merge(orders, customers, on="cust", how="left")</text>
+  <g font-family="ui-monospace, Menlo, monospace" font-size="12">
+    <rect x="360" y="178" width="260" height="22" fill="var(--surface-3)" stroke="var(--border)"/>
+    <text x="400" y="194" text-anchor="middle" class="lbl-strong">cust</text><text x="490" y="194" text-anchor="middle" class="lbl-strong">amt</text><text x="580" y="194" text-anchor="middle" class="lbl-strong">tier</text>
+    <g class="lbl" text-anchor="middle">
+      <rect x="360" y="200" width="260" height="22" fill="none" stroke="var(--border)"/><text x="400" y="216">ana</text><text x="490" y="216">120</text><text x="580" y="216">gold</text>
+      <rect x="360" y="222" width="260" height="22" fill="none" stroke="var(--border)"/><text x="400" y="238">ben</text><text x="490" y="238">80</text><text x="580" y="238">silver</text>
+      <rect x="360" y="244" width="260" height="22" fill="none" stroke="var(--border)"/><text x="400" y="260">cy</text><text x="490" y="260">200</text><text x="580" y="260" fill="var(--critical)" font-weight="700">NaN</text>
+    </g>
+  </g>
+  <text x="490" y="286" text-anchor="middle" class="lbl" font-size="11">after a left merge, always count the NaNs in the new column: unmatched keys are a data-quality signal</text>
+</svg>
+<figcaption><strong>Figure 4.7 — The four merge types.</strong> Violet is what survives. In feature engineering you almost always want <code>how="left"</code> (never lose a training row), then inspect the NaNs that appear.</figcaption>
+</figure>
+
+<pre class="code" data-lang="python"><code><span class="kw">import</span> pandas <span class="kw">as</span> pd, numpy <span class="kw">as</span> np
+orders = pd.DataFrame({
+    <span class="st">"order_id"</span>: [<span class="nu">101</span>, <span class="nu">102</span>, <span class="nu">103</span>, <span class="nu">104</span>, <span class="nu">105</span>, <span class="nu">106</span>],
+    <span class="st">"customer"</span>: [<span class="st">"ana"</span>, <span class="st">"ben"</span>, <span class="st">"ana"</span>, <span class="st">"cy"</span>, <span class="st">"ben"</span>, <span class="st">"ana"</span>],
+    <span class="st">"region"</span>:   [<span class="st">"north"</span>, <span class="st">"south"</span>, <span class="st">"north"</span>, <span class="st">"east"</span>, <span class="st">"south"</span>, <span class="st">"north"</span>],
+    <span class="st">"amount"</span>:   [<span class="nu">120.0</span>, <span class="nu">80.0</span>, np.nan, <span class="nu">200.0</span>, <span class="nu">65.0</span>, <span class="nu">40.0</span>],
+})
+<span class="cm"># ---- missing values ----------------------------------------------------------</span>
+<span class="fn">print</span>(orders.isna().sum().to_dict())                     <span class="cm"># count NaN per column</span>
+<span class="out"># {'order_id': 0, 'customer': 0, 'region': 0, 'amount': 1}</span>
+orders[<span class="st">"amount"</span>] = orders[<span class="st">"amount"</span>].fillna(orders[<span class="st">"amount"</span>].median())   <span class="cm"># median = 80</span>
+
+<span class="cm"># ---- groupby: split -&gt; apply -&gt; combine --------------------------------------</span>
+<span class="fn">print</span>(orders.groupby(<span class="st">"customer"</span>)[<span class="st">"amount"</span>].agg([<span class="st">"count"</span>, <span class="st">"sum"</span>, <span class="st">"mean"</span>]))
+<span class="out">#           count    sum   mean</span>
+<span class="out"># customer</span>
+<span class="out"># ana           3  240.0   80.0</span>
+<span class="out"># ben           2  145.0   72.5</span>
+<span class="out"># cy            1  200.0  200.0</span>
+summary = orders.groupby(<span class="st">"region"</span>).agg(n_orders=(<span class="st">"order_id"</span>, <span class="st">"size"</span>),     <span class="cm"># named aggregation:</span>
+                                       revenue=(<span class="st">"amount"</span>, <span class="st">"sum"</span>))        <span class="cm"># new_name=(column, func)</span>
+<span class="fn">print</span>(summary)
+<span class="out">#         n_orders  revenue</span>
+<span class="out"># region</span>
+<span class="out"># east           1    200.0</span>
+<span class="out"># north          3    240.0</span>
+<span class="out"># south          2    145.0</span>
+
+<span class="cm"># ---- merge (SQL join) with a lookup table -----------------------------------</span>
+customers = pd.DataFrame({<span class="st">"customer"</span>: [<span class="st">"ana"</span>, <span class="st">"ben"</span>, <span class="st">"dee"</span>], <span class="st">"tier"</span>: [<span class="st">"gold"</span>, <span class="st">"silver"</span>, <span class="st">"gold"</span>]})
+joined = pd.merge(orders, customers, on=<span class="st">"customer"</span>, how=<span class="st">"left"</span>)
+<span class="fn">print</span>(<span class="fn">len</span>(joined), <span class="st">"rows,"</span>, joined[<span class="st">"tier"</span>].isna().sum(), <span class="st">"order(s) with no matching customer"</span>)
+<span class="out"># 6 rows, 1 order(s) with no matching customer</span>
+
+<span class="cm"># ---- method chaining: one readable pipeline, no temp variables ---------------</span>
+top = (orders
+       .query(<span class="st">"amount &gt; 50"</span>)
+       .assign(amount_k=<span class="kw">lambda</span> d: d[<span class="st">"amount"</span>] / <span class="nu">1000</span>)
+       .groupby(<span class="st">"customer"</span>, as_index=<span class="kw">False</span>)[<span class="st">"amount_k"</span>].sum()
+       .sort_values(<span class="st">"amount_k"</span>, ascending=<span class="kw">False</span>))
+<span class="fn">print</span>(top)
+<span class="out">#   customer  amount_k</span>
+<span class="out"># 0      ana     0.200</span>
+<span class="out"># 2       cy     0.200</span>
+<span class="out"># 1      ben     0.145</span></code></pre>
+
+<div class="callout pro"><div class="title">At work</div>
+<p>Write pandas as a <strong>chain</strong> (parenthesised, one method per line) rather than twenty <code>df2 = …; df3 = …</code> variables. Chains read top to bottom like a recipe, cannot accidentally use a stale intermediate, and are trivially converted into a function in <code>src/features.py</code>. Reviewers love them.</p>
+</div>
+
+<h3>apply vs. vectorized</h3>
+<p><code>Series.apply(f)</code> calls a Python function once per element; it is the pandas version of the slow loop in Figure 4.4. Reach for it only when no vectorized alternative exists (say, a regex-heavy parse). For arithmetic, comparisons, conditional values (<code>np.where</code>, <code>np.select</code>), string methods (<code>.str</code>) and date parts (<code>.dt</code>), the vectorized version is shorter <em>and</em> 10–100× faster.</p>
+
+<pre class="code" data-lang="python"><code><span class="kw">import</span> pandas <span class="kw">as</span> pd, numpy <span class="kw">as</span> np, time
+df = pd.DataFrame({<span class="st">"amount"</span>: np.random.default_rng(<span class="nu">0</span>).random(<span class="nu">200_000</span>) * <span class="nu">100</span>})
+
+t0 = time.perf_counter()
+a = df[<span class="st">"amount"</span>].apply(<span class="kw">lambda</span> v: v * <span class="nu">1.2</span> <span class="kw">if</span> v &gt; <span class="nu">50</span> <span class="kw">else</span> v)          <span class="cm"># Python function per row</span>
+t_apply = time.perf_counter() - t0
+
+t0 = time.perf_counter()
+b = np.where(df[<span class="st">"amount"</span>] &gt; <span class="nu">50</span>, df[<span class="st">"amount"</span>] * <span class="nu">1.2</span>, df[<span class="st">"amount"</span>])   <span class="cm"># vectorized</span>
+t_vec = time.perf_counter() - t0
+
+<span class="fn">print</span>(<span class="st">f"apply: {t_apply*1000:.0f} ms   vectorized: {t_vec*1000:.1f} ms   (≈{t_apply/t_vec:.0f}× faster)"</span>)
+<span class="out"># apply: 34 ms   vectorized: 2.4 ms   (≈14× faster)</span>
+<span class="fn">print</span>(np.allclose(a, b))
+<span class="out"># True</span></code></pre>
+
+<!-- ============================================================ -->
+<h2 id="s4">4. pandas gotchas that bite everyone</h2>
+
+<p>These four traps account for most pandas bugs I see in code reviews. Each is silent: no crash, just wrong numbers.</p>
+
+<div class="grid2">
+  <div class="card bad"><h4>1. Chained indexing</h4>
+    <p><code>df[df.city == "A"]["sales"] = 0</code> looks like it edits <code>df</code>. It edits a temporary copy and throws it away. pandas 1–2 warned with <em>SettingWithCopyWarning</em>; pandas 3 (Copy-on-Write) makes the copy explicit and warns <em>ChainedAssignmentError</em>. <strong>Fix:</strong> one <code>.loc[mask, "sales"] = 0</code>.</p>
+  </div>
+  <div class="card bad"><h4>2. Numbers stored as text</h4>
+    <p>A CSV with one "n/a" or a stray "$" makes the whole column <code>object</code>/<code>str</code>. <code>.mean()</code> fails or, worse, <code>"12" &gt; "9"</code> is <em>False</em> (string comparison). <strong>Fix:</strong> <code>pd.to_numeric(col, errors="coerce")</code>, then inspect the NaNs it created.</p>
+  </div>
+  <div class="card bad"><h4>3. Index alignment</h4>
+    <p><code>s1 + s2</code> matches on index <em>labels</em>, not positions. Two Series with different indexes give NaN wherever labels don't overlap: e.g. after filtering one of them. <strong>Fix:</strong> <code>reset_index(drop=True)</code> on both, or <code>.to_numpy()</code> when you mean positional.</p>
+  </div>
+  <div class="card bad"><h4>4. The object dtype in general</h4>
+    <p>An <code>object</code> column can hold anything: ints and strings mixed, lists, Python <code>None</code>. It is slow and models reject it. <strong>Fix:</strong> after loading, force every column to a real dtype: numeric, <code>category</code>, <code>datetime64</code>, <code>bool</code>, or string.</p>
+  </div>
+</div>
+
+<pre class="code" data-lang="python"><code><span class="kw">import</span> pandas <span class="kw">as</span> pd, numpy <span class="kw">as</span> np
+df = pd.DataFrame({<span class="st">"city"</span>: [<span class="st">"A"</span>, <span class="st">"B"</span>, <span class="st">"A"</span>], <span class="st">"sales"</span>: [<span class="nu">10</span>, <span class="nu">20</span>, <span class="nu">30</span>]})
+
+<span class="cm"># GOTCHA 1 — chained indexing never modifies df (pandas &gt;= 3 warns ChainedAssignmentError;</span>
+<span class="cm">#            pandas &lt; 3 raised SettingWithCopyWarning and sometimes worked, which was worse)</span>
+<span class="cm"># df[df["city"] == "A"]["sales"] = 0        # WRONG</span>
+df.loc[df[<span class="st">"city"</span>] == <span class="st">"A"</span>, <span class="st">"sales"</span>] = <span class="nu">0</span>      <span class="cm"># RIGHT: one .loc, one assignment</span>
+<span class="fn">print</span>(df[<span class="st">"sales"</span>].tolist())
+<span class="out"># [0, 20, 0]</span>
+
+<span class="cm"># GOTCHA 2 — a numeric column that is secretly text</span>
+raw = pd.DataFrame({<span class="st">"price"</span>: [<span class="st">"12.5"</span>, <span class="st">"8"</span>, <span class="st">"n/a"</span>, <span class="st">"30"</span>]})
+<span class="fn">print</span>(raw[<span class="st">"price"</span>].dtype)                                    <span class="cm"># str (object in pandas &lt; 3)</span>
+<span class="out"># str</span>
+raw[<span class="st">"price"</span>] = pd.to_numeric(raw[<span class="st">"price"</span>], errors=<span class="st">"coerce"</span>)   <span class="cm"># "n/a" -&gt; NaN instead of crashing</span>
+<span class="fn">print</span>(raw[<span class="st">"price"</span>].dtype, raw[<span class="st">"price"</span>].mean().round(<span class="nu">2</span>))
+<span class="out"># float64 16.83</span>
+
+<span class="cm"># GOTCHA 3 — index alignment: arithmetic matches on index labels, not on position</span>
+s1 = pd.Series([<span class="nu">1</span>, <span class="nu">2</span>, <span class="nu">3</span>], index=[<span class="nu">0</span>, <span class="nu">1</span>, <span class="nu">2</span>])
+s2 = pd.Series([<span class="nu">10</span>, <span class="nu">20</span>, <span class="nu">30</span>], index=[<span class="nu">1</span>, <span class="nu">2</span>, <span class="nu">3</span>])
+<span class="fn">print</span>((s1 + s2).tolist())                                    <span class="cm"># NaN where labels don't overlap!</span>
+<span class="out"># [nan, 12.0, 23.0, nan]</span>
+<span class="fn">print</span>((s1.to_numpy() + s2.to_numpy()).tolist())              <span class="cm"># positional, if that is what you meant</span>
+<span class="out"># [11, 22, 33]</span></code></pre>
+
+<div class="callout key"><div class="title">Key idea</div>
+<p><strong>pandas is label-based; NumPy is position-based.</strong> Almost every pandas surprise (alignment NaNs, "rows shuffled", <code>.loc</code> vs <code>.iloc</code>) comes from forgetting that a Series carries its index with it. When you hand data to scikit-learn it becomes plain positional arrays again, so make sure <code>X</code> and <code>y</code> were filtered <em>together</em>.</p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s5">5. matplotlib: the five plots</h2>
+
+<p>You do not need to master matplotlib. You need five plots, and you need to make them without looking anything up. Use the object-oriented interface (<code>fig, ax = plt.subplots()</code>, then <code>ax.hist(...)</code>) rather than the <code>plt.hist(...)</code> state machine; it composes into grids and behaves the same in scripts and notebooks. pandas also wraps it: <code>df["col"].hist()</code> and <code>df.plot.scatter(x, y)</code> are matplotlib underneath.</p>
+
+<figure class="fig">
+<svg viewBox="0 0 780 330" role="img" aria-label="Five small plots: histogram of one feature, scatter of two features, line of loss over epochs, bar of class counts, and box plots of a feature per class">
+  <defs><marker id="arr-f48" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+  <!-- 1 histogram -->
+  <g>
+    <text x="130" y="22" text-anchor="middle" class="lbl-strong">1. Histogram — ax.hist(x)</text>
+    <line x1="30" y1="130" x2="235" y2="130" class="axis"/><line x1="30" y1="130" x2="30" y2="35" class="axis"/>
+    <g fill="var(--s1)">
+      <rect x="34" y="118" width="18" height="12"/><rect x="54" y="104" width="18" height="26"/><rect x="74" y="80" width="18" height="50"/><rect x="94" y="50" width="18" height="80"/><rect x="114" y="42" width="18" height="88"/>
+      <rect x="134" y="60" width="18" height="70"/><rect x="154" y="86" width="18" height="44"/><rect x="174" y="102" width="18" height="28"/><rect x="194" y="116" width="18" height="14"/><rect x="214" y="124" width="18" height="6"/>
+    </g>
+    <text x="132" y="148" text-anchor="middle" class="lbl" font-size="11">distribution, skew, outliers</text>
+  </g>
+  <!-- 2 scatter -->
+  <g>
+    <text x="390" y="22" text-anchor="middle" class="lbl-strong">2. Scatter — ax.scatter(x, y, c=label)</text>
+    <line x1="290" y1="130" x2="495" y2="130" class="axis"/><line x1="290" y1="130" x2="290" y2="35" class="axis"/>
+    <g fill="var(--s1)"><circle cx="310" cy="110" r="4"/><circle cx="325" cy="98" r="4"/><circle cx="340" cy="112" r="4"/><circle cx="332" cy="84" r="4"/><circle cx="352" cy="96" r="4"/><circle cx="318" cy="120" r="4"/><circle cx="362" cy="80" r="4"/></g>
+    <g fill="var(--s2)"><circle cx="420" cy="70" r="4"/><circle cx="440" cy="58" r="4"/><circle cx="455" cy="76" r="4"/><circle cx="430" cy="48" r="4"/><circle cx="470" cy="60" r="4"/><circle cx="410" cy="88" r="4"/><circle cx="462" cy="44" r="4"/></g>
+    <text x="392" y="148" text-anchor="middle" class="lbl" font-size="11">relationship, separability</text>
+  </g>
+  <!-- 3 line -->
+  <g>
+    <text x="650" y="22" text-anchor="middle" class="lbl-strong">3. Line — ax.plot(epoch, loss)</text>
+    <line x1="550" y1="130" x2="755" y2="130" class="axis"/><line x1="550" y1="130" x2="550" y2="35" class="axis"/>
+    <path d="M555,45 C580,60 600,95 640,105 S720,112 750,113" fill="none" stroke="var(--s1)" stroke-width="2"/>
+    <path d="M555,50 C580,70 600,95 640,98 S700,92 750,78" fill="none" stroke="var(--s2)" stroke-width="2"/>
+    <text x="700" y="72" class="lbl" font-size="10" fill="var(--s2)">val</text><text x="700" y="124" class="lbl" font-size="10" fill="var(--s1)">train</text>
+    <text x="652" y="148" text-anchor="middle" class="lbl" font-size="11">anything over time or iterations</text>
+  </g>
+  <!-- 4 bar -->
+  <g>
+    <text x="200" y="192" text-anchor="middle" class="lbl-strong">4. Bar — ax.bar(categories, counts)</text>
+    <line x1="80" y1="300" x2="320" y2="300" class="axis"/><line x1="80" y1="300" x2="80" y2="205" class="axis"/>
+    <rect x="105" y="235" width="40" height="65" fill="var(--s1)"/><rect x="180" y="215" width="40" height="85" fill="var(--s2)"/><rect x="255" y="262" width="40" height="38" fill="var(--s3)"/>
+    <text x="125" y="314" text-anchor="middle" class="lbl" font-size="10">class 0</text><text x="200" y="314" text-anchor="middle" class="lbl" font-size="10">class 1</text><text x="275" y="314" text-anchor="middle" class="lbl" font-size="10">class 2</text>
+  </g>
+  <!-- 5 box -->
+  <g>
+    <text x="560" y="192" text-anchor="middle" class="lbl-strong">5. Box plot — ax.boxplot([...])</text>
+    <line x1="430" y1="300" x2="690" y2="300" class="axis"/><line x1="430" y1="300" x2="430" y2="205" class="axis"/>
+    <g stroke="var(--s1)" stroke-width="1.5" fill="var(--s1)" fill-opacity=".2">
+      <line x1="480" y1="215" x2="480" y2="240"/><rect x="462" y="240" width="36" height="30"/><line x1="462" y1="256" x2="498" y2="256" stroke-width="2.5"/><line x1="480" y1="270" x2="480" y2="290"/>
+    </g>
+    <g stroke="var(--s2)" stroke-width="1.5" fill="var(--s2)" fill-opacity=".2">
+      <line x1="560" y1="228" x2="560" y2="250"/><rect x="542" y="250" width="36" height="24"/><line x1="542" y1="264" x2="578" y2="264" stroke-width="2.5"/><line x1="560" y1="274" x2="560" y2="292"/>
+      <circle cx="560" cy="212" r="3" fill="none"/>
+    </g>
+    <g stroke="var(--s3)" stroke-width="1.5" fill="var(--s3)" fill-opacity=".2">
+      <line x1="640" y1="236" x2="640" y2="262"/><rect x="622" y="262" width="36" height="20"/><line x1="622" y1="272" x2="658" y2="272" stroke-width="2.5"/><line x1="640" y1="282" x2="640" y2="296"/>
+    </g>
+    <text x="480" y="314" text-anchor="middle" class="lbl" font-size="10">class 0</text><text x="560" y="314" text-anchor="middle" class="lbl" font-size="10">class 1</text><text x="640" y="314" text-anchor="middle" class="lbl" font-size="10">class 2</text>
+    <text x="720" y="250" class="lbl" font-size="10">feature</text><text x="720" y="263" class="lbl" font-size="10">per class</text>
+  </g>
+</svg>
+<figcaption><strong>Figure 4.8 — The five plots you make in every project.</strong> Histogram (one feature's distribution), scatter (two features and the label), line (anything versus time or epochs), bar (counts per category), box plot (one feature broken down by class). A correlation heatmap is the sixth, in Chapter 8.</figcaption>
+</figure>
+
+<pre class="code" data-lang="python"><code><span class="kw">import</span> matplotlib
+matplotlib.use(<span class="st">"Agg"</span>)                      <span class="cm"># headless backend for scripts; omit in a notebook</span>
+<span class="kw">import</span> matplotlib.pyplot <span class="kw">as</span> plt
+<span class="kw">import</span> numpy <span class="kw">as</span> np
+<span class="kw">from</span> sklearn.datasets <span class="kw">import</span> load_wine
+
+df = load_wine(as_frame=<span class="kw">True</span>).frame        <span class="cm"># 178 rows, 13 features + "target" (0/1/2)</span>
+
+fig, ax = plt.subplots(<span class="nu">2</span>, <span class="nu">2</span>, figsize=(<span class="nu">10</span>, <span class="nu">7</span>))
+ax[<span class="nu">0</span>, <span class="nu">0</span>].hist(df[<span class="st">"alcohol"</span>], bins=<span class="nu">20</span>)
+ax[<span class="nu">0</span>, <span class="nu">0</span>].set(title=<span class="st">"1. Histogram: one feature"</span>, xlabel=<span class="st">"alcohol"</span>)
+
+ax[<span class="nu">0</span>, <span class="nu">1</span>].scatter(df[<span class="st">"alcohol"</span>], df[<span class="st">"color_intensity"</span>], c=df[<span class="st">"target"</span>], s=<span class="nu">18</span>)
+ax[<span class="nu">0</span>, <span class="nu">1</span>].set(title=<span class="st">"2. Scatter: two features, colored by class"</span>, xlabel=<span class="st">"alcohol"</span>, ylabel=<span class="st">"color_intensity"</span>)
+
+epochs = np.arange(<span class="nu">1</span>, <span class="nu">31</span>)
+ax[<span class="nu">1</span>, <span class="nu">0</span>].plot(epochs, <span class="nu">2.0</span> * np.exp(-epochs / <span class="nu">6</span>) + <span class="nu">0.3</span>, label=<span class="st">"train loss"</span>)
+ax[<span class="nu">1</span>, <span class="nu">0</span>].plot(epochs, <span class="nu">2.0</span> * np.exp(-epochs / <span class="nu">6</span>) + <span class="nu">0.45</span> + <span class="nu">0.01</span> * epochs, label=<span class="st">"val loss"</span>)
+ax[<span class="nu">1</span>, <span class="nu">0</span>].set(title=<span class="st">"3. Line: a quantity over epochs"</span>, xlabel=<span class="st">"epoch"</span>); ax[<span class="nu">1</span>, <span class="nu">0</span>].legend()
+
+counts = df[<span class="st">"target"</span>].value_counts().sort_index()
+ax[<span class="nu">1</span>, <span class="nu">1</span>].bar(counts.index.astype(<span class="fn">str</span>), counts.values)
+ax[<span class="nu">1</span>, <span class="nu">1</span>].set(title=<span class="st">"4. Bar: rows per class"</span>, xlabel=<span class="st">"wine class"</span>)
+
+fig.tight_layout()
+fig.savefig(<span class="st">"eda_grid.png"</span>, dpi=<span class="nu">110</span>)       <span class="cm"># in a notebook: plt.show()</span>
+<span class="fn">print</span>(<span class="st">"saved eda_grid.png;"</span>, df.shape)
+<span class="out"># saved eda_grid.png; (178, 14)</span></code></pre>
+
+<div class="callout pro"><div class="title">At work</div>
+<p>Every chart that leaves your laptop needs a title that states the <em>finding</em> ("Churn is 3× higher on the basic plan"), labelled axes with units, and a saved file in <code>reports/figures/</code> produced by code, not by screenshot. Six months later someone will ask for the same chart with new data, and you will regenerate it in ten seconds.</p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s6">6. scikit-learn's design</h2>
+
+<p>scikit-learn is the most consistently designed library you will ever use, and that consistency is the whole point. Every model, every scaler, every encoder is an <strong>Estimator</strong> with the same handful of methods. Learn the interface once and you can use two hundred algorithms.</p>
+
+<div class="callout eli9"><div class="title">Explain it like I'm 9</div>
+<p>Every kitchen appliance has the same two buttons: <em>learn</em> (<code>fit</code>: "look at these examples") and <em>go</em> (<code>predict</code> or <code>transform</code>: "now do your thing to new stuff"). A toaster and a blender do very different jobs, but because the buttons are in the same place you can swap one for the other without reading a manual. That is why you can try five models in five lines.</p>
+</div>
+
+<figure class="fig">
+<svg viewBox="0 0 780 360" role="img" aria-label="The scikit-learn API: an Estimator has fit; Predictors add predict, predict_proba and score; Transformers add transform and fit_transform; a Pipeline chains transformers then a final predictor and exposes the same fit and predict; joblib dump and load persist the whole pipeline; get_params and set_params configure any estimator">
+  <defs><marker id="arr-f49" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+  <!-- Estimator root -->
+  <rect x="290" y="20" width="200" height="58" class="box-accent"/>
+  <text x="390" y="42" text-anchor="middle" class="lbl-strong" font-size="13">Estimator</text>
+  <text x="390" y="60" text-anchor="middle" class="lbl" font-family="ui-monospace, Menlo, monospace">.fit(X, y)  ·  .get_params()  ·  .set_params(**kw)</text>
+  <!-- children -->
+  <line x1="340" y1="78" x2="200" y2="118" class="arrow" marker-end="url(#arr-f49)"/>
+  <line x1="440" y1="78" x2="580" y2="118" class="arrow" marker-end="url(#arr-f49)"/>
+  <rect x="60" y="120" width="280" height="86" class="box"/>
+  <text x="200" y="142" text-anchor="middle" class="lbl-strong" font-size="13">Transformer  (changes X)</text>
+  <text x="200" y="162" text-anchor="middle" class="lbl" font-family="ui-monospace, Menlo, monospace">.transform(X)  ·  .fit_transform(X)</text>
+  <text x="200" y="182" text-anchor="middle" class="lbl" font-size="11">StandardScaler · OneHotEncoder · SimpleImputer</text>
+  <text x="200" y="198" text-anchor="middle" class="lbl" font-size="11">PCA · TfidfVectorizer · PolynomialFeatures</text>
+  <rect x="440" y="120" width="280" height="86" class="box"/>
+  <text x="580" y="142" text-anchor="middle" class="lbl-strong" font-size="13">Predictor  (produces ŷ)</text>
+  <text x="580" y="162" text-anchor="middle" class="lbl" font-family="ui-monospace, Menlo, monospace">.predict(X) · .predict_proba(X) · .score(X, y)</text>
+  <text x="580" y="182" text-anchor="middle" class="lbl" font-size="11">LogisticRegression · RandomForestClassifier</text>
+  <text x="580" y="198" text-anchor="middle" class="lbl" font-size="11">LinearRegression · SVC · KNeighbors · GradientBoosting</text>
+  <!-- pipeline -->
+  <line x1="200" y1="206" x2="200" y2="240" class="arrow" marker-end="url(#arr-f49)"/>
+  <line x1="580" y1="206" x2="580" y2="240" class="arrow" marker-end="url(#arr-f49)"/>
+  <rect x="60" y="242" width="660" height="60" rx="8" fill="var(--s7)" fill-opacity=".12" stroke="var(--s7)" stroke-width="1.5"/>
+  <text x="390" y="264" text-anchor="middle" class="lbl-strong" font-size="13" fill="var(--s7)">Pipeline([("scale", StandardScaler()), ("clf", LogisticRegression())])</text>
+  <text x="390" y="284" text-anchor="middle" class="lbl" font-size="11">transformers… then one predictor · behaves like a single Estimator: .fit / .predict / .score / .get_params("clf__C")</text>
+  <!-- joblib -->
+  <line x1="390" y1="302" x2="390" y2="322" class="arrow" marker-end="url(#arr-f49)"/>
+  <rect x="200" y="324" width="380" height="30" class="box"/>
+  <text x="390" y="344" text-anchor="middle" class="lbl-strong" font-family="ui-monospace, Menlo, monospace" font-size="12">joblib.dump(pipe, "model.joblib")   ↔   pipe = joblib.load(...)</text>
+</svg>
+<figcaption><strong>Figure 4.9 — The scikit-learn API map.</strong> Everything is an Estimator with <code>fit</code>. Transformers add <code>transform</code>; predictors add <code>predict</code>/<code>score</code>. A Pipeline glues them into one object with the same interface, and joblib saves that one object.</figcaption>
+</figure>
+
+<h3>The four methods</h3>
+<ol class="steps">
+  <li><strong><code>fit(X, y)</code> — learn.</strong> <code>X</code> is a 2-D array (rows × features), <code>y</code> a 1-D array of targets (transformers ignore it). Everything learned is stored on the object with a trailing underscore: <code>scaler.mean_</code>, <code>model.coef_</code>. If an attribute has no underscore it is a hyperparameter you set; with an underscore it was learned.</li>
+  <li><strong><code>predict(X)</code> — apply.</strong> Returns one prediction per row. Classifiers also have <code>predict_proba(X)</code> for probabilities (one column per class), which you will need for thresholds and ranking (Chapter 6).</li>
+  <li><strong><code>transform(X)</code> — reshape features.</strong> A scaler subtracts the mean it learned in <code>fit</code>. <code>fit_transform</code> does both on training data; on new data you call <em>only</em> <code>transform</code>, because the statistics must come from training.</li>
+  <li><strong><code>score(X, y)</code> — quick evaluation.</strong> Accuracy for classifiers, R² for regressors. Use it for a sanity check; for real evaluation import from <code>sklearn.metrics</code>, which has every metric in the book (<code>accuracy_score</code>, <code>f1_score</code>, <code>roc_auc_score</code>, <code>mean_absolute_error</code>, <code>r2_score</code>…), all with the same signature <code>metric(y_true, y_pred)</code>.</li>
+</ol>
+
+<pre class="code" data-lang="python"><code><span class="kw">from</span> sklearn.datasets <span class="kw">import</span> load_wine
+<span class="kw">from</span> sklearn.model_selection <span class="kw">import</span> train_test_split
+<span class="kw">from</span> sklearn.linear_model <span class="kw">import</span> LogisticRegression
+<span class="kw">from</span> sklearn.tree <span class="kw">import</span> DecisionTreeClassifier
+<span class="kw">from</span> sklearn.neighbors <span class="kw">import</span> KNeighborsClassifier
+<span class="kw">from</span> sklearn.preprocessing <span class="kw">import</span> StandardScaler
+<span class="kw">from</span> sklearn.pipeline <span class="kw">import</span> make_pipeline
+<span class="kw">from</span> sklearn.metrics <span class="kw">import</span> accuracy_score
+
+X, y = load_wine(return_X_y=<span class="kw">True</span>)
+X_tr, X_te, y_tr, y_te = train_test_split(X, y, test_size=<span class="nu">0.25</span>, random_state=<span class="nu">0</span>, stratify=y)
+
+<span class="cm"># every estimator speaks the same language, so swapping models is a dictionary edit</span>
+models = {
+    <span class="st">"logreg"</span>: make_pipeline(StandardScaler(), LogisticRegression(max_iter=<span class="nu">1000</span>)),
+    <span class="st">"tree"</span>:   DecisionTreeClassifier(max_depth=<span class="nu">3</span>, random_state=<span class="nu">0</span>),
+    <span class="st">"knn"</span>:    make_pipeline(StandardScaler(), KNeighborsClassifier(n_neighbors=<span class="nu">5</span>)),
+}
+<span class="kw">for</span> name, model <span class="kw">in</span> models.items():
+    model.fit(X_tr, y_tr)                              <span class="cm"># learn from training rows only</span>
+    acc = accuracy_score(y_te, model.predict(X_te))    <span class="cm"># judge on rows it has never seen</span>
+    <span class="fn">print</span>(<span class="st">f"{name:7s} test accuracy = {acc:.3f}"</span>)
+<span class="out"># logreg  test accuracy = 1.000</span>
+<span class="out"># tree    test accuracy = 0.822</span>
+<span class="out"># knn     test accuracy = 0.933</span>
+
+<span class="cm"># transformers: fit learns statistics, transform applies them; get_params exposes every knob</span>
+scaler = StandardScaler().fit(X_tr)
+<span class="fn">print</span>(scaler.mean_[:<span class="nu">3</span>].round(<span class="nu">2</span>))                        <span class="cm"># learned -&gt; trailing underscore</span>
+<span class="out"># [13.02  2.33  2.38]                                       (the training-fold means)</span>
+<span class="fn">print</span>(models[<span class="st">"knn"</span>].get_params()[<span class="st">"kneighborsclassifier__n_neighbors"</span>])   <span class="cm"># step__param naming</span>
+<span class="out"># 5</span></code></pre>
+
+<h3>train_test_split and why a Pipeline prevents leakage</h3>
+<p><code>train_test_split</code> shuffles the rows (seeded by <code>random_state</code>) and cuts them into a training set the model learns from and a test set that simulates the future. <code>stratify=y</code> keeps class proportions equal in both, which matters when one class is rare. Chapter 7 goes deep on validation; for now the rule is: <strong>split first, before any preprocessing that learns from data</strong>.</p>
+
+<p>Why "before"? Because scaling, imputing, and encoding all <em>learn</em> something: the mean, the median, the category list. If you compute the mean on all rows and then split, the test rows have influenced the training data's scaling. That is <strong>data leakage</strong>: your test score is optimistic, and you only find out in production. A <code>Pipeline</code> makes leakage structurally impossible: when you call <code>pipe.fit(X_train, y_train)</code>, each step is fitted on the training rows only; when you call <code>pipe.predict(X_test)</code>, the stored training statistics are applied. It also means cross-validation (Chapter 7) refits the scaler inside every fold automatically, and you deploy <em>one</em> object instead of a scaler plus a model that can drift apart.</p>
+
+<figure class="fig">
+<svg viewBox="0 0 780 300" role="img" aria-label="Left, the leaky way: scaler fitted on all rows then data split, test information flows into training. Right, the Pipeline way: split first, the pipeline fits scaler and model on train rows only, then transforms and predicts test rows using training statistics">
+  <defs><marker id="arr-f410" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+  <!-- left: leaky -->
+  <text x="190" y="26" text-anchor="middle" class="lbl-strong" font-size="14" fill="var(--critical)">✗ Leaky: scale, then split</text>
+  <rect x="80" y="44" width="220" height="40" class="box"/><text x="190" y="69" text-anchor="middle" class="lbl-strong">all rows (train + test)</text>
+  <line x1="190" y1="84" x2="190" y2="110" class="arrow" marker-end="url(#arr-f410)"/>
+  <rect x="80" y="112" width="220" height="40" rx="6" fill="var(--critical)" fill-opacity=".12" stroke="var(--critical)"/><text x="190" y="137" text-anchor="middle" class="lbl-strong">scaler.fit_transform(all)</text>
+  <text x="315" y="130" class="lbl" font-size="10" fill="var(--critical)">mean uses</text><text x="315" y="142" class="lbl" font-size="10" fill="var(--critical)">test rows!</text>
+  <line x1="190" y1="152" x2="190" y2="178" class="arrow" marker-end="url(#arr-f410)"/>
+  <rect x="80" y="180" width="220" height="40" class="box"/><text x="190" y="205" text-anchor="middle" class="lbl-strong">train_test_split</text>
+  <line x1="140" y1="220" x2="120" y2="248" class="arrow" marker-end="url(#arr-f410)"/><line x1="240" y1="220" x2="260" y2="248" class="arrow" marker-end="url(#arr-f410)"/>
+  <rect x="60" y="250" width="120" height="34" class="box"/><text x="120" y="272" text-anchor="middle" class="lbl">model.fit(train)</text>
+  <rect x="200" y="250" width="120" height="34" class="box"/><text x="260" y="272" text-anchor="middle" class="lbl">score(test) ↑ optimistic</text>
+  <!-- divider -->
+  <line x1="390" y1="20" x2="390" y2="290" class="grid" stroke-dasharray="4 4"/>
+  <!-- right: pipeline -->
+  <text x="585" y="26" text-anchor="middle" class="lbl-strong" font-size="14" fill="var(--good)">✓ Pipeline: split, then fit on train only</text>
+  <rect x="475" y="44" width="220" height="40" class="box"/><text x="585" y="69" text-anchor="middle" class="lbl-strong">train_test_split</text>
+  <line x1="530" y1="84" x2="500" y2="110" class="arrow" marker-end="url(#arr-f410)"/><line x1="640" y1="84" x2="670" y2="110" class="arrow" marker-end="url(#arr-f410)"/>
+  <rect x="420" y="112" width="160" height="34" fill="var(--s1)" fill-opacity=".15" stroke="var(--s1)" rx="6"/><text x="500" y="134" text-anchor="middle" class="lbl-strong">X_train, y_train</text>
+  <rect x="600" y="112" width="150" height="34" fill="var(--s2)" fill-opacity=".15" stroke="var(--s2)" rx="6"/><text x="675" y="134" text-anchor="middle" class="lbl-strong">X_test, y_test</text>
+  <line x1="500" y1="146" x2="500" y2="172" class="arrow" marker-end="url(#arr-f410)"/>
+  <rect x="420" y="174" width="160" height="66" rx="8" fill="var(--s7)" fill-opacity=".12" stroke="var(--s7)" stroke-width="1.5"/>
+  <text x="500" y="194" text-anchor="middle" class="lbl-strong" fill="var(--s7)">pipe.fit(X_train, y_train)</text>
+  <text x="500" y="212" text-anchor="middle" class="lbl" font-size="11">scaler.fit → transform →</text>
+  <text x="500" y="228" text-anchor="middle" class="lbl" font-size="11">model.fit — train rows only</text>
+  <line x1="675" y1="146" x2="675" y2="246" class="arrow" marker-end="url(#arr-f410)"/>
+  <line x1="580" y1="207" x2="600" y2="207" class="arrow" stroke="var(--s7)" marker-end="url(#arr-f410)"/>
+  <text x="608" y="202" class="lbl" font-size="10">stored mean_, scale_,</text><text x="608" y="214" class="lbl" font-size="10">coef_ flow to predict</text>
+  <rect x="600" y="248" width="150" height="36" class="box"/><text x="675" y="266" text-anchor="middle" class="lbl-strong" font-size="11">pipe.predict(X_test)</text><text x="675" y="279" text-anchor="middle" class="lbl" font-size="10">honest score</text>
+</svg>
+<figcaption><strong>Figure 4.10 — Why a Pipeline prevents leakage.</strong> On the left the scaler has seen the test rows before the split, so the test score is contaminated. On the right every learned statistic comes from training rows, and the test set behaves like genuinely new data.</figcaption>
+</figure>
+
+<div class="callout warn"><div class="title">Common mistake</div>
+<p>Calling <code>scaler.fit_transform(X_test)</code>. That re-learns the mean and standard deviation from the test set, so the test data is scaled differently from what the model was trained on, and in production you would not even have a batch to fit on. On anything that is not training data, call <code>transform</code> only, or, better, never touch the scaler directly and let the Pipeline do it.</p>
+</div>
+
+<h3>Configuring and persisting</h3>
+<p><code>get_params()</code> returns every hyperparameter as a dictionary; <code>set_params(clf__C=0.1)</code> changes one. Inside a Pipeline, parameters are addressed as <code>stepname__param</code> with a double underscore. This naming is what <code>GridSearchCV</code> uses in Chapter 13, so pipelines are tunable as a unit. To save a fitted estimator use <code>joblib.dump(obj, path)</code> and <code>joblib.load(path)</code>; joblib handles the large NumPy arrays inside models efficiently. Always save the <em>whole pipeline</em>, and load it with the same library versions you saved it with.</p>
+
+<!-- ============================================================ -->
+<h2 id="s7">7. Your first complete project</h2>
+
+<p>Here is the entire skeleton of a real classification project, on the built-in breast-cancer dataset (569 tumour measurements, 30 numeric features, benign vs. malignant). Every line is one you will write again at work; only the data changes. Read it once, then type it out yourself without looking.</p>
+
+<pre class="code" data-lang="python"><code><span class="cm"># load -&gt; split -&gt; pipeline -&gt; fit -&gt; evaluate -&gt; save -&gt; reload -&gt; predict</span>
+<span class="kw">import</span> joblib
+<span class="kw">import</span> numpy <span class="kw">as</span> np
+<span class="kw">from</span> sklearn.datasets <span class="kw">import</span> load_breast_cancer
+<span class="kw">from</span> sklearn.model_selection <span class="kw">import</span> train_test_split
+<span class="kw">from</span> sklearn.pipeline <span class="kw">import</span> Pipeline
+<span class="kw">from</span> sklearn.preprocessing <span class="kw">import</span> StandardScaler
+<span class="kw">from</span> sklearn.linear_model <span class="kw">import</span> LogisticRegression
+<span class="kw">from</span> sklearn.metrics <span class="kw">import</span> accuracy_score, classification_report, confusion_matrix
+
+<span class="cm"># 1. load  (569 tumours, 30 numeric features; target 1 = benign, 0 = malignant)</span>
+data = load_breast_cancer()
+X, y = data.data, data.target
+<span class="fn">print</span>(X.shape, np.bincount(y))
+<span class="out"># (569, 30) [212 357]</span>
+
+<span class="cm"># 2. split BEFORE anything else; stratify keeps the class ratio in both halves</span>
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=<span class="nu">0.2</span>, random_state=<span class="nu">42</span>, stratify=y)
+
+<span class="cm"># 3. pipeline: the scaler is learned on the training fold only -&gt; no leakage</span>
+model = Pipeline([
+    (<span class="st">"scale"</span>, StandardScaler()),
+    (<span class="st">"clf"</span>, LogisticRegression(max_iter=<span class="nu">1000</span>, random_state=<span class="nu">42</span>)),
+])
+
+<span class="cm"># 4. fit</span>
+model.fit(X_train, y_train)
+
+<span class="cm"># 5. evaluate on rows the model has never seen</span>
+pred = model.predict(X_test)
+<span class="fn">print</span>(<span class="st">f"test accuracy = {accuracy_score(y_test, pred):.3f}"</span>)
+<span class="out"># test accuracy = 0.982</span>
+<span class="fn">print</span>(confusion_matrix(y_test, pred))
+<span class="out"># [[41  1]        rows = truth (malignant, benign), columns = prediction</span>
+<span class="out">#  [ 1 71]]       one malignant tumour called benign: the error that matters</span>
+<span class="fn">print</span>(classification_report(y_test, pred, target_names=data.target_names, digits=<span class="nu">3</span>))
+<span class="out">#               precision    recall  f1-score   support</span>
+<span class="out">#    malignant      0.976     0.976     0.976        42</span>
+<span class="out">#       benign      0.986     0.986     0.986        72</span>
+<span class="out">#     accuracy                          0.982       114</span>
+
+<span class="cm"># 6. save the WHOLE pipeline (scaler + model together, one file)</span>
+joblib.dump(model, <span class="st">"tumour_model.joblib"</span>)
+
+<span class="cm"># 7. reload later (another script, a web service) and predict on a new row</span>
+loaded = joblib.load(<span class="st">"tumour_model.joblib"</span>)
+new_patient = X_test[:<span class="nu">1</span>]                                 <span class="cm"># one row, shape (1, 30) — 2-D, not (30,)</span>
+<span class="fn">print</span>(<span class="st">"prediction:"</span>, data.target_names[loaded.predict(new_patient)[<span class="nu">0</span>]],
+      <span class="st">"  P(benign) ="</span>, loaded.predict_proba(new_patient)[<span class="nu">0</span>, <span class="nu">1</span>].round(<span class="nu">3</span>))
+<span class="out"># prediction: malignant   P(benign) = 0.0</span></code></pre>
+
+<p>Seven steps, thirty lines. Notice what is <em>not</em> here: no loop over rows, no manual scaling, no separate scaler file. Notice also the metrics: accuracy alone hides that the one wrong prediction is a missed cancer. Chapter 6 is about choosing metrics that match the cost of each kind of error; Chapter 7 replaces the single split with cross-validation; Chapter 8 replaces <code>StandardScaler</code> with a <code>ColumnTransformer</code> that handles mixed column types. The skeleton never changes.</p>
+
+<div class="callout key"><div class="title">Key idea</div>
+<p><strong>The pipeline is the product.</strong> What you deploy, version, test and hand to a colleague is one fitted <code>Pipeline</code> object, not a notebook. If you cannot <code>joblib.load</code> it in a fresh Python session and get the same predictions, the project is not finished.</p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s8">8. Reproducibility &amp; debugging</h2>
+
+<h3>Reproducibility: the three pins</h3>
+<p>A result you cannot reproduce is an anecdote. Pin three things. <strong>Randomness:</strong> pass <code>random_state=</code> to every estimator and splitter that accepts it, and use a seeded <code>default_rng</code> for your own random code. <strong>Versions:</strong> the same seed gives different numbers across major library versions, and a model pickled with scikit-learn 1.4 may not load under 1.9, so record versions in <code>requirements.txt</code>. <strong>Data:</strong> a hash or a dated snapshot of the input file, because "the query returns different rows now" is the most common cause of un-reproducible ML.</p>
+
+<pre class="code" data-lang="python"><code><span class="kw">import</span> sys, platform
+<span class="kw">import</span> numpy, pandas, sklearn, matplotlib
+
+<span class="fn">print</span>(<span class="st">"python"</span>, sys.version.split()[<span class="nu">0</span>], <span class="st">"on"</span>, platform.system())
+<span class="kw">for</span> lib <span class="kw">in</span> (numpy, pandas, sklearn, matplotlib):
+    <span class="fn">print</span>(<span class="st">f"{lib.__name__:11s} {lib.__version__}"</span>)
+<span class="out"># python 3.11.15 on Linux</span>
+<span class="out"># numpy       2.4.6</span>
+<span class="out"># pandas      3.0.5</span>
+<span class="out"># sklearn     1.9.1</span>
+<span class="out"># matplotlib  3.11.2                    (yours will differ — that is the point of recording them)</span>
+
+<span class="cm"># lines to paste into requirements.txt (the pip name of sklearn is scikit-learn)</span>
+names = {<span class="st">"sklearn"</span>: <span class="st">"scikit-learn"</span>}
+<span class="fn">print</span>(<span class="st">"\n"</span>.join(<span class="st">f"{names.get(m.__name__, m.__name__)}=={m.__version__}"</span> <span class="kw">for</span> m <span class="kw">in</span> (numpy, pandas, sklearn, matplotlib)))
+<span class="out"># numpy==2.4.6</span>
+<span class="out"># pandas==3.0.5</span>
+<span class="out"># scikit-learn==1.9.1</span>
+<span class="out"># matplotlib==3.11.2</span></code></pre>
+
+<div class="callout warn"><div class="title">Common mistake</div>
+<p>Setting <code>random_state</code> on the model but not on <code>train_test_split</code> (or vice versa). Your accuracy then jumps around by a point or two between runs and you spend an afternoon "tuning" noise. Grep your script for every <code>random_state</code>-accepting call. Then, in Chapter 7, learn to <em>vary</em> the seed on purpose to measure that noise.</p>
+</div>
+
+<h3>Debugging: the ten error messages you will meet this month</h3>
+<p>Read the <em>last</em> line of a traceback first; it names the error. Then find the first line of the traceback that points at <em>your</em> file rather than a library. Nine times out of ten the fix is in this table.</p>
+
+<div class="tbl-wrap">
+<table class="tbl">
+<thead><tr><th>Message (abridged)</th><th>What it means</th><th>Fix</th></tr></thead>
+<tbody>
+<tr><td><code>ValueError: Expected 2D array, got 1D array instead</code></td><td>You passed a single feature as shape <code>(n,)</code>; sklearn wants <code>(n, 1)</code>.</td><td><code>X.reshape(-1, 1)</code> or <code>df[["col"]]</code> (double brackets).</td></tr>
+<tr><td><code>ValueError: X has 12 features, but … is expecting 13</code></td><td>Training and prediction data have different columns (a dropped column, a changed one-hot set).</td><td>Build features with the same Pipeline/ColumnTransformer for both; compare <code>model.feature_names_in_</code> to <code>X.columns</code>.</td></tr>
+<tr><td><code>ValueError: Input X contains NaN</code></td><td>Missing values reached a model that cannot handle them.</td><td>Add <code>SimpleImputer</code> to the pipeline, or check <code>df.isna().sum()</code> and decide; HistGradientBoosting accepts NaN natively.</td></tr>
+<tr><td><code>ValueError: could not convert string to float: 'north'</code></td><td>A text column went straight into a numeric model.</td><td><code>OneHotEncoder</code>/<code>OrdinalEncoder</code> in a <code>ColumnTransformer</code> (Chapter 8); or a numeric column stored as text: <code>pd.to_numeric</code>.</td></tr>
+<tr><td><code>NotFittedError: This … instance is not fitted yet</code></td><td>You called <code>predict</code>/<code>transform</code> before <code>fit</code>, or on a fresh copy of the estimator.</td><td>Call <code>fit</code> first; check you are using the fitted object, not a new one.</td></tr>
+<tr><td><code>ValueError: operands could not be broadcast together with shapes (3,2) (3,)</code></td><td>NumPy shape mismatch (Figure 4.3).</td><td>Print <code>.shape</code> of both; add an axis with <code>[:, None]</code> or fix the <code>axis=</code> in a reduction.</td></tr>
+<tr><td><code>ValueError: Found input variables with inconsistent numbers of samples: [500, 480]</code></td><td><code>X</code> and <code>y</code> have different row counts, usually after filtering only one of them.</td><td>Filter the DataFrame first, then split into <code>X</code> and <code>y</code> from the same filtered frame.</td></tr>
+<tr><td><code>KeyError: 'amount'</code></td><td>The column name does not exist: a typo, trailing whitespace, or different capitalisation in the file.</td><td><code>print(df.columns.tolist())</code>; <code>df.columns = df.columns.str.strip().str.lower()</code> right after loading.</td></tr>
+<tr><td><code>TypeError: unsupported operand type(s) for +: 'int' and 'str'</code> (or <code>agg function failed … dtype-&gt;object</code>)</td><td>Arithmetic on a column with mixed types.</td><td>Fix the dtype at load time: <code>pd.to_numeric(..., errors="coerce")</code>, then look at the rows that became NaN.</td></tr>
+<tr><td><code>ConvergenceWarning: lbfgs failed to converge</code></td><td>Logistic regression / SVM did not finish optimising, typically because features are unscaled.</td><td>Put <code>StandardScaler</code> in front of it; if still warned, raise <code>max_iter</code>.</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="callout pro"><div class="title">At work</div>
+<p>When stuck, reproduce the bug on the smallest possible input: <code>df.head(20)</code>, or a hand-typed 3-row DataFrame. Then print shapes and dtypes at every step (<code>print(X.shape, X.dtype)</code> is the most valuable line of debugging code in ML). Most "model bugs" are shape and dtype bugs wearing a costume.</p>
+</div>
+
+<h3>Which tool for which job?</h3>
+<div class="tbl-wrap">
+<table class="tbl">
+<thead><tr><th>Task</th><th>Use</th><th>Not</th></tr></thead>
+<tbody>
+<tr><td>Load, clean, join, aggregate tabular data</td><td>pandas</td><td>NumPy (no column names), pure-Python loops</td></tr>
+<tr><td>Numeric maths on the whole matrix at once</td><td>NumPy (or pandas, which calls NumPy)</td><td><code>apply</code> with a lambda</td></tr>
+<tr><td>Explore visually</td><td>matplotlib via <code>df.plot</code>, in a notebook</td><td>Excel screenshots</td></tr>
+<tr><td>Train, evaluate, tune, persist a classical model</td><td>scikit-learn Pipeline + <code>sklearn.metrics</code> + joblib</td><td>Hand-rolled loops, pickling only the model</td></tr>
+<tr><td>Deep learning (images, text, sequences)</td><td>PyTorch (Part III)</td><td>scikit-learn (it stops at small MLPs)</td></tr>
+<tr><td>Data larger than memory</td><td>Parquet + column selection; Polars/DuckDB/Spark when it still does not fit</td><td>Reading a 20 GB CSV into pandas</td></tr>
+</tbody>
+</table>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="quiz">Quiz</h2>
+<div class="quiz">
+  <h3>Check your understanding</h3>
+
+  <div class="q">
+    <p class="question">1. <code>A</code> has shape (5, 3) and <code>v</code> has shape (3,). What is the shape of <code>A - v</code>?</p>
+    <ul class="opts">
+      <li><button>Error: shapes do not match</button></li>
+      <li><button data-correct>(5, 3): v is broadcast across each of the 5 rows</button></li>
+      <li><button>(3,)</button></li>
+      <li><button>(5,): one value per row</button></li>
+    </ul>
+    <div class="explain">Aligning from the right, 3 matches 3; the missing left axis of <code>v</code> is treated as 1 and stretched to 5. That is exactly how <code>X - X.mean(axis=0)</code> centres every column.</div>
+  </div>
+
+  <div class="q">
+    <p class="question">2. After <code>orders = orders.sort_values("amount")</code>, what does <code>orders.loc[0]</code> return?</p>
+    <ul class="opts">
+      <li><button>The row with the smallest amount</button></li>
+      <li><button data-correct>The row that originally had index label 0, wherever it now sits</button></li>
+      <li><button>An error, because the index is no longer sorted</button></li>
+      <li><button>The first column</button></li>
+    </ul>
+    <div class="explain"><code>.loc</code> uses labels and sorting keeps the labels. <code>.iloc[0]</code> would give the smallest amount. Use <code>reset_index(drop=True)</code> if you want labels to follow the new order.</div>
+  </div>
+
+  <div class="q">
+    <p class="question">3. You fit a <code>StandardScaler</code> on the full dataset, then split, then train. Why is the test accuracy untrustworthy?</p>
+    <ul class="opts">
+      <li><button>Scaling changes the labels</button></li>
+      <li><button data-correct>Test rows influenced the scaling statistics, so the test set is no longer "unseen" data</button></li>
+      <li><button>StandardScaler only works after splitting</button></li>
+      <li><button>It is trustworthy; scaling is not learning</button></li>
+    </ul>
+    <div class="explain">Scaling learns a mean and standard deviation. Computing them on test rows is data leakage: mild here, but the same habit with imputation or target encoding produces badly optimistic scores. A Pipeline fitted on the training split removes the problem.</div>
+  </div>
+
+  <div class="q">
+    <p class="question">4. Which pandas operation implements "split-apply-combine"?</p>
+    <ul class="opts">
+      <li><button><code>merge</code></button></li>
+      <li><button><code>pivot</code></button></li>
+      <li><button data-correct><code>groupby</code> followed by an aggregation</button></li>
+      <li><button><code>apply</code> with a lambda</button></li>
+    </ul>
+    <div class="explain"><code>groupby</code> splits by key, the aggregation applies to each group, and pandas combines the results with the key as index (Figure 4.6).</div>
+  </div>
+
+  <div class="q">
+    <p class="question">5. <code>model.predict(x_new)</code> raises "Expected 2D array, got 1D array instead". What happened?</p>
+    <ul class="opts">
+      <li><button>The model was never fitted</button></li>
+      <li><button>x_new contains NaN</button></li>
+      <li><button data-correct>You passed one row as shape (n_features,) instead of (1, n_features)</button></li>
+      <li><button>The model only accepts DataFrames</button></li>
+    </ul>
+    <div class="explain">scikit-learn always wants a 2-D <code>X</code>, even for a single row. <code>x_new.reshape(1, -1)</code> or <code>X_test[:1]</code> fixes it.</div>
+  </div>
+
+  <div class="q">
+    <p class="question">6. Which should you save with joblib for deployment?</p>
+    <ul class="opts">
+      <li><button>Only the classifier; the scaler can be refitted on live data</button></li>
+      <li><button data-correct>The whole fitted Pipeline, plus a record of library versions</button></li>
+      <li><button>The training DataFrame</button></li>
+      <li><button>The notebook</button></li>
+    </ul>
+    <div class="explain">Live data must be scaled with the <em>training</em> statistics, so the fitted scaler travels with the model. One Pipeline object guarantees that; the version record guarantees it loads.</div>
+  </div>
+</div>
+
+<h2 id="exercises">Exercises</h2>
+
+<div class="exercise"><div class="title">Exercise 4.1 — Broadcasting by hand</div>
+<p>Without running code, give the result shape (or "error") for each pair, then check with <code>np.broadcast_shapes</code>: (a) (4, 1) and (1, 5); (b) (6, 3) and (3,); (c) (6, 3) and (6,); (d) (2, 1, 3) and (4, 3); (e) (5,) and (1,).</p>
+<details class="answer"><summary>Show answers</summary>
+<p>(a) (4, 5). (b) (6, 3). (c) error: 3 vs 6 on the last axis, neither is 1; fix with <code>v[:, None]</code> to make (6, 1). (d) (2, 4, 3): (4, 3) is padded to (1, 4, 3), then 1 stretches to 2 and 1 stretches to 4. (e) (5,): the size-1 array stretches, which is why a scalar works everywhere.</p>
+</details>
+</div>
+
+<div class="exercise"><div class="title">Exercise 4.2 — Rebuild the project on a different dataset</div>
+<p>Repeat the seven-step project of Section 7 on <code>load_wine</code> (3 classes). Swap <code>LogisticRegression</code> for <code>KNeighborsClassifier(n_neighbors=5)</code> without changing anything else, then remove the <code>StandardScaler</code> step and compare. Explain the drop.</p>
+<details class="answer"><summary>Show answer</summary>
+<p>With scaling, kNN scores ≈ 0.93–0.98 on a stratified 25% test split (seed-dependent). Without scaling it typically drops to ≈ 0.7, because kNN measures Euclidean distance and the <code>proline</code> feature (values in the hundreds to over a thousand) dominates all the others (values around 1–10). Distance- and gradient-based models need scaling; tree models (Chapter 9) do not. The fact that you changed one line to swap models is the Estimator API working as designed.</p>
+</details>
+</div>
+
+<div class="exercise"><div class="title">Exercise 4.3 — At work: a loading function with dtype contract</div>
+<p>Take a real CSV or database export from your job (or any messy CSV you can find). Write <code>load_data(path) -&gt; pd.DataFrame</code> in a <code>src/data.py</code> file that: (1) reads it; (2) normalises column names to lowercase snake_case; (3) forces every column to an explicit dtype (numeric, <code>category</code>, <code>datetime64</code>, bool, or string) with <code>pd.to_numeric(errors="coerce")</code> where needed; (4) prints a one-line report of rows, columns and NaN counts created by coercion; (5) asserts there are no duplicate rows. Then write a three-line test that calls it and checks the dtypes. Commit both.</p>
+<details class="answer"><summary>Show answer</summary>
+<p>The key points a good answer includes: <code>df.columns = df.columns.str.strip().str.lower().str.replace(r"\W+", "_", regex=True)</code>; an explicit dictionary <code>DTYPES = {"amount": "float64", "region": "category", "ordered": "datetime64[ns]"}</code> applied with <code>astype</code> (after <code>to_numeric</code>/<code>to_datetime</code> coercion); <code>assert not df.duplicated().any()</code>; and a test like <code>assert load_data("tests/fixtures/small.csv").dtypes["amount"] == "float64"</code>. This function is the first thing every later chapter's pipeline will call, and it is where dtype and NaN surprises get caught before they reach a model.</p>
+</details>
+</div>
+
+<div class="summary">
+  <h3>Chapter summary</h3>
+  <ul class="checklist">
+    <li>One environment per project, pinned in <code>requirements.txt</code>; explore in notebooks, keep reusable code in <code>src/</code>; raw data is read-only.</li>
+    <li>NumPy: shape and dtype are everything; index with <code>[row, col]</code>; filter with boolean masks; broadcasting aligns shapes from the right; never loop over elements.</li>
+    <li>Seed randomness with <code>np.random.default_rng(seed)</code> and <code>random_state=</code> everywhere.</li>
+    <li>pandas: <code>head/info/describe</code> after every load; <code>.loc</code> by label, <code>.iloc</code> by position; masks with parentheses; <code>groupby</code> = split-apply-combine; <code>merge(how="left")</code> then count NaNs.</li>
+    <li>pandas is label-aligned. Chained indexing, text-in-numeric columns, index alignment and the object dtype are the silent bugs to check first.</li>
+    <li>Five plots cover most EDA: histogram, scatter, line, bar, box. Save them from code.</li>
+    <li>scikit-learn: everything is an Estimator with <code>fit</code>; transformers <code>transform</code>, predictors <code>predict</code>/<code>score</code>; learned attributes end in <code>_</code>.</li>
+    <li>Split first, then fit a Pipeline on the training split only. That is what makes the test score honest.</li>
+    <li>Save the whole fitted Pipeline with joblib, next to its metrics and the library versions.</li>
+    <li>Debug by reading the last traceback line and printing <code>.shape</code> and <code>.dtype</code>; most model bugs are shape or dtype bugs.</li>
+  </ul>
+</div>
+
+<div class="mark-done"></div>
+<nav class="pager"></nav>
+
+</div></main>
+</div>
+<script src="../assets/chapters.js"></script>
+<script src="../assets/app.js"></script>
+<script>
+(function () {
+  /* ---------- Widget 1: broadcasting visualizer ---------- */
+  var selA = document.getElementById("bc-a"), selB = document.getElementById("bc-b");
+  var svg = document.getElementById("bc-svg"), out = document.getElementById("bc-r");
+  function parse(v) { return v.split(",").map(Number); }
+  function bshape(a, b) {
+    var n = Math.max(a.length, b.length), res = [];
+    for (var i = 0; i < n; i++) {
+      var da = a[a.length - 1 - i], db = b[b.length - 1 - i];
+      if (da === undefined) da = 1; if (db === undefined) db = 1;
+      if (da !== db && da !== 1 && db !== 1) return null;
+      res.unshift(Math.max(da, db));
+    }
+    return res;
+  }
+  function to2(s) { return s.length === 1 ? [1, s[0]] : s; }   // draw 1-D as a single row
+  function val(kind, shape2, r, c) {                            // value at (r,c) of the un-broadcast array
+    var rr = shape2[0] === 1 ? 0 : r, cc = shape2[1] === 1 ? 0 : c;
+    return kind === "A" ? 10 * (rr * shape2[1] + cc + 1) : (rr * shape2[1] + cc + 1);
+  }
+  function grid(x0, y0, kind, shape2, full, color) {
+    var s = "", cw = 40, ch = 30, rows = full ? full[0] : shape2[0], cols = full ? full[1] : shape2[1];
+    for (var r = 0; r < rows; r++) for (var c = 0; c < cols; c++) {
+      var real = r < shape2[0] && c < shape2[1];
+      var ghost = full && !(r < shape2[0] && c < shape2[1]);
+      var v = kind === "R" ? (val("A", to2(A), r, c) + val("B", to2(B), r, c)) : val(kind, shape2, r, c);
+      s += '<rect x="' + (x0 + c * cw) + '" y="' + (y0 + r * ch) + '" width="' + cw + '" height="' + ch + '" fill="' + color + '" fill-opacity="' + (ghost ? .08 : (kind === "R" ? .2 : .35)) + '" stroke="' + color + '"' + (ghost ? ' stroke-dasharray="3 2" stroke-opacity=".6"' : '') + '/>';
+      s += '<text x="' + (x0 + c * cw + cw / 2) + '" y="' + (y0 + r * ch + 20) + '" text-anchor="middle" font-size="12"' + (ghost ? ' fill="' + color + '" opacity=".7"' : ' font-weight="700"') + '>' + v + '</text>';
+    }
+    return s;
+  }
+  var A, B;
+  function render() {
+    A = parse(selA.value); B = parse(selB.value);
+    var R = bshape(A, B), s = "";
+    var a2 = to2(A), b2 = to2(B);
+    var label = function (x, y, t) { return '<text x="' + x + '" y="' + y + '" text-anchor="middle" font-size="12" font-weight="700">' + t + '</text>'; };
+    s += label(110, 22, "A  (" + A.join(", ") + (A.length === 1 ? "," : "") + ")");
+    s += label(370, 22, "B  (" + B.join(", ") + (B.length === 1 ? "," : "") + ")");
+    if (!R) {
+      s += grid(30, 36, "A", a2, null, "var(--s1)");
+      s += grid(290, 36, "B", b2, null, "var(--s2)");
+      s += '<text x="240" y="100" text-anchor="middle" font-size="22" font-weight="700">+</text>';
+      s += '<text x="500" y="100" text-anchor="middle" font-size="22" font-weight="700">=</text>';
+      s += '<rect x="530" y="60" width="210" height="80" rx="8" fill="var(--critical)" fill-opacity=".12" stroke="var(--critical)"/>';
+      s += '<text x="635" y="90" text-anchor="middle" font-size="12" font-weight="700" fill="var(--critical)">ValueError</text>';
+      s += '<text x="635" y="108" text-anchor="middle" font-size="11">operands could not be broadcast</text>';
+      s += '<text x="635" y="124" text-anchor="middle" font-size="11">together with shapes (' + A.join(",") + (A.length === 1 ? "," : "") + ') (' + B.join(",") + (B.length === 1 ? "," : "") + ')</text>';
+      s += '<text x="380" y="210" text-anchor="middle" font-size="11" opacity=".8">Right-aligned axes disagree and neither is 1. Add an axis: v[:, None] turns (3,) into (3, 1).</text>';
+      out.textContent = "error";
+    } else {
+      var full = R.length === 1 ? [1, R[0]] : R;
+      s += grid(30, 36, "A", a2, full, "var(--s1)");
+      s += grid(290, 36, "B", b2, full, "var(--s2)");
+      s += '<text x="240" y="100" text-anchor="middle" font-size="22" font-weight="700">+</text>';
+      s += '<text x="500" y="100" text-anchor="middle" font-size="22" font-weight="700">=</text>';
+      s += label(610, 22, "A + B  (" + R.join(", ") + (R.length === 1 ? "," : "") + ")");
+      s += grid(530, 36, "R", full, null, "var(--s7)");
+      s += '<text x="380" y="210" text-anchor="middle" font-size="11" opacity=".8">Faded cells are virtual copies along a size-1 axis. Result shape = element-wise max of the aligned shapes.</text>';
+      out.textContent = "(" + R.join(", ") + (R.length === 1 ? "," : "") + ")";
+    }
+    svg.innerHTML = s;
+  }
+  selA.addEventListener("change", render); selB.addEventListener("change", render); render();
+})();
+
+(function () {
+  /* ---------- Widget 2: split-apply-combine stepper ---------- */
+  var rows = [["ana", 120], ["ben", 80], ["ana", 80], ["cy", 200], ["ben", 65], ["ana", 40]];
+  var keys = ["ana", "ben", "cy"], cols = ["var(--s1)", "var(--s2)", "var(--s3)"];
+  var stage = 0, svg = document.getElementById("sac-svg"), agg = document.getElementById("sac-agg");
+  var stageOut = document.getElementById("sac-stage");
+  var names = ["0 · original table", "1 · SPLIT by customer", "2 · APPLY aggregation", "3 · COMBINE into result"];
+  function aggregate(vals) {
+    var f = agg.value;
+    if (f === "sum") return vals.reduce(function (a, b) { return a + b; }, 0);
+    if (f === "mean") return Math.round(vals.reduce(function (a, b) { return a + b; }, 0) / vals.length * 10) / 10;
+    if (f === "count") return vals.length;
+    return Math.max.apply(null, vals);
+  }
+  function cell(x, y, w, h, fill, op, t1, t2, bold) {
+    return '<rect x="' + x + '" y="' + y + '" width="' + w + '" height="' + h + '" fill="' + fill + '" fill-opacity="' + op + '" stroke="var(--border)"/>' +
+      '<text x="' + (x + 34) + '" y="' + (y + 17) + '" text-anchor="middle" font-size="12"' + (bold ? ' font-weight="700"' : '') + '>' + t1 + '</text>' +
+      '<text x="' + (x + w - 30) + '" y="' + (y + 17) + '" text-anchor="middle" font-size="12"' + (bold ? ' font-weight="700"' : '') + '>' + t2 + '</text>';
+  }
+  function render() {
+    var s = '', i, k;
+    s += '<text x="90" y="22" text-anchor="middle" font-size="12" font-weight="700">orders</text>';
+    s += cell(30, 30, 120, 24, "var(--surface-3)", 1, "cust", "amt", true);
+    for (i = 0; i < rows.length; i++) {
+      var ki = keys.indexOf(rows[i][0]);
+      s += cell(30, 54 + i * 24, 120, 24, stage >= 1 ? cols[ki] : "var(--surface-2)", stage >= 1 ? .22 : 1, rows[i][0], rows[i][1], false);
+    }
+    if (stage >= 1) {
+      s += '<text x="215" y="22" text-anchor="middle" font-size="11" font-weight="700" fill="var(--accent)">SPLIT →</text>';
+      var y = 30;
+      for (k = 0; k < keys.length; k++) {
+        var grp = rows.filter(function (r) { return r[0] === keys[k]; });
+        s += '<rect x="250" y="' + y + '" width="120" height="' + (grp.length * 22 + 6) + '" rx="4" fill="' + cols[k] + '" fill-opacity=".15" stroke="' + cols[k] + '"/>';
+        for (i = 0; i < grp.length; i++) s += '<text x="310" y="' + (y + 18 + i * 22) + '" text-anchor="middle" font-size="12">' + grp[i][0] + '  ' + grp[i][1] + '</text>';
+        if (stage >= 2) {
+          var v = aggregate(grp.map(function (r) { return r[1]; }));
+          s += '<line x1="375" y1="' + (y + (grp.length * 22 + 6) / 2) + '" x2="420" y2="' + (y + (grp.length * 22 + 6) / 2) + '" stroke="var(--ink-2)" stroke-width="1.5"/>';
+          s += '<rect x="425" y="' + (y + (grp.length * 22 + 6) / 2 - 14) + '" width="70" height="28" rx="4" fill="' + cols[k] + '" fill-opacity=".3" stroke="' + cols[k] + '"/>';
+          s += '<text x="460" y="' + (y + (grp.length * 22 + 6) / 2 + 5) + '" text-anchor="middle" font-size="12" font-weight="700">' + v + '</text>';
+        }
+        y += grp.length * 22 + 18;
+      }
+      if (stage >= 2) s += '<text x="435" y="22" text-anchor="middle" font-size="11" font-weight="700" fill="var(--accent)">APPLY ' + agg.value + '()</text>';
+    }
+    if (stage >= 3) {
+      s += '<text x="620" y="22" text-anchor="middle" font-size="11" font-weight="700" fill="var(--accent)">COMBINE →</text>';
+      s += cell(560, 54, 140, 24, "var(--surface-3)", 1, "cust", agg.value, true);
+      for (k = 0; k < keys.length; k++) {
+        var vals = rows.filter(function (r) { return r[0] === keys[k]; }).map(function (r) { return r[1]; });
+        s += cell(560, 78 + k * 24, 140, 24, cols[k], .22, keys[k], aggregate(vals), false);
+        s += '<line x1="500" y1="' + (78 + k * 24 + 12) + '" x2="555" y2="' + (78 + k * 24 + 12) + '" stroke="var(--ink-2)" stroke-width="1" stroke-dasharray="3 2"/>';
+      }
+      s += '<text x="630" y="172" text-anchor="middle" font-size="11" opacity=".8">index = cust</text>';
+    }
+    s += '<text x="380" y="222" text-anchor="middle" font-size="11" font-family="ui-monospace, Menlo, monospace">orders.groupby("cust")["amt"].' + agg.value + '()' + (stage < 3 ? "   — stage " + stage + " of 3" : "   ✓") + '</text>';
+    svg.innerHTML = s;
+    stageOut.textContent = names[stage];
+  }
+  document.getElementById("sac-step").addEventListener("click", function () { stage = (stage + 1) % 4; render(); });
+  document.getElementById("sac-reset").addEventListener("click", function () { stage = 0; render(); });
+  agg.addEventListener("change", render);
+  render();
+})();
+</script>
+</body>
+</html>

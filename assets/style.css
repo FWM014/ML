@@ -32,6 +32,10 @@
   --warn-bg: #fdeaea; --warn-border: #d03b3b;
   --pro-bg: #e6f7ef;  --pro-border: #1baf7a;
   --math-bg: #efecfa; --math-border: #4a3aa7;
+  --lab-bg: #e0f4f6;  --lab-border: #1baf7a;
+  --dd-bg: #f4f2fb;   --dd-border: #4a3aa7;
+  /* callout title ink (readable on the tinted backgrounds) */
+  --eli9-fg: #8a5a00; --key-fg: #1b5fb0; --warn-fg: #b02a2a; --pro-fg: #0f7a54; --math-fg: #3d2f8f; --lab-fg: #0c6e78; --dd-fg: #3d2f8f;
   /* code */
   --code-bg: #1e1f22; --code-ink: #e6e6e6; --code-border: #2c2d31;
   --inline-code-bg: #ecebe7;
@@ -39,44 +43,56 @@
   --sidebar-w: 280px;
   --content-w: 900px;
   --radius: 10px;
+  --base-fs: 17px;
+  --scrim: rgba(12,12,12,.78);
   --shadow: 0 1px 2px rgba(0,0,0,.06), 0 4px 16px rgba(0,0,0,.05);
   --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif;
   --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
 }
 
+/* Dark tokens are declared once here and applied twice below (system preference / explicit choice).
+   Series colours are lifted ~1 step so they stay saturated on the dark surfaces; status greens/reds likewise. */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     color-scheme: dark;
-    --bg: #131312; --surface: #1a1a19; --surface-2: #232322; --surface-3: #2e2e2c;
-    --border: #383835; --ink: #ffffff; --ink-2: #c3c2b7; --ink-3: #8f8e86;
-    --accent: #3987e5; --accent-soft: #1c2e45;
-    --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500;
-    --s5: #d55181; --s6: #008300; --s7: #9085e9; --s8: #e66767;
-    --eli9-bg: #2c2410; --key-bg: #142337; --warn-bg: #351a1a; --pro-bg: #12291f; --math-bg: #1f1b33;
-    --code-bg: #0f1012; --code-ink: #e6e6e6; --code-border: #26272b;
-    --inline-code-bg: #2a2a28;
-    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 4px 16px rgba(0,0,0,.3);
+    --bg: #121211; --surface: #1b1b1a; --surface-2: #242423; --surface-3: #30302e;
+    --border: #3a3a37; --ink: #f4f3ef; --ink-2: #c9c8bd; --ink-3: #959389;
+    --accent: #4a92ea; --accent-ink: #ffffff; --accent-soft: #1b2f4b;
+    --s1: #4a92ea; --s2: #f07a48; --s3: #2cc48a; --s4: #e8ac1e;
+    --s5: #ea7ea6; --s6: #4fbf4f; --s7: #a99df2; --s8: #f07070;
+    --q100: #16304f; --q200: #1b4373; --q300: #225a9c; --q400: #2e74c6; --q500: #4a92ea; --q600: #7ab3f2; --q700: #b6d4f9;
+    --good: #43c443; --warn: #f5b62a; --serious: #f0906a; --critical: #ef5c5c;
+    --eli9-bg: #2b2310; --key-bg: #14243a; --warn-bg: #361a1a; --pro-bg: #11291f; --math-bg: #201c36; --lab-bg: #0f2a2e; --dd-bg: #1c1a2b;
+    --eli9-fg: #f2c35b; --key-fg: #8ec0ff; --warn-fg: #ff8f8f; --pro-fg: #5fd9a5; --math-fg: #c3b8ff; --lab-fg: #5fd3dc; --dd-fg: #c3b8ff;
+    --code-bg: #0c0d0f; --code-ink: #e8e8e6; --code-border: #303236;
+    --inline-code-bg: #2c2c2a;
+    --scrim: rgba(0,0,0,.82);
+    --shadow: 0 1px 2px rgba(0,0,0,.5), 0 6px 20px rgba(0,0,0,.45);
   }
 }
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --bg: #131312; --surface: #1a1a19; --surface-2: #232322; --surface-3: #2e2e2c;
-  --border: #383835; --ink: #ffffff; --ink-2: #c3c2b7; --ink-3: #8f8e86;
-  --accent: #3987e5; --accent-soft: #1c2e45;
-  --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500;
-  --s5: #d55181; --s6: #008300; --s7: #9085e9; --s8: #e66767;
-  --eli9-bg: #2c2410; --key-bg: #142337; --warn-bg: #351a1a; --pro-bg: #12291f; --math-bg: #1f1b33;
-  --code-bg: #0f1012; --code-ink: #e6e6e6; --code-border: #26272b;
-  --inline-code-bg: #2a2a28;
-  --shadow: 0 1px 2px rgba(0,0,0,.4), 0 4px 16px rgba(0,0,0,.3);
+  --bg: #121211; --surface: #1b1b1a; --surface-2: #242423; --surface-3: #30302e;
+  --border: #3a3a37; --ink: #f4f3ef; --ink-2: #c9c8bd; --ink-3: #959389;
+  --accent: #4a92ea; --accent-ink: #ffffff; --accent-soft: #1b2f4b;
+  --s1: #4a92ea; --s2: #f07a48; --s3: #2cc48a; --s4: #e8ac1e;
+  --s5: #ea7ea6; --s6: #4fbf4f; --s7: #a99df2; --s8: #f07070;
+  --q100: #16304f; --q200: #1b4373; --q300: #225a9c; --q400: #2e74c6; --q500: #4a92ea; --q600: #7ab3f2; --q700: #b6d4f9;
+  --good: #43c443; --warn: #f5b62a; --serious: #f0906a; --critical: #ef5c5c;
+  --eli9-bg: #2b2310; --key-bg: #14243a; --warn-bg: #361a1a; --pro-bg: #11291f; --math-bg: #201c36; --lab-bg: #0f2a2e; --dd-bg: #1c1a2b;
+  --eli9-fg: #f2c35b; --key-fg: #8ec0ff; --warn-fg: #ff8f8f; --pro-fg: #5fd9a5; --math-fg: #c3b8ff; --lab-fg: #5fd3dc; --dd-fg: #c3b8ff;
+  --code-bg: #0c0d0f; --code-ink: #e8e8e6; --code-border: #303236;
+  --inline-code-bg: #2c2c2a;
+  --scrim: rgba(0,0,0,.82);
+  --shadow: 0 1px 2px rgba(0,0,0,.5), 0 6px 20px rgba(0,0,0,.45);
 }
 
 /* ---------- base ---------- */
 *, *::before, *::after { box-sizing: border-box; }
-html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; }
+html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; font-size: var(--base-fs); }
 body {
   margin: 0; background: var(--bg); color: var(--ink);
-  font-family: var(--font); font-size: 17px; line-height: 1.65;
+  font-family: var(--font); font-size: 1rem; line-height: 1.65;
 }
 a { color: var(--accent); text-decoration: none; }
 a:hover { text-decoration: underline; }

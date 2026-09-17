@@ -415,3 +415,130 @@
 <div class="callout eli9"><div class="title">Explain it like I'm 9</div>
 <p>A smoke detector that never beeps is "99.9% accurate" because there is almost never a fire. That is why accuracy is a bad report card for rare things. Instead we ask two questions: when it beeps, was there really a fire (precision)? And when there was a fire, did it beep (recall)? The metric table is just a list of which report card to use for which kind of test.</p>
 </div>
+
+<!-- ============================================================ -->
+<h2 id="s5">5. Formula sheet</h2>
+
+<p>Every formula the book used, one line of meaning each, grouped by theme. The symbols are the book's standard ones: <em>x</em> is an input vector, <em>y</em> a true target, <em>ŷ</em> a prediction, <em>w</em> weights, <em>n</em> the number of examples, <em>p</em> a predicted probability. If a formula does not make sense in one reading, the chapter reference is where the slow explanation lives.</p>
+
+<figure class="fig">
+<svg viewBox="0 0 900 330" role="img" aria-label="Anatomy of the confusion matrix: a two-by-two grid of TP, FN, FP, TN with recall computed along the actual-positive row, precision down the predicted-positive column and specificity along the actual-negative row; beside it a small ROC curve showing AUC as the area under the curve">
+  <defs><marker id="arr-f4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+  <text x="230" y="24" text-anchor="middle" class="lbl-strong" font-size="14">Confusion matrix (binary)</text>
+  <!-- header labels -->
+  <text x="230" y="52" text-anchor="middle" class="lbl-strong" font-size="11">predicted</text>
+  <text x="170" y="72" text-anchor="middle" class="lbl" font-size="11">positive</text>
+  <text x="290" y="72" text-anchor="middle" class="lbl" font-size="11">negative</text>
+  <text x="70" y="140" text-anchor="middle" class="lbl-strong" font-size="11" transform="rotate(-90 70 140)">actual</text>
+  <text x="95" y="140" text-anchor="middle" class="lbl" font-size="11" transform="rotate(-90 95 140)">positive</text>
+  <text x="95" y="230" text-anchor="middle" class="lbl" font-size="11" transform="rotate(-90 95 230)">negative</text>
+  <!-- cells -->
+  <rect x="110" y="80" width="120" height="90" fill="var(--s1)" fill-opacity=".28" stroke="var(--border)"/>
+  <rect x="230" y="80" width="120" height="90" fill="var(--critical)" fill-opacity=".18" stroke="var(--border)"/>
+  <rect x="110" y="170" width="120" height="90" fill="var(--critical)" fill-opacity=".18" stroke="var(--border)"/>
+  <rect x="230" y="170" width="120" height="90" fill="var(--s1)" fill-opacity=".12" stroke="var(--border)"/>
+  <text x="170" y="118" text-anchor="middle" class="lbl-strong" font-size="16">TP</text><text x="170" y="138" text-anchor="middle" class="lbl" font-size="10">hit</text>
+  <text x="290" y="118" text-anchor="middle" class="lbl-strong" font-size="16">FN</text><text x="290" y="138" text-anchor="middle" class="lbl" font-size="10">miss (type II)</text>
+  <text x="170" y="208" text-anchor="middle" class="lbl-strong" font-size="16">FP</text><text x="170" y="228" text-anchor="middle" class="lbl" font-size="10">false alarm (type I)</text>
+  <text x="290" y="208" text-anchor="middle" class="lbl-strong" font-size="16">TN</text><text x="290" y="228" text-anchor="middle" class="lbl" font-size="10">correct rejection</text>
+  <!-- recall along row -->
+  <path d="M360,125 L400,125" class="arrow" stroke="var(--s2)" marker-end="url(#arr-f4)"/>
+  <text x="406" y="121" class="lbl-strong" font-size="11" fill="var(--s2)">recall = TP / (TP + FN)</text>
+  <text x="406" y="135" class="lbl" font-size="10">"of the real positives, how many did we catch?"</text>
+  <path d="M360,215 L400,215" class="arrow" stroke="var(--s3)" marker-end="url(#arr-f4)"/>
+  <text x="406" y="211" class="lbl-strong" font-size="11" fill="var(--s3)">specificity = TN / (TN + FP)</text>
+  <text x="406" y="225" class="lbl" font-size="10">"of the real negatives, how many did we clear?"</text>
+  <!-- precision down column -->
+  <path d="M170,262 L170,282" class="arrow" stroke="var(--s7)" marker-end="url(#arr-f4)"/>
+  <text x="170" y="300" text-anchor="middle" class="lbl-strong" font-size="11" fill="var(--s7)">precision = TP / (TP + FP)</text>
+  <text x="170" y="314" text-anchor="middle" class="lbl" font-size="10">"of our alarms, how many were real?"</text>
+  <!-- F1 -->
+  <text x="406" y="262" class="lbl-strong" font-size="11">F1 = 2·P·R / (P + R)   ·   accuracy = (TP + TN) / N</text>
+  <text x="406" y="278" class="lbl" font-size="10">F1 is the harmonic mean: both P and R must be good.</text>
+  <!-- ROC mini -->
+  <text x="760" y="24" text-anchor="middle" class="lbl-strong" font-size="14">ROC curve &amp; AUC</text>
+  <line x1="660" y1="250" x2="860" y2="250" class="axis" marker-end="url(#arr-f4)"/>
+  <line x1="660" y1="250" x2="660" y2="50" class="axis" marker-end="url(#arr-f4)"/>
+  <text x="760" y="270" text-anchor="middle" class="lbl" font-size="11">false positive rate (1 − specificity)</text>
+  <text x="640" y="150" text-anchor="middle" class="lbl" font-size="11" transform="rotate(-90 640 150)">true positive rate (recall)</text>
+  <path d="M660,250 L850,60" stroke="var(--ink-3)" stroke-dasharray="4 3" fill="none"/>
+  <path d="M660,250 C 665,150 700,90 760,75 C 800,66 840,62 850,60 L850,250 Z" fill="var(--s1)" fill-opacity=".18" stroke="none"/>
+  <path d="M660,250 C 665,150 700,90 760,75 C 800,66 840,62 850,60" stroke="var(--s1)" stroke-width="2.5" fill="none"/>
+  <circle cx="700" cy="100" r="5" fill="var(--s7)"/>
+  <text x="708" y="97" class="lbl" font-size="10" fill="var(--s7)">one threshold</text>
+  <text x="770" y="180" text-anchor="middle" class="lbl-strong" font-size="12" fill="var(--s1)">AUC ≈ 0.88</text>
+  <text x="770" y="196" text-anchor="middle" class="lbl" font-size="10">= P(random positive scores</text>
+  <text x="770" y="209" text-anchor="middle" class="lbl" font-size="10">above random negative)</text>
+  <text x="808" y="150" text-anchor="end" class="lbl" font-size="10" transform="rotate(-45 808 150)">random = 0.5</text>
+  <text x="760" y="305" text-anchor="middle" class="lbl" font-size="10">Each point = the (FPR, TPR) of one threshold; sweeping the threshold traces the curve.</text>
+</svg>
+<figcaption><strong>Figure 24.4 — Every classification metric is a ratio of these four cells.</strong> Recall reads across the actual-positive row, precision reads down the predicted-positive column, specificity reads across the actual-negative row. The ROC curve is what you get by sweeping the threshold and plotting (FPR, TPR); its area is the probability that a random positive outranks a random negative (Chapter 6).</figcaption>
+</figure>
+
+<h3>Regression &amp; linear models</h3>
+<div class="callout math"><div class="title">The math</div>
+<div class="formula">ŷ = w<sub>0</sub> + w<sub>1</sub>x<sub>1</sub> + … + w<sub>d</sub>x<sub>d</sub> = w<sup>T</sup>x + b</div>
+<p><strong>Linear model (Ch 5).</strong> A weighted sum of the features plus an intercept; each w<sub>j</sub> is "change in ŷ per unit of x<sub>j</sub>, holding the rest fixed".</p>
+<div class="formula">MSE = (1/n) ∑ (y<sub>i</sub> − ŷ<sub>i</sub>)² &nbsp;&nbsp; RMSE = √MSE &nbsp;&nbsp; MAE = (1/n) ∑ |y<sub>i</sub> − ŷ<sub>i</sub>|</div>
+<p><strong>Regression errors (Ch 5).</strong> MSE squares the misses (big ones dominate, and it is differentiable); RMSE is MSE back in the units of y; MAE is the typical absolute miss and is robust to outliers.</p>
+<div class="formula">R² = 1 − ∑ (y<sub>i</sub> − ŷ<sub>i</sub>)² / ∑ (y<sub>i</sub> − ȳ)²</div>
+<p><strong>Coefficient of determination (Ch 5).</strong> Fraction of the target's variance the model explains; 0 = no better than predicting the mean, 1 = perfect, negative = worse than the mean (possible on test data).</p>
+<div class="formula">L1 (Lasso): loss + λ ∑ |w<sub>j</sub>| &nbsp;&nbsp;&nbsp; L2 (Ridge): loss + λ ∑ w<sub>j</sub>²</div>
+<p><strong>Regularization penalties (Ch 5, 7).</strong> Both shrink weights toward zero to reduce variance; L1 drives some weights to exactly zero (feature selection), L2 shrinks all of them smoothly. In scikit-learn λ is <code>alpha</code> for Ridge/Lasso and 1/<code>C</code> for logistic regression and SVM.</p>
+<div class="formula">Bias–variance: E[(y − ŷ)²] = Bias(ŷ)² + Var(ŷ) + σ²<sub>noise</sub></div>
+<p><strong>Bias–variance decomposition (Ch 7).</strong> Expected squared error = systematic error from a too-simple model + sensitivity to which training set you happened to get + irreducible noise; more flexibility lowers bias and raises variance.</p>
+</div>
+
+<h3>Classification &amp; probability</h3>
+<div class="callout math"><div class="title">The math</div>
+<div class="formula">σ(z) = 1 / (1 + e<sup>−z</sup>), &nbsp; z = w<sup>T</sup>x + b, &nbsp; p = σ(z)</div>
+<p><strong>Sigmoid / logistic regression (Ch 6).</strong> Squashes any real number into (0, 1) so a linear score becomes a probability; z is the log-odds, so each unit of x<sub>j</sub> multiplies the odds by e<sup>w<sub>j</sub></sup>.</p>
+<div class="formula">Log-loss = −(1/n) ∑ [ y<sub>i</sub> log p<sub>i</sub> + (1 − y<sub>i</sub>) log(1 − p<sub>i</sub>) ]</div>
+<p><strong>Binary cross-entropy (Ch 6).</strong> Penalizes confident wrong probabilities without bound (p → 0 for a positive costs → ∞); minimizing it is maximum-likelihood fitting.</p>
+<div class="formula">softmax(z)<sub>k</sub> = e<sup>z<sub>k</sub></sup> / ∑<sub>j</sub> e<sup>z<sub>j</sub></sup> &nbsp;&nbsp;&nbsp; CE = −∑<sub>k</sub> y<sub>k</sub> log p<sub>k</sub></div>
+<p><strong>Softmax and cross-entropy (Ch 6, 15).</strong> Softmax turns K scores into K probabilities that sum to 1; cross-entropy is −log of the probability given to the true class (one-hot y picks it out).</p>
+<div class="formula">Precision = TP/(TP+FP) &nbsp; Recall = TP/(TP+FN) &nbsp; F1 = 2·P·R/(P+R) &nbsp; F<sub>β</sub> = (1+β²)·P·R / (β²P + R)</div>
+<p><strong>Threshold metrics (Ch 6).</strong> Precision = purity of the alarms, recall = coverage of the real positives, F1 = their harmonic mean; F<sub>β</sub> with β = 2 weights recall more (fraud, cancer screening), β = 0.5 weights precision more.</p>
+<div class="formula">AUC = P( score(random positive) &gt; score(random negative) )</div>
+<p><strong>ROC-AUC meaning (Ch 6).</strong> The area under the ROC curve equals the probability that the model ranks a random positive above a random negative; 0.5 is coin-flipping, 1.0 is perfect ranking, and it does not depend on the threshold or on class balance.</p>
+<div class="formula">MCC = (TP·TN − FP·FN) / √[(TP+FP)(TP+FN)(TN+FP)(TN+FN)]</div>
+<p><strong>Matthews correlation coefficient (Ch 6, 13).</strong> Correlation between predicted and actual labels, from −1 to +1; unlike F1 it uses all four cells, so it stays honest on imbalanced data.</p>
+<div class="formula">P(A | B) = P(B | A) · P(A) / P(B)</div>
+<p><strong>Bayes' theorem (Ch 3, 11).</strong> Posterior = likelihood × prior / evidence; Naive Bayes multiplies per-feature likelihoods as if features were independent given the class.</p>
+</div>
+
+<h3>Trees</h3>
+<div class="callout math"><div class="title">The math</div>
+<div class="formula">Gini(S) = 1 − ∑<sub>k</sub> p<sub>k</sub>² &nbsp;&nbsp;&nbsp; H(S) = −∑<sub>k</sub> p<sub>k</sub> log<sub>2</sub> p<sub>k</sub></div>
+<p><strong>Gini impurity and entropy (Ch 9).</strong> Both measure how mixed the classes are in a node (0 = pure); Gini is the probability two random draws disagree, entropy is the bits needed to encode the class.</p>
+<div class="formula">IG(S, split) = H(S) − ∑<sub>children c</sub> (|S<sub>c</sub>| / |S|) · H(S<sub>c</sub>)</div>
+<p><strong>Information gain (Ch 9).</strong> Impurity of the parent minus the size-weighted impurity of the children; the tree greedily picks the feature and threshold with the largest gain. For regression, impurity is the node's MSE.</p>
+</div>
+
+<h3>Optimization</h3>
+<div class="callout math"><div class="title">The math</div>
+<div class="formula">w ← w − η · ∇<sub>w</sub> L(w)</div>
+<p><strong>Gradient descent (Ch 5, 15).</strong> Step downhill on the loss surface in the direction of steepest descent; η is the learning rate, and mini-batch/stochastic versions estimate ∇L from a batch.</p>
+<div class="formula">v ← β v + ∇L; &nbsp; w ← w − η v</div>
+<p><strong>Momentum (Ch 16).</strong> Keep a running average of past gradients (β ≈ 0.9) so steps accelerate along consistent directions and damp out oscillations.</p>
+<div class="formula">m ← β<sub>1</sub>m + (1−β<sub>1</sub>)g; &nbsp; v ← β<sub>2</sub>v + (1−β<sub>2</sub>)g²; &nbsp; w ← w − η · m̂ / (√v̂ + ε)</div>
+<p><strong>Adam (Ch 16).</strong> Momentum on the gradient (m) plus a per-parameter running scale (v) so every weight gets its own effective learning rate; the hats are bias corrections for the first steps. Defaults β<sub>1</sub> = 0.9, β<sub>2</sub> = 0.999, η = 10⁻³ work surprisingly often.</p>
+</div>
+
+<h3>Similarity, attention, explanation &amp; the rest</h3>
+<div class="callout math"><div class="title">The math</div>
+<div class="formula">cos(a, b) = a·b / (‖a‖ ‖b‖)</div>
+<p><strong>Cosine similarity (Ch 12, 19).</strong> The cosine of the angle between two vectors, ignoring their length; 1 = same direction, 0 = unrelated, −1 = opposite. The standard measure for embeddings.</p>
+<div class="formula">Attention(Q, K, V) = softmax( Q K<sup>T</sup> / √d<sub>k</sub> ) V</div>
+<p><strong>Scaled dot-product attention (Ch 18).</strong> Each query scores every key by dot product, the scores become weights through softmax (divided by √d<sub>k</sub> to keep them well-scaled), and the output is the weighted average of the values — a learned, content-based lookup.</p>
+<div class="formula">φ<sub>i</sub> = ∑<sub>S ⊆ F∖{i}</sub> [ |S|! (|F| − |S| − 1)! / |F|! ] · [ f(S ∪ {i}) − f(S) ]</div>
+<p><strong>Shapley value (Ch 20).</strong> Feature i's contribution is its average marginal effect on the prediction over every possible order in which features could be added; SHAP values sum exactly to prediction minus the average prediction.</p>
+<div class="formula">PSI = ∑<sub>bins</sub> (p<sub>now</sub> − p<sub>ref</sub>) · ln( p<sub>now</sub> / p<sub>ref</sub> )</div>
+<p><strong>Population stability index (Ch 21).</strong> Drift between a reference distribution and today's, computed over bins; rule of thumb &lt; 0.1 stable, 0.1–0.25 watch, &gt; 0.25 investigate or retrain.</p>
+<div class="formula">Q(s, a) ← Q(s, a) + α [ r + γ max<sub>a'</sub> Q(s', a') − Q(s, a) ]</div>
+<p><strong>Q-learning update (Ch 22).</strong> Nudge the value of taking action a in state s toward the reward received plus the discounted best value of the next state; α is the learning rate, γ the discount factor.</p>
+<div class="formula">ARIMA(p, d, q): &nbsp; y'<sub>t</sub> = c + ∑<sub>i=1..p</sub> φ<sub>i</sub> y'<sub>t−i</sub> + ∑<sub>j=1..q</sub> θ<sub>j</sub> ε<sub>t−j</sub> + ε<sub>t</sub>, &nbsp; y' = series differenced d times</div>
+<p><strong>ARIMA notation (Ch 14).</strong> p past values (autoregressive), d rounds of differencing to make the series stationary, q past forecast errors (moving average); seasonal SARIMA adds (P, D, Q)<sub>m</sub> at the seasonal lag m.</p>
+<div class="formula">z = (x − μ) / σ</div>
+<p><strong>z-score / standardization (Ch 3, 8).</strong> Express a value as "how many standard deviations from the mean"; what <code>StandardScaler</code> does, and the basis of a first-pass outlier rule (|z| &gt; 3).</p>
+</div>

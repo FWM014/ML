@@ -1,0 +1,10 @@
+{
+  "python.testing.pytestEnabled": true,
+  "python.testing.unittestEnabled": false,
+  "python.testing.pytestArgs": ["labs/tests", "-q"],
+  "python.analysis.extraPaths": ["${workspaceFolder}"],
+  "python.terminal.executeInFileDir": false,
+  "files.exclude": { "**/__pycache__": true, "**/.pytest_cache": true },
+  "editor.rulers": [100],
+  "livePreview.defaultPreviewPath": "/index.html"
+}

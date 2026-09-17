@@ -452,7 +452,7 @@ tr_idx, te_idx = <span class="fn">next</span>(gss.split(df, groups=df[<span clas
 overlap = <span class="fn">set</span>(df.company_id.iloc[tr_idx]) &amp; <span class="fn">set</span>(df.company_id.iloc[te_idx])
 <span class="fn">print</span>(<span class="st">"group split:"</span>, <span class="fn">len</span>(tr_idx), <span class="fn">len</span>(te_idx), <span class="st">"| companies in both:"</span>, <span class="fn">len</span>(overlap))
 <span class="out"># time split : 1600 400 | test starts 2024-01-26</span>
-<span class="out"># group split: 1624 376 | companies in both: 0</span></code></pre>
+<span class="out"># group split: 1595 405 | companies in both: 0</span></code></pre>
 
 <div class="callout pro"><div class="title">At work</div>
 <p>Decide the split strategy <em>in the problem-definition meeting</em>, not in the notebook. Ask: "Will this model score customers we have never seen (→ group split)? Will it score next month's data (→ time split)? Both (→ group-aware time split)?" Then write the split code once, save the row IDs of each set to a file, and make every experiment load the same file. Re-splitting with a different seed for each experiment is how teams end up comparing models on different data without noticing.</p>
@@ -618,3 +618,654 @@ right = cross_val_score(make_pipeline(SelectKBest(f_classif, k=<span class="nu">
 <p><strong>Oversampling the minority class before splitting.</strong> Techniques such as SMOTE create synthetic churners that are interpolations of real churners. If you oversample and then split, copies of test-set churners end up in training. Accuracy on the "test" set becomes meaningless. Always split first; resample only the training fold, inside a pipeline (Chapter 13).</p>
 </div>
 
+<!-- ============================================================ -->
+<h2 id="s6">6. Exploratory data analysis (EDA)</h2>
+
+<p>EDA is the half-day you spend looking at the data before you model it. Beginners skip it because it does not feel like ML. Experts never skip it, because it is where you find the -999 ages, the duplicate customers, the column that is 80% empty, and the leak. The goal is not pretty plots; it is a list of <em>findings</em>, each of which changes what you do next.</p>
+
+<h3>The questions EDA answers</h3>
+<div class="tbl-wrap">
+<table class="tbl">
+<thead><tr><th>Question</th><th>Tool</th><th>What a finding changes</th></tr></thead>
+<tbody>
+<tr><td>How many rows and columns, and is that what I was promised?</td><td><code>df.shape</code>, <code>df.info()</code></td><td>Scope; whether the export was complete.</td></tr>
+<tr><td>What does each numeric column look like?</td><td>histogram, <code>describe()</code></td><td>Skew → log transform; impossible values → sentinels; multimodal → hidden segments.</td></tr>
+<tr><td>Where are the outliers, and are they errors or real?</td><td>boxplot, quantiles</td><td>Fix errors; keep real extremes (they are often the most important rows).</td></tr>
+<tr><td>Which features move together?</td><td>correlation matrix</td><td>Redundant pairs → drop one for linear models; a feature at 0.9 with the label → leak.</td></tr>
+<tr><td>What is missing, and is the missingness itself a pattern?</td><td><code>isna().sum()</code>, missingness matrix</td><td>Imputation strategy; a "missing" indicator feature; sometimes missingness is a leak.</td></tr>
+<tr><td>Are there duplicates?</td><td><code>duplicated()</code></td><td>Remove before splitting.</td></tr>
+<tr><td>How balanced is the label?</td><td><code>value_counts(normalize=True)</code></td><td>Choice of metric (Ch 6), class weights (Ch 13), what "accuracy" even means.</td></tr>
+<tr><td>How many levels do the categoricals have?</td><td><code>nunique()</code>, <code>value_counts()</code></td><td>One-hot is fine for 5 levels, not for 50,000; rare levels need grouping.</td></tr>
+<tr><td>Does each feature actually relate to the target?</td><td>target-vs-feature plots</td><td>Whether there is signal at all; monotone vs. non-linear shape → model choice.</td></tr>
+</tbody>
+</table>
+</div>
+
+<figure class="fig">
+<svg viewBox="0 0 800 290" role="img" aria-label="Left: histogram of monthly spend, right-skewed with a long tail. Right: horizontal boxplot of the same column with median, quartiles, whiskers and outlier dots beyond the upper fence">
+  <defs><marker id="arr-f6" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+  <text x="210" y="24" text-anchor="middle" class="lbl-strong" font-size="13">Histogram: monthly_spend (2,000 customers)</text>
+  <line x1="50" y1="230" x2="390" y2="230" class="axis" marker-end="url(#arr-f6)"/>
+  <line x1="50" y1="230" x2="50" y2="45" class="axis" marker-end="url(#arr-f6)"/>
+  <g fill="var(--s1)" fill-opacity=".85" stroke="var(--surface)" stroke-width="1">
+    <rect x="52" y="190" width="30" height="40"/><rect x="82" y="70" width="30" height="160"/><rect x="112" y="84" width="30" height="146"/>
+    <rect x="142" y="148" width="30" height="82"/><rect x="172" y="198" width="30" height="32"/><rect x="202" y="218" width="30" height="12"/>
+    <rect x="232" y="228" width="30" height="2"/><rect x="262" y="229" width="30" height="1"/><rect x="352" y="228" width="30" height="2"/>
+  </g>
+  <g class="lbl" font-size="10">
+    <text x="52" y="246" text-anchor="middle">0</text><text x="112" y="246" text-anchor="middle">40</text><text x="172" y="246" text-anchor="middle">80</text><text x="232" y="246" text-anchor="middle">120</text><text x="292" y="246" text-anchor="middle">160</text><text x="352" y="246" text-anchor="middle">200</text>
+  </g>
+  <text x="220" y="266" text-anchor="middle" class="lbl">monthly spend ($)</text>
+  <text x="28" y="140" text-anchor="middle" class="lbl" transform="rotate(-90 28 140)">customers</text>
+  <text x="97" y="62" text-anchor="middle" class="lbl" font-size="10">675</text>
+  <line x1="120" y1="45" x2="120" y2="230" stroke="var(--s2)" stroke-width="1.5" stroke-dasharray="4 3"/>
+  <text x="124" y="56" class="lbl" font-size="10" fill="var(--s2)">median 44</text>
+  <line x1="126" y1="45" x2="126" y2="230" stroke="var(--s7)" stroke-width="1.5" stroke-dasharray="2 2"/>
+  <text x="196" y="110" class="lbl" font-size="10">mean 48 &gt; median:</text>
+  <text x="196" y="124" class="lbl" font-size="10">right-skewed, long tail</text>
+  <text x="300" y="200" class="lbl" font-size="10" text-anchor="middle">a $216 customer</text>
+  <path d="M330,205 L366,224" class="arrow" marker-end="url(#arr-f6)"/>
+  <!-- boxplot -->
+  <text x="600" y="24" text-anchor="middle" class="lbl-strong" font-size="13">Boxplot of the same column</text>
+  <line x1="430" y1="150" x2="780" y2="150" class="axis"/>
+  <g class="lbl" font-size="10">
+    <text x="430" y="166" text-anchor="middle">0</text><text x="494" y="166" text-anchor="middle">40</text><text x="558" y="166" text-anchor="middle">80</text><text x="622" y="166" text-anchor="middle">120</text><text x="686" y="166" text-anchor="middle">160</text><text x="750" y="166" text-anchor="middle">200</text>
+  </g>
+  <!-- whisker min 4.5 -> x=437; Q1 31.4 -> 480; med 44.3 -> 501; Q3 61.7 -> 529; fence 107 -> 601 -->
+  <line x1="437" y1="100" x2="480" y2="100" stroke="var(--ink-2)" stroke-width="1.5"/>
+  <line x1="437" y1="88" x2="437" y2="112" stroke="var(--ink-2)" stroke-width="1.5"/>
+  <rect x="480" y="76" width="49" height="48" fill="var(--s1)" fill-opacity=".25" stroke="var(--s1)" stroke-width="1.5"/>
+  <line x1="501" y1="76" x2="501" y2="124" stroke="var(--s1)" stroke-width="3"/>
+  <line x1="529" y1="100" x2="598" y2="100" stroke="var(--ink-2)" stroke-width="1.5"/>
+  <line x1="598" y1="88" x2="598" y2="112" stroke="var(--ink-2)" stroke-width="1.5"/>
+  <g fill="var(--s2)"><circle cx="606" cy="100" r="4"/><circle cx="619" cy="100" r="4"/><circle cx="630" cy="100" r="4"/><circle cx="643" cy="100" r="4"/><circle cx="664" cy="100" r="4"/><circle cx="776" cy="100" r="4"/></g>
+  <text x="480" y="66" text-anchor="middle" class="lbl" font-size="10">Q1 = 31</text>
+  <text x="529" y="66" text-anchor="middle" class="lbl" font-size="10">Q3 = 62</text>
+  <text x="501" y="140" text-anchor="middle" class="lbl-strong" font-size="10" fill="var(--s1)">median</text>
+  <text x="598" y="66" text-anchor="middle" class="lbl" font-size="10">Q3 + 1.5·IQR = 107</text>
+  <text x="680" y="126" text-anchor="middle" class="lbl" font-size="10" fill="var(--s2)">31 "outliers": real big spenders,</text>
+  <text x="680" y="140" text-anchor="middle" class="lbl" font-size="10" fill="var(--s2)">not errors. Keep them.</text>
+  <text x="600" y="200" text-anchor="middle" class="lbl">A boxplot compresses the histogram into five numbers plus flags.</text>
+  <text x="600" y="216" text-anchor="middle" class="lbl">Ask of every flagged point: impossible (error) or just rare (signal)?</text>
+  <text x="600" y="246" text-anchor="middle" class="lbl">An age of −999 is impossible → sentinel. A spend of $216 is rare → keep.</text>
+</svg>
+<figcaption><strong>Figure 2.6 — Distribution and outliers.</strong> The histogram reveals right skew (mean above median), which suggests a log transform for linear models. The boxplot flags points beyond 1.5 × IQR from the quartiles; the flag is a prompt to investigate, not an instruction to delete.</figcaption>
+</figure>
+
+<div class="callout warn"><div class="title">Common mistake</div>
+<p><strong>Deleting outliers because a boxplot flagged them.</strong> The customers who spend ten times the median are exactly the ones the business cares about; the transactions that look anomalous are the fraud you are trying to catch. Remove a row only when the value is <em>impossible</em> (negative age, a date in 2099, 400 support calls in one day). Otherwise keep it and consider a transform (log, winsorising) or a model that is robust to extremes (trees, Chapter 9).</p>
+</div>
+
+<figure class="fig">
+<svg viewBox="0 0 800 400" role="img" aria-label="Correlation heatmap of seven columns from a customer table, blue for positive and orange for negative correlation, with the churned row highlighted">
+  <text x="20" y="26" class="lbl-strong" font-size="13">Correlation matrix (Pearson r), a typical customer table</text>
+  <!-- column headers -->
+  <g class="lbl" font-size="10" text-anchor="end">
+    <text x="176" y="52" transform="rotate(-40 176 52)">age</text>
+    <text x="236" y="52" transform="rotate(-40 236 52)">tenure</text>
+    <text x="296" y="52" transform="rotate(-40 296 52)">spend</text>
+    <text x="356" y="52" transform="rotate(-40 356 52)">calls</text>
+    <text x="416" y="52" transform="rotate(-40 416 52)">days_since_login</text>
+    <text x="476" y="52" transform="rotate(-40 476 52)">autopay</text>
+    <text x="536" y="52" transform="rotate(-40 536 52)">churned</text>
+  </g>
+  <!-- row labels -->
+  <g class="lbl" font-size="11" text-anchor="end">
+    <text x="140" y="92">age</text><text x="140" y="142">tenure</text><text x="140" y="192">spend</text><text x="140" y="242">calls</text><text x="140" y="292">days_since_login</text><text x="140" y="342">autopay</text><text x="140" y="392" class="lbl-strong">churned</text>
+  </g>
+  <!-- rows: each cell 50x50 starting x=150,y=62 ; positive s1, negative s2 -->
+  <g stroke="var(--surface)" stroke-width="1.5">
+    <!-- age -->
+    <rect x="150" y="62" width="50" height="50" fill="var(--ink-3)" fill-opacity=".35"/><rect x="200" y="62" width="50" height="50" fill="var(--s1)" fill-opacity=".22"/><rect x="250" y="62" width="50" height="50" fill="var(--s1)" fill-opacity=".10"/><rect x="300" y="62" width="50" height="50" fill="var(--s2)" fill-opacity=".05"/><rect x="350" y="62" width="50" height="50" fill="var(--s1)" fill-opacity=".03"/><rect x="400" y="62" width="50" height="50" fill="var(--s1)" fill-opacity=".08"/><rect x="450" y="62" width="50" height="50" fill="var(--s2)" fill-opacity=".02"/>
+    <!-- tenure -->
+    <rect x="150" y="112" width="50" height="50" fill="var(--s1)" fill-opacity=".22"/><rect x="200" y="112" width="50" height="50" fill="var(--ink-3)" fill-opacity=".35"/><rect x="250" y="112" width="50" height="50" fill="var(--s1)" fill-opacity=".38"/><rect x="300" y="112" width="50" height="50" fill="var(--s2)" fill-opacity=".08"/><rect x="350" y="112" width="50" height="50" fill="var(--s2)" fill-opacity=".15"/><rect x="400" y="112" width="50" height="50" fill="var(--s1)" fill-opacity=".20"/><rect x="450" y="112" width="50" height="50" fill="var(--s2)" fill-opacity=".18"/>
+    <!-- spend -->
+    <rect x="150" y="162" width="50" height="50" fill="var(--s1)" fill-opacity=".10"/><rect x="200" y="162" width="50" height="50" fill="var(--s1)" fill-opacity=".38"/><rect x="250" y="162" width="50" height="50" fill="var(--ink-3)" fill-opacity=".35"/><rect x="300" y="162" width="50" height="50" fill="var(--s1)" fill-opacity=".05"/><rect x="350" y="162" width="50" height="50" fill="var(--s2)" fill-opacity=".10"/><rect x="400" y="162" width="50" height="50" fill="var(--s1)" fill-opacity=".25"/><rect x="450" y="162" width="50" height="50" fill="var(--s2)" fill-opacity=".06"/>
+    <!-- calls -->
+    <rect x="150" y="212" width="50" height="50" fill="var(--s2)" fill-opacity=".05"/><rect x="200" y="212" width="50" height="50" fill="var(--s2)" fill-opacity=".08"/><rect x="250" y="212" width="50" height="50" fill="var(--s1)" fill-opacity=".05"/><rect x="300" y="212" width="50" height="50" fill="var(--ink-3)" fill-opacity=".35"/><rect x="350" y="212" width="50" height="50" fill="var(--s1)" fill-opacity=".12"/><rect x="400" y="212" width="50" height="50" fill="var(--s2)" fill-opacity=".04"/><rect x="450" y="212" width="50" height="50" fill="var(--s1)" fill-opacity=".24"/>
+    <!-- days -->
+    <rect x="150" y="262" width="50" height="50" fill="var(--s1)" fill-opacity=".03"/><rect x="200" y="262" width="50" height="50" fill="var(--s2)" fill-opacity=".15"/><rect x="250" y="262" width="50" height="50" fill="var(--s2)" fill-opacity=".10"/><rect x="300" y="262" width="50" height="50" fill="var(--s1)" fill-opacity=".12"/><rect x="350" y="262" width="50" height="50" fill="var(--ink-3)" fill-opacity=".35"/><rect x="400" y="262" width="50" height="50" fill="var(--s2)" fill-opacity=".12"/><rect x="450" y="262" width="50" height="50" fill="var(--s1)" fill-opacity=".33"/>
+    <!-- autopay -->
+    <rect x="150" y="312" width="50" height="50" fill="var(--s1)" fill-opacity=".08"/><rect x="200" y="312" width="50" height="50" fill="var(--s1)" fill-opacity=".20"/><rect x="250" y="312" width="50" height="50" fill="var(--s1)" fill-opacity=".25"/><rect x="300" y="312" width="50" height="50" fill="var(--s2)" fill-opacity=".04"/><rect x="350" y="312" width="50" height="50" fill="var(--s2)" fill-opacity=".12"/><rect x="400" y="312" width="50" height="50" fill="var(--ink-3)" fill-opacity=".35"/><rect x="450" y="312" width="50" height="50" fill="var(--s2)" fill-opacity=".14"/>
+    <!-- churned -->
+    <rect x="150" y="362" width="50" height="50" fill="var(--s2)" fill-opacity=".02"/><rect x="200" y="362" width="50" height="50" fill="var(--s2)" fill-opacity=".18"/><rect x="250" y="362" width="50" height="50" fill="var(--s2)" fill-opacity=".06"/><rect x="300" y="362" width="50" height="50" fill="var(--s1)" fill-opacity=".24"/><rect x="350" y="362" width="50" height="50" fill="var(--s1)" fill-opacity=".33"/><rect x="400" y="362" width="50" height="50" fill="var(--s2)" fill-opacity=".14"/><rect x="450" y="362" width="50" height="50" fill="var(--ink-3)" fill-opacity=".35"/>
+  </g>
+  <g class="lbl" font-size="10" text-anchor="middle">
+    <text x="175" y="91">1</text><text x="225" y="91">.22</text><text x="275" y="91">.10</text><text x="325" y="91">−.05</text><text x="375" y="91">.03</text><text x="425" y="91">.08</text><text x="475" y="91">−.02</text>
+    <text x="175" y="141">.22</text><text x="225" y="141">1</text><text x="275" y="141">.38</text><text x="325" y="141">−.08</text><text x="375" y="141">−.15</text><text x="425" y="141">.20</text><text x="475" y="141">−.18</text>
+    <text x="175" y="191">.10</text><text x="225" y="191">.38</text><text x="275" y="191">1</text><text x="325" y="191">.05</text><text x="375" y="191">−.10</text><text x="425" y="191">.25</text><text x="475" y="191">−.06</text>
+    <text x="175" y="241">−.05</text><text x="225" y="241">−.08</text><text x="275" y="241">.05</text><text x="325" y="241">1</text><text x="375" y="241">.12</text><text x="425" y="241">−.04</text><text x="475" y="241">.24</text>
+    <text x="175" y="291">.03</text><text x="225" y="291">−.15</text><text x="275" y="291">−.10</text><text x="325" y="291">.12</text><text x="375" y="291">1</text><text x="425" y="291">−.12</text><text x="475" y="291">.33</text>
+    <text x="175" y="341">.08</text><text x="225" y="341">.20</text><text x="275" y="341">.25</text><text x="325" y="341">−.04</text><text x="375" y="341">−.12</text><text x="425" y="341">1</text><text x="475" y="341">−.14</text>
+    <text x="175" y="391">−.02</text><text x="225" y="391">−.18</text><text x="275" y="391">−.06</text><text x="325" y="391">.24</text><text x="375" y="391">.33</text><text x="425" y="391">−.14</text><text x="475" y="391">1</text>
+  </g>
+  <rect x="150" y="362" width="350" height="50" fill="none" stroke="var(--s7)" stroke-width="2"/>
+  <!-- legend & notes -->
+  <rect x="540" y="70" width="16" height="16" fill="var(--s1)" fill-opacity=".9"/><text x="562" y="83" class="lbl" font-size="11">positive r (darker = stronger)</text>
+  <rect x="540" y="92" width="16" height="16" fill="var(--s2)" fill-opacity=".9"/><text x="562" y="105" class="lbl" font-size="11">negative r</text>
+  <text x="540" y="140" class="lbl-strong" font-size="11">How to read it</text>
+  <text x="540" y="158" class="lbl" font-size="11">• Last row (violet box): which features</text>
+  <text x="540" y="172" class="lbl" font-size="11">  relate to the label at all. Here recency</text>
+  <text x="540" y="186" class="lbl" font-size="11">  (.33) and calls (.24) lead.</text>
+  <text x="540" y="208" class="lbl" font-size="11">• Off-diagonal block: redundancy.</text>
+  <text x="540" y="222" class="lbl" font-size="11">  tenure–spend .38 is mild; above ~.8</text>
+  <text x="540" y="236" class="lbl" font-size="11">  drop one for linear models.</text>
+  <text x="540" y="258" class="lbl" font-size="11">• A feature at .9+ with the label</text>
+  <text x="540" y="272" class="lbl" font-size="11">  is almost always a leak, not a gift.</text>
+  <text x="540" y="294" class="lbl" font-size="11">• Pearson r sees only straight-line</text>
+  <text x="540" y="308" class="lbl" font-size="11">  relations. A U-shape scores ≈ 0.</text>
+  <text x="540" y="322" class="lbl" font-size="11">  Always also plot target vs feature.</text>
+</svg>
+<figcaption><strong>Figure 2.7 — The correlation heatmap, read like an expert.</strong> The label row tells you where the signal is; the feature block tells you what is redundant; anything suspiciously strong with the label is a leakage candidate. Values are illustrative for a table like ours.</figcaption>
+</figure>
+
+<figure class="fig">
+<svg viewBox="0 0 800 300" role="img" aria-label="Left: churn rate rises steadily with days since last login, from 9% to 46%. Right: a missingness matrix in which one column is missing mostly for one segment of rows, and the class balance bar">
+  <defs><marker id="arr-f8" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+  <text x="200" y="24" text-anchor="middle" class="lbl-strong" font-size="13">Target vs feature: churn rate by recency</text>
+  <line x1="60" y1="230" x2="380" y2="230" class="axis" marker-end="url(#arr-f8)"/>
+  <line x1="60" y1="230" x2="60" y2="45" class="axis" marker-end="url(#arr-f8)"/>
+  <g stroke="var(--border)"><line x1="60" y1="130" x2="370" y2="130" class="grid"/><line x1="60" y1="55" x2="370" y2="55" class="grid"/></g>
+  <text x="54" y="234" text-anchor="end" class="lbl" font-size="10">0%</text><text x="54" y="134" text-anchor="end" class="lbl" font-size="10">25%</text><text x="54" y="59" text-anchor="end" class="lbl" font-size="10">50%</text>
+  <!-- bars: rates 8.5,12.6,22.0,27.3,38.3,45.8 ; 0%=230, 50%=55 -> 3.5px per % -->
+  <g fill="var(--s1)" fill-opacity=".85">
+    <rect x="72" y="200" width="40" height="30"/><rect x="122" y="186" width="40" height="44"/><rect x="172" y="153" width="40" height="77"/>
+    <rect x="222" y="134" width="40" height="96"/><rect x="272" y="96" width="40" height="134"/><rect x="322" y="70" width="40" height="160"/>
+  </g>
+  <g class="lbl" font-size="10" text-anchor="middle">
+    <text x="92" y="195">9%</text><text x="142" y="181">13%</text><text x="192" y="148">22%</text><text x="242" y="129">27%</text><text x="292" y="91">38%</text><text x="342" y="65">46%</text>
+    <text x="92" y="246">0–14</text><text x="142" y="246">15–29</text><text x="192" y="246">30–44</text><text x="242" y="246">45–59</text><text x="292" y="246">60–74</text><text x="342" y="246">75–89</text>
+  </g>
+  <line x1="60" y1="138" x2="380" y2="138" stroke="var(--s2)" stroke-width="1.5" stroke-dasharray="5 3"/>
+  <text x="378" y="150" text-anchor="end" class="lbl" font-size="10" fill="var(--s2)">overall 26%</text>
+  <text x="220" y="266" text-anchor="middle" class="lbl">days since last login (bucket)</text>
+  <text x="220" y="286" text-anchor="middle" class="lbl-strong" font-size="11">Monotone, strong: a real, usable signal.</text>
+  <!-- missingness matrix -->
+  <text x="600" y="24" text-anchor="middle" class="lbl-strong" font-size="13">Missingness matrix (rows × columns)</text>
+  <g class="lbl" font-size="10" text-anchor="middle">
+    <text x="470" y="48">age</text><text x="510" y="48">plan</text><text x="550" y="48">spend</text><text x="590" y="48">calls</text><text x="630" y="48">login</text><text x="670" y="48">autopay</text>
+  </g>
+  <g fill="var(--surface-2)" stroke="var(--border)" stroke-width=".5">
+    <rect x="452" y="55" width="36" height="150"/><rect x="492" y="55" width="36" height="150"/><rect x="532" y="55" width="36" height="150"/><rect x="572" y="55" width="36" height="150"/><rect x="612" y="55" width="36" height="150"/><rect x="652" y="55" width="36" height="150"/>
+  </g>
+  <!-- missing cells: spend missing in a block of rows (basic plan), age sporadic, autopay sporadic -->
+  <g fill="var(--s2)">
+    <rect x="532" y="55" width="36" height="46"/>
+    <rect x="452" y="70" width="36" height="3"/><rect x="452" y="118" width="36" height="3"/><rect x="452" y="160" width="36" height="3"/><rect x="452" y="190" width="36" height="3"/>
+    <rect x="652" y="90" width="36" height="3"/><rect x="652" y="140" width="36" height="3"/><rect x="652" y="175" width="36" height="3"/>
+    <rect x="532" y="130" width="36" height="3"/><rect x="532" y="185" width="36" height="3"/>
+  </g>
+  <path d="M700,78 L740,78" class="arrow" marker-end="url(#arr-f8)" transform="rotate(180 720 78)"/>
+  <text x="745" y="74" class="lbl" font-size="10">spend is missing for</text>
+  <text x="745" y="87" class="lbl" font-size="10">30% of rows, all in</text>
+  <text x="745" y="100" class="lbl" font-size="10">one block: not random</text>
+  <text x="440" y="222" class="lbl" font-size="11">Orange = missing. A block means missingness depends on something</text>
+  <text x="440" y="237" class="lbl" font-size="11">(here: the basic plan has no spend record). Random specks are benign.</text>
+  <!-- class balance -->
+  <text x="440" y="262" class="lbl-strong" font-size="11">Class balance:</text>
+  <rect x="530" y="252" width="185" height="14" fill="var(--s1)"/><rect x="715" y="252" width="65" height="14" fill="var(--s2)"/>
+  <text x="622" y="263" text-anchor="middle" font-size="10" font-weight="700" fill="#fff">stayed 74%</text><text x="747" y="263" text-anchor="middle" font-size="10" font-weight="700" fill="#fff">26%</text>
+  <text x="440" y="286" class="lbl" font-size="11">"Always predict stayed" scores 74% accuracy. That is your baseline, not zero.</text>
+</svg>
+<figcaption><strong>Figure 2.8 — Three EDA views that change decisions.</strong> The target-vs-feature bars confirm a strong, monotone relationship (a linear model will capture it). The missingness matrix shows <em>structured</em> missingness, which needs a "missing" indicator rather than a silent mean fill. The balance bar sets the accuracy baseline you must beat.</figcaption>
+</figure>
+
+<h3>A reusable pandas EDA recipe</h3>
+<p>This function is the first thing I run on any new table. It prints a one-row-per-column summary, the value counts of every low-cardinality column, the label balance, and the correlation of each numeric column with the label. Below it runs on a deliberately dirtied copy of the churn data so you can see what the defects look like in the output.</p>
+
+<pre class="code" data-lang="python"><code><span class="cm"># A first-pass EDA report, run on a deliberately dirtied copy of the churn data</span>
+<span class="kw">import</span> numpy <span class="kw">as</span> np, pandas <span class="kw">as</span> pd
+rng = np.random.default_rng(<span class="nu">42</span>); n = <span class="nu">2000</span>
+df = pd.DataFrame({<span class="st">"customer_id"</span>: np.arange(<span class="nu">100001</span>, <span class="nu">100001</span>+n),
+    <span class="st">"signup_date"</span>: pd.to_datetime(<span class="st">"2021-01-01"</span>) + pd.to_timedelta(rng.integers(<span class="nu">0</span>, <span class="nu">1400</span>, n), <span class="st">"D"</span>),
+    <span class="st">"plan"</span>: rng.choice([<span class="st">"basic"</span>,<span class="st">"plus"</span>,<span class="st">"premium"</span>], n, p=[<span class="nu">.5</span>,<span class="nu">.3</span>,<span class="nu">.2</span>]), <span class="st">"age"</span>: rng.integers(<span class="nu">18</span>, <span class="nu">75</span>, n),
+    <span class="st">"tenure_months"</span>: rng.integers(<span class="nu">1</span>, <span class="nu">60</span>, n), <span class="st">"monthly_spend"</span>: rng.gamma(<span class="nu">4</span>, <span class="nu">12</span>, n).round(<span class="nu">2</span>),
+    <span class="st">"support_calls"</span>: rng.poisson(<span class="nu">1.2</span>, n), <span class="st">"days_since_login"</span>: rng.integers(<span class="nu">0</span>, <span class="nu">90</span>, n), <span class="st">"autopay"</span>: rng.random(n) &lt; <span class="nu">0.6</span>})
+logit = -<span class="nu">2.6</span> + <span class="nu">0.035</span>*df.days_since_login + <span class="nu">0.5</span>*df.support_calls - <span class="nu">0.02</span>*df.tenure_months - <span class="nu">0.6</span>*df.autopay
+df[<span class="st">"churned"</span>] = (rng.random(n) &lt; <span class="nu">1</span>/(<span class="nu">1</span>+np.exp(-logit))).astype(<span class="fn">int</span>)
+
+<span class="cm"># inject realistic dirt: a sentinel, real missing values, an inconsistent category, duplicate rows</span>
+dirty = df.copy()
+dirty.loc[rng.choice(n, <span class="nu">60</span>, replace=<span class="kw">False</span>), <span class="st">"age"</span>] = -<span class="nu">999</span>
+dirty.loc[rng.choice(n, <span class="nu">40</span>, replace=<span class="kw">False</span>), <span class="st">"monthly_spend"</span>] = np.nan
+dirty.loc[rng.choice(n, <span class="nu">30</span>, replace=<span class="kw">False</span>), <span class="st">"plan"</span>] = <span class="st">"Premium "</span>
+dirty = pd.concat([dirty, dirty.sample(<span class="nu">25</span>, random_state=<span class="nu">1</span>)])
+
+<span class="kw">def</span> <span class="fn">eda_report</span>(d, target=<span class="kw">None</span>):
+    <span class="fn">print</span>(<span class="st">f"shape: {d.shape}   duplicate rows: {d.duplicated().sum()}"</span>)
+    summ = pd.DataFrame({<span class="st">"dtype"</span>: d.dtypes.astype(<span class="fn">str</span>), <span class="st">"missing"</span>: d.isna().sum(), <span class="st">"n_unique"</span>: d.nunique(),
+                         <span class="st">"min"</span>: d.min(numeric_only=<span class="kw">True</span>), <span class="st">"max"</span>: d.max(numeric_only=<span class="kw">True</span>)})
+    <span class="fn">print</span>(summ.to_string())
+    <span class="kw">for</span> c <span class="kw">in</span> d.select_dtypes(exclude=<span class="st">"number"</span>).columns:          <span class="cm"># low-cardinality columns: show levels</span>
+        <span class="kw">if</span> d[c].nunique() &lt;= <span class="nu">12</span>: <span class="fn">print</span>(<span class="st">f"\n{c}: {d[c].value_counts(dropna=False).to_dict()}"</span>)
+    <span class="kw">if</span> target <span class="kw">is not</span> <span class="kw">None</span>:
+        <span class="fn">print</span>(<span class="st">f"\ntarget balance: {d[target].value_counts(normalize=True).round(3).to_dict()}"</span>)
+        <span class="fn">print</span>(<span class="st">"correlation with target:\n"</span>, d.corr(numeric_only=<span class="kw">True</span>)[target].drop(target).round(<span class="nu">2</span>).sort_values().to_string())
+
+eda_report(dirty, target=<span class="st">"churned"</span>)
+<span class="out"># shape: (2025, 10)   duplicate rows: 25</span>
+<span class="out">#                            dtype  missing  n_unique     min     max</span>
+<span class="out"># age                        int64        0        58    -999      74   &lt;- sentinel: min is impossible</span>
+<span class="out"># autopay                     bool        0         2   False    True</span>
+<span class="out"># churned                    int64        0         2       0       1</span>
+<span class="out"># customer_id                int64        0      2000  100001  102000   &lt;- unique per row: an ID</span>
+<span class="out"># days_since_login           int64        0        90       0      89</span>
+<span class="out"># monthly_spend            float64       41      1728    4.48  216.48   &lt;- missing values</span>
+<span class="out"># plan                         str        0         4     NaN     NaN   &lt;- 4 levels? should be 3</span>
+<span class="out"># signup_date       datetime64[us]        0      1049     NaN     NaN</span>
+<span class="out"># support_calls              int64        0         7       0       6</span>
+<span class="out"># tenure_months              int64        0        59       1      59</span>
+<span class="out">#</span>
+<span class="out"># plan: {'basic': 1009, 'plus': 576, 'premium': 410, 'Premium ': 30}</span>
+<span class="out">#</span>
+<span class="out"># autopay: {True: 1171, False: 854}</span>
+<span class="out">#</span>
+<span class="out"># target balance: {0: 0.739, 1: 0.261}</span>
+<span class="out"># correlation with target:</span>
+<span class="out">#  tenure_months      -0.13</span>
+<span class="out"># autopay            -0.10</span>
+<span class="out"># age                -0.00</span>
+<span class="out"># customer_id         0.00</span>
+<span class="out"># monthly_spend       0.00</span>
+<span class="out"># support_calls       0.19</span>
+<span class="out"># days_since_login    0.30</span></code></pre>
+
+<p>Four findings in fifteen lines of output, each with a consequence: 25 duplicates (remove before splitting), an impossible minimum age (a sentinel, §7), a fourth plan level that is a spelling variant (normalise), and 41 missing spends (impute, and add an indicator). Note also that the correlation of <code>age</code> with churn is 0.00 <em>because the −999s are still in there</em>; the sentinel has wrecked the statistic. Clean first, then look again.</p>
+
+<div class="callout pro"><div class="title">At work</div>
+<p>Write EDA findings as a numbered list in a shared document, each one with a decision ("41 spends missing, concentrated in basic plan → add <code>spend_missing</code> flag, impute median within plan"). Two reasons: it forces you to decide instead of just observe, and six months later, when someone asks why the model has that odd feature, the answer exists.</p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s7">7. A catalogue of data-quality defects</h2>
+
+<p>The same defects appear in every company's data. Learn to recognise them on sight.</p>
+
+<div class="tbl-wrap">
+<table class="tbl">
+<thead><tr><th>Defect</th><th>What it looks like</th><th>Why it hurts</th><th>Fix</th></tr></thead>
+<tbody>
+<tr><td><strong>Sentinel values</strong></td><td>age = −999, date = 1900-01-01, spend = 99999, zip = 00000</td><td>Treated as real numbers, they drag means, create fake outliers, and give trees a bogus split.</td><td>Convert to NaN explicitly (<code>where</code> / <code>replace</code>), then impute and add a missing flag.</td></tr>
+<tr><td><strong>Wrong or mixed units</strong></td><td>heights 1.75 and 175; prices in USD and EUR in one column; kg vs lb after a system migration</td><td>Bimodal distributions; a model that learns the unit rather than the quantity.</td><td>Plot; find the switch date or source; convert. Store the unit in the column name (<code>weight_kg</code>).</td></tr>
+<tr><td><strong>Inconsistent categories</strong></td><td>"Premium", "premium", "Premium ", "PREM", "prm"</td><td>One level becomes five; rare "levels" get no data; encoders explode.</td><td><code>str.strip().str.lower()</code>, then a mapping table for synonyms. Keep the mapping under version control.</td></tr>
+<tr><td><strong>Mixed encodings / types</strong></td><td>a numeric column stored as text because one row says "N/A"; "1,234" with thousands separators; "£12"</td><td>pandas reads the whole column as object; every arithmetic fails or silently sorts as strings.</td><td><code>pd.to_numeric(errors="coerce")</code> after stripping symbols; inspect what became NaN.</td></tr>
+<tr><td><strong>Time zones &amp; clocks</strong></td><td>timestamps without tz; a server in UTC and an app in local time; daylight-saving duplicates</td><td>Events out of order; "hour of day" features shifted by 5; features that peek into the future by a few hours.</td><td>Convert everything to UTC on ingest; keep the local time zone as a separate column if hour-of-day matters.</td></tr>
+<tr><td><strong>Duplicates</strong></td><td>same row twice; same customer with two IDs; the same image under two file names</td><td>Contaminates the split; over-weights some examples.</td><td><code>drop_duplicates()</code>, plus entity resolution on business keys, before splitting.</td></tr>
+<tr><td><strong>Implicit missing</strong></td><td>empty strings, 0 where "unknown" is meant, "unknown" as a category</td><td>Imputation never happens; 0 is treated as a real quantity.</td><td>Decide, per column, what "missing" means; convert to NaN; document it.</td></tr>
+<tr><td><strong>Schema drift</strong></td><td>a column renamed in 2023; a new plan tier added; a field that switched from int to string</td><td>Old rows and new rows mean different things.</td><td>Check distributions <em>per month</em>; align or drop the affected period.</td></tr>
+<tr><td><strong>Truncation / capping</strong></td><td>ages of exactly 99 for everyone older; text cut at 255 chars</td><td>A spike at the boundary; a distribution that lies about its tail.</td><td>Ask the source system; treat capped values as "≥ cap".</td></tr>
+</tbody>
+</table>
+</div>
+
+<pre class="code" data-lang="python"><code><span class="cm"># Cleaning the defects the EDA report found, without silently destroying information</span>
+<span class="kw">import</span> numpy <span class="kw">as</span> np, pandas <span class="kw">as</span> pd
+rng = np.random.default_rng(<span class="nu">42</span>); n = <span class="nu">2000</span>
+df = pd.DataFrame({<span class="st">"customer_id"</span>: np.arange(n), <span class="st">"age"</span>: rng.integers(<span class="nu">18</span>, <span class="nu">75</span>, n), <span class="st">"plan"</span>: rng.choice([<span class="st">"basic"</span>,<span class="st">"plus"</span>,<span class="st">"premium"</span>], n, p=[<span class="nu">.5</span>,<span class="nu">.3</span>,<span class="nu">.2</span>]),
+                   <span class="st">"monthly_spend"</span>: rng.gamma(<span class="nu">4</span>, <span class="nu">12</span>, n).round(<span class="nu">2</span>), <span class="st">"signup_ts"</span>: [<span class="st">"2024-03-08 14:02"</span>]*n})
+dirty = df.copy()
+dirty.loc[rng.choice(n, <span class="nu">60</span>, replace=<span class="kw">False</span>), <span class="st">"age"</span>] = -<span class="nu">999</span>
+dirty.loc[rng.choice(n, <span class="nu">30</span>, replace=<span class="kw">False</span>), <span class="st">"plan"</span>] = <span class="st">"Premium "</span>
+dirty = pd.concat([dirty, dirty.sample(<span class="nu">25</span>, random_state=<span class="nu">1</span>)])
+
+clean = (dirty
+    .drop_duplicates()
+    .assign(age=<span class="kw">lambda</span> d: d.age.where(d.age.between(<span class="nu">0</span>, <span class="nu">120</span>)),        <span class="cm"># sentinel -&gt; NaN, explicitly</span>
+            age_missing=<span class="kw">lambda</span> d: d.age.isna().astype(<span class="fn">int</span>),             <span class="cm"># keep the fact that it was missing</span>
+            plan=<span class="kw">lambda</span> d: d.plan.str.strip().str.lower(),              <span class="cm"># normalise category spelling</span>
+            signup_ts=<span class="kw">lambda</span> d: pd.to_datetime(d.signup_ts).dt.tz_localize(<span class="st">"Europe/London"</span>).dt.tz_convert(<span class="st">"UTC"</span>))
+)
+<span class="fn">print</span>(<span class="st">"rows:"</span>, <span class="fn">len</span>(dirty), <span class="st">"-&gt;"</span>, <span class="fn">len</span>(clean))
+<span class="fn">print</span>(<span class="st">"age NaN after sentinel fix:"</span>, clean.age.isna().sum(), <span class="st">"| flag sum:"</span>, clean.age_missing.sum())
+<span class="fn">print</span>(<span class="st">"plan values:"</span>, <span class="fn">sorted</span>(clean.plan.unique()))
+<span class="fn">print</span>(<span class="st">"timestamp now in UTC:"</span>, clean.signup_ts.iloc[<span class="nu">0</span>])
+<span class="out"># rows: 2025 -&gt; 2000</span>
+<span class="out"># age NaN after sentinel fix: 60 | flag sum: 60</span>
+<span class="out"># plan values: ['basic', 'plus', 'premium']</span>
+<span class="out"># timestamp now in UTC: 2024-03-08 14:02:00+00:00</span></code></pre>
+
+<div class="callout key"><div class="title">Key idea</div>
+<p><strong>Cleaning is a transformation, not a deletion.</strong> Replace sentinels with NaN and keep a flag; normalise categories with a mapping you can audit; convert units and time zones and rename the column to say so. Every cleaning step should be code that runs identically on tomorrow's data, because the model will be scored on tomorrow's data. A notebook full of manual fixes is a model that cannot be deployed (Chapter 21).</p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s8">8. Labels: where they come from and how many you need</h2>
+
+<p>Supervised learning is only as good as its labels, and labels are the part of the dataset people examine least. Ask three questions: where did this label come from, how noisy is it, and do I have enough of them?</p>
+
+<h3>Where labels come from</h3>
+<div class="grid2">
+  <div class="card accent"><h4>Natural labels</h4><p>The outcome is recorded by the business process itself: the customer did or did not renew; the loan defaulted or was repaid; the item sold. Cheap and plentiful, but you must wait for the outcome (a 90-day churn label is not available until 90 days after the prediction date), and the definition must be pinned down ("churned = no payment for 60 days after the renewal date").</p></div>
+  <div class="card accent"><h4>Human annotation</h4><p>Someone reads the ticket and tags it "billing"; a radiologist marks the tumour. Expensive, slow, and inconsistent between annotators (measure agreement between two annotators on the same 200 items before trusting any of it). Write annotation guidelines with examples of edge cases.</p></div>
+  <div class="card accent"><h4>Weak / proxy labels</h4><p>Rules or heuristics that approximate the truth: "a ticket containing 'refund' is a billing ticket"; "a user who scrolled past 80% read the article". Cheap and noisy. Useful for bootstrapping, and for pre-training; validate on a small set of gold labels before you trust them.</p></div>
+  <div class="card accent"><h4>Implicit feedback</h4><p>Clicks, purchases, dwell time: the label is what the user did. Abundant, but biased by what the user was shown (you only see clicks on items you recommended) and by things other than quality. Recommender systems live on these (Chapter 22).</p></div>
+</div>
+
+<h3>Label noise</h3>
+<p>Some fraction of your labels are wrong. Annotators disagree, the business process mislabels, the churn definition changed in 2023. With 5% random label noise, the best any model can score is 95% accuracy, and a model that scores 99% is <em>memorising the noise</em> (overfitting, Chapter 7). Label noise that is <em>systematic</em> is worse: if fraud is only labelled when an investigator happened to look, then "not fraud" means "not caught", and the model learns to predict investigation, not fraud. The fix is process, not algorithm: audit a random sample of 200 labels by hand, measure the error rate, and put that number in your report next to the model's accuracy.</p>
+
+<h3>How much data is enough?</h3>
+<p>There is no formula, but there is a tool: the <strong>learning curve</strong>. Train on 5%, 10%, 20%, … of your training data, score each on the same validation set, and plot. If the validation score is still climbing at 100% of your data, more data will help. If it has flattened, more data of the same kind will not; you need better features, a different model, or cleaner labels.</p>
+
+<figure class="fig">
+<svg viewBox="0 0 800 310" role="img" aria-label="Learning curve: training accuracy stays near 1.0 while validation accuracy rises steeply from 0.79 at 22 rows and flattens around 0.98 by 400 rows; the gap between the curves shrinks as data grows">
+  <defs><marker id="arr-f9" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+  <line x1="70" y1="250" x2="560" y2="250" class="axis" marker-end="url(#arr-f9)"/>
+  <line x1="70" y1="250" x2="70" y2="40" class="axis" marker-end="url(#arr-f9)"/>
+  <!-- y: 0.75 -> 250, 1.00 -> 50 : 8px per 0.01 -->
+  <g class="grid"><line x1="70" y1="210" x2="550" y2="210"/><line x1="70" y1="170" x2="550" y2="170"/><line x1="70" y1="130" x2="550" y2="130"/><line x1="70" y1="90" x2="550" y2="90"/><line x1="70" y1="50" x2="550" y2="50"/></g>
+  <g class="lbl" font-size="10" text-anchor="end">
+    <text x="64" y="254">0.75</text><text x="64" y="214">0.80</text><text x="64" y="174">0.85</text><text x="64" y="134">0.90</text><text x="64" y="94">0.95</text><text x="64" y="54">1.00</text>
+  </g>
+  <!-- x: rows 0..500 -> 70..550 (0.96 px/row) -->
+  <g class="lbl" font-size="10" text-anchor="middle">
+    <text x="70" y="268">0</text><text x="166" y="268">100</text><text x="262" y="268">200</text><text x="358" y="268">300</text><text x="454" y="268">400</text><text x="550" y="268">500</text>
+  </g>
+  <text x="310" y="290" text-anchor="middle" class="lbl">training rows used</text>
+  <text x="34" y="150" text-anchor="middle" class="lbl" transform="rotate(-90 34 150)">accuracy</text>
+  <!-- train curve: (22,1.00) (84,.981) (146,.985) (208,.988) (269,.983) (331,.985) (393,.988) (455,.988) -->
+  <polyline points="91,50 151,65 210,62 270,60 328,64 388,62 447,60 507,60" fill="none" stroke="var(--s1)" stroke-width="2.5"/>
+  <g fill="var(--s1)"><circle cx="91" cy="50" r="4"/><circle cx="151" cy="65" r="4"/><circle cx="210" cy="62" r="4"/><circle cx="270" cy="60" r="4"/><circle cx="328" cy="64" r="4"/><circle cx="388" cy="62" r="4"/><circle cx="447" cy="60" r="4"/><circle cx="507" cy="60" r="4"/></g>
+  <!-- val curve: .789 .940 .954 .967 .968 .970 .979 .979 -->
+  <polyline points="91,219 151,98 210,87 270,76 328,76 388,74 447,67 507,67" fill="none" stroke="var(--s2)" stroke-width="2.5"/>
+  <g fill="var(--s2)"><circle cx="91" cy="219" r="4"/><circle cx="151" cy="98" r="4"/><circle cx="210" cy="87" r="4"/><circle cx="270" cy="76" r="4"/><circle cx="328" cy="76" r="4"/><circle cx="388" cy="74" r="4"/><circle cx="447" cy="67" r="4"/><circle cx="507" cy="67" r="4"/></g>
+  <text x="130" y="44" class="lbl-strong" font-size="11" fill="var(--s1)">training accuracy</text>
+  <text x="230" y="112" class="lbl-strong" font-size="11" fill="var(--s2)">validation accuracy</text>
+  <!-- gap annotation -->
+  <line x1="91" y1="56" x2="91" y2="213" stroke="var(--s7)" stroke-width="1.5" stroke-dasharray="3 2"/>
+  <text x="100" y="150" class="lbl" font-size="10" fill="var(--s7)">big gap = memorising</text>
+  <text x="100" y="163" class="lbl" font-size="10" fill="var(--s7)">(too little data)</text>
+  <rect x="400" y="54" width="150" height="26" fill="var(--s7)" fill-opacity=".10" stroke="var(--s7)" stroke-dasharray="3 2"/>
+  <text x="475" y="46" text-anchor="middle" class="lbl" font-size="10" fill="var(--s7)">plateau: more rows add little</text>
+  <!-- side notes -->
+  <text x="580" y="70" class="lbl-strong" font-size="11">Read the curve</text>
+  <text x="580" y="90" class="lbl" font-size="11">Still rising at the right edge</text>
+  <text x="580" y="104" class="lbl" font-size="11">→ collect more labels.</text>
+  <text x="580" y="128" class="lbl" font-size="11">Flat, and both curves high</text>
+  <text x="580" y="142" class="lbl" font-size="11">→ you're done; ship it.</text>
+  <text x="580" y="166" class="lbl" font-size="11">Flat, both curves low</text>
+  <text x="580" y="180" class="lbl" font-size="11">→ features or labels are the</text>
+  <text x="580" y="194" class="lbl" font-size="11">limit, not data volume.</text>
+  <text x="580" y="218" class="lbl" font-size="11">Flat, big gap remains</text>
+  <text x="580" y="232" class="lbl" font-size="11">→ model too flexible;</text>
+  <text x="580" y="246" class="lbl" font-size="11">regularise (Ch 7).</text>
+</svg>
+<figcaption><strong>Figure 2.9 — The learning curve answers "do I need more data?"</strong> Breast-cancer data, logistic regression, from the code below. Validation accuracy climbs steeply until roughly 200 rows and then flattens: beyond that point, effort is better spent on features than on collection. Chapter 7 returns to this picture as the bias–variance diagnostic.</figcaption>
+</figure>
+
+<pre class="code" data-lang="python"><code><span class="cm"># Learning curve: how does validation accuracy grow with the number of training rows?</span>
+<span class="kw">import</span> numpy <span class="kw">as</span> np
+<span class="kw">from</span> sklearn.datasets <span class="kw">import</span> load_breast_cancer
+<span class="kw">from</span> sklearn.model_selection <span class="kw">import</span> learning_curve, StratifiedKFold
+<span class="kw">from</span> sklearn.linear_model <span class="kw">import</span> LogisticRegression
+<span class="kw">from</span> sklearn.pipeline <span class="kw">import</span> make_pipeline
+<span class="kw">from</span> sklearn.preprocessing <span class="kw">import</span> StandardScaler
+
+X, y = load_breast_cancer(return_X_y=<span class="kw">True</span>)                  <span class="cm"># 569 rows, 30 features, ships with sklearn</span>
+model = make_pipeline(StandardScaler(), LogisticRegression(max_iter=<span class="nu">2000</span>))
+sizes, tr, va = learning_curve(model, X, y, train_sizes=np.linspace(<span class="nu">0.05</span>, <span class="nu">1.0</span>, <span class="nu">8</span>),
+                               cv=StratifiedKFold(<span class="nu">5</span>, shuffle=<span class="kw">True</span>, random_state=<span class="nu">0</span>), scoring=<span class="st">"accuracy"</span>)
+<span class="kw">for</span> s, t, v <span class="kw">in</span> <span class="fn">zip</span>(sizes, tr.mean(<span class="nu">1</span>), va.mean(<span class="nu">1</span>)):
+    <span class="fn">print</span>(<span class="st">f"n_train={s:3d}  train={t:.3f}  val={v:.3f}"</span>)
+<span class="out"># n_train= 22  train=1.000  val=0.789</span>
+<span class="out"># n_train= 84  train=0.981  val=0.940</span>
+<span class="out"># n_train=146  train=0.985  val=0.954</span>
+<span class="out"># n_train=208  train=0.988  val=0.967</span>
+<span class="out"># n_train=269  train=0.983  val=0.968</span>
+<span class="out"># n_train=331  train=0.985  val=0.970</span>
+<span class="out"># n_train=393  train=0.988  val=0.979</span>
+<span class="out"># n_train=455  train=0.988  val=0.979</span></code></pre>
+
+<div class="callout eli9"><div class="title">Explain it like I'm 9</div>
+<p>Learning to recognise dog breeds from photos: the first 20 photos teach you a lot, the next 200 teach you more, but by photo 5,000 you are barely improving, because the photos are all of the same twenty breeds in the same park. More of the <em>same</em> photos will not help; you need photos of new breeds, or a better guidebook. The learning curve is how you find out which one you need.</p>
+</div>
+
+<div class="callout pro"><div class="title">At work</div>
+<p>Rules of thumb that hold surprisingly often for tabular problems: a few hundred rows per class lets you tell whether there is signal at all; a few thousand rows makes gradient boosting competitive; tens of thousands is where the marginal row is nearly worthless and feature engineering dominates. Deep learning on raw images or text (Part III) wants orders of magnitude more, unless you start from a pre-trained model, which is why you always start from a pre-trained model.</p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s9">9. Data ethics and privacy basics</h2>
+
+<p>You will be handling data about people. Three questions belong in every project, before modelling starts.</p>
+
+<div class="grid3">
+  <div class="card"><h4>Personal data (PII)</h4><p>Names, emails, phone numbers, addresses, government IDs, precise locations, and anything that identifies a person in combination (birth date + zip code + gender identifies most people). <strong>Models almost never need PII as features.</strong> Drop it or pseudonymise it (a random ID, with the mapping stored separately) at ingest, keep it out of notebooks, logs and screenshots, and know your jurisdiction's rules (GDPR in the EU, CCPA in California, sector rules such as HIPAA for health data).</p></div>
+  <div class="card"><h4>Consent and purpose</h4><p>Data collected for one purpose (fulfilling an order) may not be usable for another (targeting ads). Ask the data owner or privacy team: <em>what were these people told this data would be used for?</em> "It is in our database" is not consent. Also consider retention: a model trained on 10-year-old records may be using data that should have been deleted.</p></div>
+  <div class="card"><h4>Bias in the data</h4><p>A model reproduces the world its training data describes, including historical discrimination. If past loan decisions were biased against a group, "predict past decisions" learns the bias with high accuracy. Check performance and base rates <em>per group</em> (Chapter 6), ask whether the label is a proxy for something unfair (arrests are not crimes; healthcare cost is not healthcare need), and be wary of features that are proxies for protected attributes (zip code, first name).</p></div>
+</div>
+
+<div class="callout key"><div class="title">Key idea</div>
+<p>The question "does the model use protected attributes?" is necessary but nowhere near sufficient. Removing the <code>gender</code> column does nothing if <code>job_title</code> and <code>shopping_history</code> predict gender almost perfectly. Fairness is measured on <em>outcomes per group</em>, not by inspecting the column list.</p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s10">10. The data audit checklist</h2>
+
+<p>This is the template to copy into a document at the start of every project and fill in before the first model. It takes an afternoon and prevents most of the failures this chapter has described.</p>
+
+<div class="tbl-wrap">
+<table class="tbl">
+<thead><tr><th>#</th><th>Check</th><th>How</th><th>Result / decision</th></tr></thead>
+<tbody>
+<tr><td class="num">1</td><td>Source &amp; ownership: where does every table come from, who owns it, may we use it for this purpose?</td><td>Data dictionary; owner conversation</td><td>…</td></tr>
+<tr><td class="num">2</td><td>Population: which rows are included, and does that match who the model will score?</td><td>Compare the extraction query with the deployment population</td><td>…</td></tr>
+<tr><td class="num">3</td><td>Label definition: exact rule, time window, who produces it, estimated noise rate</td><td>Write it as a sentence; hand-audit 200 labels</td><td>…</td></tr>
+<tr><td class="num">4</td><td>Column typing: numeric / categorical / ordinal / boolean / datetime / text / ID for every column</td><td>Figure 2.2; drop IDs</td><td>…</td></tr>
+<tr><td class="num">5</td><td>"Known when?": for each feature, the moment its value is written, versus the prediction moment</td><td>Column-by-column table; flag anything after the prediction date</td><td>…</td></tr>
+<tr><td class="num">6</td><td>Split strategy: random / stratified / time / group, and why</td><td>Figure 2.4; save split IDs to a file</td><td>…</td></tr>
+<tr><td class="num">7</td><td>Duplicates and near-duplicates, removed before splitting</td><td><code>duplicated()</code>; entity keys</td><td>…</td></tr>
+<tr><td class="num">8</td><td>Distributions: skew, sentinels, impossible values, unit mixes, capping</td><td>Histograms, <code>describe()</code>, EDA recipe</td><td>…</td></tr>
+<tr><td class="num">9</td><td>Missingness: how much, in which columns, random or structured</td><td>Missingness matrix; missingness vs label</td><td>…</td></tr>
+<tr><td class="num">10</td><td>Cardinality of categoricals, and rare levels</td><td><code>nunique()</code>, <code>value_counts()</code></td><td>…</td></tr>
+<tr><td class="num">11</td><td>Class balance and the trivial baseline it implies</td><td><code>value_counts(normalize=True)</code></td><td>…</td></tr>
+<tr><td class="num">12</td><td>Target-vs-feature relationships and any correlation &gt; 0.9 with the label</td><td>Figures 2.7 and 2.8</td><td>…</td></tr>
+<tr><td class="num">13</td><td>Drift over time: do distributions change month to month?</td><td>Per-month histograms of key columns and of the label</td><td>…</td></tr>
+<tr><td class="num">14</td><td>PII removed or pseudonymised; consent and retention confirmed</td><td>Privacy review</td><td>…</td></tr>
+<tr><td class="num">15</td><td>Enough data? Learning curve on a baseline model</td><td>Figure 2.9</td><td>…</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="callout eli9"><div class="title">Explain it like I'm 9</div>
+<p>Before a pilot takes off, they walk around the plane with a checklist, even on their thousandth flight, because the one time they skip it is the time a cover is still on the sensor. This is your walk-around. It feels slow. It is the fastest thing you will do all project.</p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="quiz">Quiz</h2>
+<div class="quiz">
+  <h3>Check your understanding</h3>
+
+  <div class="q">
+    <p class="question">1. A column <code>order_number</code> is unique for every row. A colleague says a gradient-boosting model gets 99% training accuracy with it included. What is happening?</p>
+    <ul class="opts">
+      <li><button>Order numbers carry genuine information about the outcome</button></li>
+      <li><button data-correct>The model is memorising rows through the identifier; it will not generalise</button></li>
+      <li><button>Gradient boosting is simply very accurate</button></li>
+      <li><button>Nothing; 99% is a normal training score</button></li>
+    </ul>
+    <div class="explain">A unique-per-row column lets a flexible model memorise each training example. Training accuracy is meaningless; test accuracy will collapse. IDs are for joining and grouping, never features (§2).</div>
+  </div>
+
+  <div class="q">
+    <p class="question">2. You are building a model to forecast next month's sales for each store. Which split is mandatory?</p>
+    <ul class="opts">
+      <li><button>A random 80/20 split with a fixed seed</button></li>
+      <li><button>A stratified split on store size</button></li>
+      <li><button data-correct>A time-based split: train on earlier months, test on later months</button></li>
+      <li><button>No split; use all data since sales are noisy</button></li>
+    </ul>
+    <div class="explain">The model will predict the future, so the test set must be strictly later than the training set. A random split lets the model learn from months after the ones it is "predicting" (Figure 2.4, §4).</div>
+  </div>
+
+  <div class="q">
+    <p class="question">3. A churn model's validation AUC jumps from 0.72 to 0.95 when you add the feature <code>days_until_account_closed</code>. What should you conclude?</p>
+    <ul class="opts">
+      <li><button>You have found the most important feature; ship it</button></li>
+      <li><button data-correct>The feature is a consequence of churn (target leakage); remove it</button></li>
+      <li><button>The validation set is too small</button></li>
+      <li><button>The model is underfitting the other features</button></li>
+    </ul>
+    <div class="explain">"Account closed" happens because the customer churned; the value is unknown at prediction time. A sudden jump from one feature is the classic leakage smell (§5).</div>
+  </div>
+
+  <div class="q">
+    <p class="question">4. You standardise all 10,000 rows with <code>StandardScaler().fit(X)</code>, then split into train and test. Which statement is true?</p>
+    <ul class="opts">
+      <li><button>This is fine: scaling does not use the label</button></li>
+      <li><button data-correct>Test-set information (its mean and variance) has leaked into training; fit the scaler on the training set only, ideally inside a Pipeline</button></li>
+      <li><button>This is fine as long as you use a fixed random seed</button></li>
+      <li><button>Scaling should be done after training instead</button></li>
+    </ul>
+    <div class="explain">Anything fitted must be fitted on training rows only. For a scaler the damage is usually small; for imputers, target encoders and feature selectors it can be enormous (the 0.75-on-noise example). A Pipeline enforces the rule automatically (§5).</div>
+  </div>
+
+  <div class="q">
+    <p class="question">5. In your EDA, <code>monthly_spend</code> has 31 values far above the boxplot's upper fence, all for premium customers. What do you do?</p>
+    <ul class="opts">
+      <li><button>Delete those 31 rows as outliers</button></li>
+      <li><button>Replace them with the median</button></li>
+      <li><button data-correct>Keep them; they are plausible, and probably important; consider a log transform for linear models</button></li>
+      <li><button>Drop the column</button></li>
+    </ul>
+    <div class="explain">A boxplot flag is a prompt to investigate. Large spends by premium customers are real and valuable. Remove only impossible values; transform or use robust models for legitimate extremes (§6).</div>
+  </div>
+
+  <div class="q">
+    <p class="question">6. Your validation accuracy is 86% at 2,000 training rows and 86.2% at 4,000. Which is the best next step?</p>
+    <ul class="opts">
+      <li><button>Collect 8,000 more rows of the same data</button></li>
+      <li><button data-correct>Improve features, model or labels; the learning curve has flattened</button></li>
+      <li><button>Reduce the test set to increase training data</button></li>
+      <li><button>Remove the validation set and train on everything</button></li>
+    </ul>
+    <div class="explain">A flat learning curve says more of the same data will not help. The bottleneck is elsewhere: features, model capacity, or label noise (§8).</div>
+  </div>
+</div>
+
+<h2 id="exercises">Exercises</h2>
+
+<div class="exercise"><div class="title">Exercise 2.1 — Classify the columns and find the leaks</div>
+<p>A hospital readmission dataset has these columns: <code>patient_id</code>, <code>age</code>, <code>sex</code>, <code>admission_date</code>, <code>discharge_date</code>, <code>diagnosis_code</code> (ICD, ~3,000 levels), <code>num_prior_admissions</code>, <code>length_of_stay</code>, <code>discharge_summary_text</code>, <code>followup_appointment_kept</code>, <code>readmitted_within_30_days</code> (label). The model will run on the day of discharge. For each column: type, treatment, and whether it can be a feature.</p>
+<details class="answer"><summary>Show answer</summary>
+<ul>
+  <li><code>patient_id</code>: identifier → drop as a feature; <strong>use for a group split</strong> (patients have multiple admissions).</li>
+  <li><code>age</code>: numeric continuous → keep. <code>sex</code>: nominal categorical → one-hot; also check outcomes per group (§9).</li>
+  <li><code>admission_date</code>, <code>discharge_date</code>: datetime → derive <code>length_of_stay</code>, weekday of discharge, season; keep discharge_date for a <strong>time-based split</strong>.</li>
+  <li><code>diagnosis_code</code>: high-cardinality nominal → group into chapters or target-encode inside a pipeline; one-hot of 3,000 levels is impractical.</li>
+  <li><code>num_prior_admissions</code>: discrete count → keep; verify it is counted <em>as of admission</em>, not as of today (temporal leak if the latter).</li>
+  <li><code>length_of_stay</code>: numeric → keep (known at discharge).</li>
+  <li><code>discharge_summary_text</code>: free text → bag-of-words or embeddings (Ch 19); check that it was written before discharge and not edited after readmission.</li>
+  <li><code>followup_appointment_kept</code>: <strong>target leakage</strong> — it is only known days or weeks after discharge, i.e. after the prediction time. Drop.</li>
+</ul>
+</details>
+</div>
+
+<div class="exercise"><div class="title">Exercise 2.2 — Break and fix a split</div>
+<p>Using the churn code from §4, add a column <code>company_id = rng.integers(0, 50, n)</code> and a feature <code>company_churn_rate</code> equal to the mean of <code>churned</code> within each company computed on <em>all</em> rows. Train a gradient-boosting model with a random split and report test AUC. Then redo it correctly: compute the company churn rate using training rows only, and use <code>GroupShuffleSplit</code> on <code>company_id</code>. Explain the difference in scores.</p>
+<details class="answer"><summary>Show answer</summary>
+<p>The first version leaks in two ways: the company mean includes each test row's own label (target leakage through a group aggregate), and the same companies appear on both sides of the split. Test AUC will be inflated well above the honest ≈0.73. Computing the aggregate on training rows only (with the test rows' own labels excluded) and keeping companies together removes both leaks; the AUC returns to roughly the honest level, and the new feature adds little because company membership was random in this synthetic data. In real data, group-level target encodings must always be computed out-of-fold (Chapter 8).</p>
+</details>
+</div>
+
+<div class="exercise"><div class="title">Exercise 2.3 — Audit a real table at work</div>
+<p>Pick one table you would actually use for a model at work. Run the EDA recipe from §6 on it, then fill in the 15-row audit checklist from §10. Specifically produce: (a) the column-type table with a "known when?" column, (b) the split strategy and a one-sentence justification, (c) a list of at least three data-quality defects you found and the fix for each, (d) the label definition written as one precise sentence with a time window. Keep this document; it is the first section of the capstone report in Chapter 23.</p>
+<details class="answer"><summary>Show answer</summary>
+<p>There is no single right answer, but a good audit has these properties: every column has a type <em>and</em> a known-when timestamp; at least one column has been dropped or flagged as a potential leak; the split strategy matches how the model will be used (new entities → group, future → time); the defects list includes at least one sentinel or encoding issue found by looking at min/max and value counts; and the label sentence names a source system, a rule, and a window ("churned = no successful payment in the 60 days after the renewal date, per the billing table").</p>
+</details>
+</div>
+
+<div class="summary">
+  <h3>Chapter summary</h3>
+  <ul class="checklist">
+    <li>Every model eats a numeric matrix; tabular data is already one, text/images/time series must be converted first.</li>
+    <li>Type every column (numeric, categorical nominal/ordinal, boolean, datetime, text, ID). IDs and anything unique per row are never features.</li>
+    <li>Train fits, validation chooses, test reports once. Typical splits 60/20/20 to 80/10/10; use cross-validation when data is scarce.</li>
+    <li>The split must imitate deployment: stratify for rare classes, time-based when predicting the future, group when entities repeat.</li>
+    <li>Leakage = information unavailable at prediction time reaching training. Three kinds: target (feature caused by label), contamination (fitting across the split, duplicates), temporal (future information). A too-good score is the symptom; "known when?" is the cure.</li>
+    <li>Everything fitted (scaler, imputer, encoder, selector, model) is fitted on training rows only; use a Pipeline.</li>
+    <li>EDA produces decisions, not plots: distributions, outliers, correlations, missingness, duplicates, balance, cardinality, target-vs-feature.</li>
+    <li>Clean by transforming, not deleting: sentinels → NaN + flag; categories normalised via an auditable map; units and time zones converted and named.</li>
+    <li>Labels have origins and noise rates; audit 200 by hand. Use a learning curve to decide whether more data will help.</li>
+    <li>Strip PII, confirm consent and purpose, and measure outcomes per group; removing a protected column does not remove bias.</li>
+  </ul>
+</div>
+
+<div class="mark-done"></div>
+<nav class="pager"></nav>
+
+</div></main>
+</div>
+
+<script src="../assets/chapters.js"></script>
+<script src="../assets/app.js"></script>
+<script>
+(function () {
+  /* ---------- Widget 1: split proportions ---------- */
+  var N = 2000;
+  var trS = document.getElementById("sp-train"), vaS = document.getElementById("sp-val");
+  var svg = document.getElementById("sp-svg"), nTest = document.getElementById("sp-ntest"), ci = document.getElementById("sp-ci"), note = document.getElementById("sp-note");
+  var trOut = document.getElementById("sp-train-out"), vaOut = document.getElementById("sp-val-out");
+  function renderSplit() {
+    var tr = +trS.value, va = +vaS.value;
+    if (tr + va > 95) { va = 95 - tr; vaS.value = va; }
+    var te = 100 - tr - va;
+    trOut.textContent = tr; vaOut.textContent = va;
+    var nTr = Math.round(N * tr / 100), nVa = Math.round(N * va / 100), nTe = N - nTr - nVa;
+    var p = 0.75, half = 1.96 * Math.sqrt(p * (1 - p) / nTe) * 100;
+    var W = 660, x0 = 20, wTr = W * tr / 100, wVa = W * va / 100, wTe = W - wTr - wVa;
+    var s = '';
+    s += '<rect x="' + x0 + '" y="20" width="' + wTr + '" height="40" fill="var(--s1)"/>';
+    s += '<rect x="' + (x0 + wTr) + '" y="20" width="' + wVa + '" height="40" fill="var(--s2)"/>';
+    s += '<rect x="' + (x0 + wTr + wVa) + '" y="20" width="' + wTe + '" height="40" fill="var(--s3)"/>';
+    s += '<text x="' + (x0 + wTr / 2) + '" y="45" text-anchor="middle" font-size="12" font-weight="700" fill="#fff">train ' + nTr + '</text>';
+    if (wVa > 40) s += '<text x="' + (x0 + wTr + wVa / 2) + '" y="45" text-anchor="middle" font-size="12" font-weight="700" fill="#fff">val ' + nVa + '</text>';
+    if (wTe > 40) s += '<text x="' + (x0 + wTr + wVa + wTe / 2) + '" y="45" text-anchor="middle" font-size="12" font-weight="700" fill="#fff">test ' + nTe + '</text>';
+    /* CI bar: 75% ± half, on a 60..90 axis */
+    var ax0 = 60, ax1 = 640, y = 110;
+    function ax(v) { return ax0 + (v - 60) / 30 * (ax1 - ax0); }
+    s += '<line x1="' + ax0 + '" y1="' + y + '" x2="' + ax1 + '" y2="' + y + '" stroke="currentColor" stroke-opacity=".4"/>';
+    for (var v = 60; v <= 90; v += 5) s += '<line x1="' + ax(v) + '" y1="' + (y - 4) + '" x2="' + ax(v) + '" y2="' + (y + 4) + '" stroke="currentColor" stroke-opacity=".5"/><text x="' + ax(v) + '" y="' + (y + 18) + '" text-anchor="middle" font-size="11">' + v + '%</text>';
+    var lo = Math.max(60, 75 - half), hi = Math.min(90, 75 + half);
+    s += '<rect x="' + ax(lo) + '" y="' + (y - 12) + '" width="' + (ax(hi) - ax(lo)) + '" height="24" fill="var(--s3)" fill-opacity=".3" stroke="var(--s3)"/>';
+    s += '<line x1="' + ax(75) + '" y1="' + (y - 16) + '" x2="' + ax(75) + '" y2="' + (y + 16) + '" stroke="var(--s7)" stroke-width="2.5"/>';
+    s += '<text x="' + ax(75) + '" y="' + (y - 20) + '" text-anchor="middle" font-size="11" fill="var(--s7)" font-weight="700">measured 75% ± ' + half.toFixed(1) + ' pts (95% CI, n<tspan font-size="9">test</tspan> = ' + nTe + ')</text>';
+    s += '<text x="350" y="145" text-anchor="middle" font-size="12" opacity=".7">what a 75% test accuracy could really be</text>';
+    svg.innerHTML = s;
+    nTest.textContent = nTe; ci.textContent = '±' + half.toFixed(1) + ' pts';
+    var msg;
+    if (nTe < 150) msg = 'Test set of ' + nTe + ' rows: the interval is ±' + half.toFixed(1) + ' points, so you cannot distinguish a 72% model from a 78% one. Any "improvement" smaller than that is noise.';
+    else if (nTr < 1000) msg = 'Training set of ' + nTr + ' rows: a tight test estimate of a weaker model. Every row moved out of training costs accuracy while the learning curve is still rising (§8).';
+    else msg = 'A reasonable compromise for 2,000 rows: ' + nTr + ' to train, ' + nVa + ' to choose, ' + nTe + ' to report (±' + half.toFixed(1) + ' points). Chapter 7 shows how cross-validation recovers the rows you spent on validation.';
+    note.textContent = msg;
+  }
+  trS.addEventListener("input", renderSplit); vaS.addEventListener("input", renderSplit); renderSplit();
+
+  /* ---------- Widget 2: leakage detector ---------- */
+  var tog = document.getElementById("lk-toggle"), lsvg = document.getElementById("lk-svg");
+  var off = document.getElementById("lk-off"), prod = document.getElementById("lk-prod");
+  function renderLeak() {
+    var leaky = tog.checked;
+    var offline = leaky ? 92.5 : 73.5, production = leaky ? 61.0 : 73.0, base = 73.8;
+    function h(v) { return (v - 50) / 50 * 150; }
+    var s = '';
+    s += '<line x1="60" y1="180" x2="660" y2="180" stroke="currentColor" stroke-opacity=".4"/>';
+    s += '<line x1="60" y1="180" x2="60" y2="20" stroke="currentColor" stroke-opacity=".4"/>';
+    [50, 60, 70, 80, 90, 100].forEach(function (v) { s += '<text x="54" y="' + (184 - h(v)) + '" text-anchor="end" font-size="11">' + v + '%</text><line x1="60" y1="' + (180 - h(v)) + '" x2="660" y2="' + (180 - h(v)) + '" stroke="currentColor" stroke-opacity=".08"/>'; });
+    s += '<rect x="160" y="' + (180 - h(offline)) + '" width="140" height="' + h(offline) + '" fill="var(--s1)"/>';
+    s += '<text x="230" y="' + (172 - h(offline)) + '" text-anchor="middle" font-size="14" font-weight="700" fill="var(--s1)">' + offline.toFixed(1) + '%</text>';
+    s += '<text x="230" y="198" text-anchor="middle" font-size="12">offline test set</text>';
+    s += '<rect x="400" y="' + (180 - h(production)) + '" width="140" height="' + h(production) + '" fill="' + (leaky ? 'var(--critical)' : 'var(--s3)') + '"/>';
+    s += '<text x="470" y="' + (172 - h(production)) + '" text-anchor="middle" font-size="14" font-weight="700" fill="' + (leaky ? 'var(--critical)' : 'var(--s3)') + '">' + production.toFixed(1) + '%</text>';
+    s += '<text x="470" y="198" text-anchor="middle" font-size="12">first month in production</text>';
+    s += '<line x1="60" y1="' + (180 - h(base)) + '" x2="660" y2="' + (180 - h(base)) + '" stroke="var(--s2)" stroke-width="1.5" stroke-dasharray="6 3"/>';
+    s += '<text x="656" y="' + (176 - h(base)) + '" text-anchor="end" font-size="11" fill="var(--s2)" font-weight="700">baseline: always "stays" = 73.8%</text>';
+    s += '<text x="360" y="' + (leaky ? 14 : 30) + '" text-anchor="middle" font-size="12" font-weight="700" fill="' + (leaky ? 'var(--critical)' : 'var(--s3)') + '">' + (leaky ? 'gap of ' + (offline - production).toFixed(1) + ' points: the leak' : 'offline ≈ production: the test set told the truth') + '</text>';
+    lsvg.innerHTML = s;
+    off.textContent = offline.toFixed(1) + '%'; prod.textContent = production.toFixed(1) + '%';
+  }
+  tog.addEventListener("change", renderLeak); renderLeak();
+})();
+</script>
+</body>
+</html>
