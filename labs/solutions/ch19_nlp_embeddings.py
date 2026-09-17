@@ -30,7 +30,7 @@ TASKS (make the tests in labs/tests/test_ch19.py pass, one at a time)
 STRETCH (no tests)
 ------------------
 - Swap TfidfVectorizer for the skip-gram vectors (average per ticket) in task 4. Which
-  wins on 48 tickets, and why would the answer change at 48,000?
+  wins on 60 tickets, and why would the answer change at 60,000?
 - Write the system prompt + JSON output schema (§8) for the ticket triage LLM and list
   the three golden-set checks you would run before it replaces task 4.
 
