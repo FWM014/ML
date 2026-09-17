@@ -191,8 +191,8 @@
   <line x1="118" y1="138" x2="118" y2="158" class="arrow" marker-end="url(#arr-f23-2)"/>
   <rect x="20" y="160" width="196" height="66" rx="6" fill="var(--s3)" fill-opacity=".14" stroke="var(--s3)" stroke-width="1.5"/>
   <text x="118" y="178" text-anchor="middle" class="lbl-strong" font-size="11">1st: pretrained CNN, fine-tune</text>
-  <text x="118" y="194" text-anchor="middle" class="lbl" font-size="11">2nd: larger backbone + augmentation</text>
-  <text x="118" y="210" text-anchor="middle" class="lbl" font-size="11">never from scratch under 100k images</text>
+  <text x="118" y="194" text-anchor="middle" class="lbl" font-size="11">2nd: bigger backbone + augment.</text>
+  <text x="118" y="210" text-anchor="middle" class="lbl" font-size="11">from scratch: never under 100k</text>
   <rect x="20" y="246" width="196" height="40" class="box"/><text x="118" y="264" text-anchor="middle" class="lbl-strong">Free text</text><text x="118" y="279" text-anchor="middle" class="lbl" font-size="11">(Chapters 18–19)</text>
   <line x1="118" y1="286" x2="118" y2="306" class="arrow" marker-end="url(#arr-f23-2)"/>
   <rect x="20" y="308" width="196" height="66" rx="6" fill="var(--s3)" fill-opacity=".14" stroke="var(--s3)" stroke-width="1.5"/>
@@ -207,19 +207,19 @@
   <line x1="300" y1="180" x2="262" y2="180" class="arrow"/><line x1="262" y1="180" x2="262" y2="224" class="arrow" marker-end="url(#arr-f23-2)"/>
   <text x="268" y="209" class="lbl" font-size="10">&lt; 1k rows, or</text><text x="268" y="220" class="lbl" font-size="10">must explain</text>
   <line x1="400" y1="200" x2="400" y2="224" class="arrow" marker-end="url(#arr-f23-2)"/>
-  <text x="400" y="214" text-anchor="middle" class="lbl" font-size="10">1k – 10M rows</text>
+  <text x="400" y="214" text-anchor="middle" class="lbl" font-size="10">1k–10M</text>
   <line x1="500" y1="180" x2="538" y2="180" class="arrow"/><line x1="538" y1="180" x2="538" y2="224" class="arrow" marker-end="url(#arr-f23-2)"/>
-  <text x="532" y="209" text-anchor="end" class="lbl" font-size="10">&gt; 1M rows, raw</text><text x="532" y="220" text-anchor="end" class="lbl" font-size="10">signals / sequences</text>
+  <text x="532" y="209" text-anchor="end" class="lbl" font-size="10">&gt; 1M rows,</text><text x="532" y="220" text-anchor="end" class="lbl" font-size="10">raw signals</text>
   <rect x="236" y="226" width="150" height="80" rx="6" fill="var(--s1)" fill-opacity=".14" stroke="var(--s1)" stroke-width="1.5"/>
   <text x="311" y="244" text-anchor="middle" class="lbl-strong" font-size="11">1st: regularized linear /</text>
   <text x="311" y="258" text-anchor="middle" class="lbl-strong" font-size="11">logistic (Ch 5–6)</text>
-  <text x="311" y="274" text-anchor="middle" class="lbl" font-size="11">2nd: shallow tree or GAM</text>
-  <text x="311" y="290" text-anchor="middle" class="lbl" font-size="11">+ SHAP for reasons (Ch 20)</text>
+  <text x="311" y="274" text-anchor="middle" class="lbl" font-size="11">2nd: shallow tree / GAM</text>
+  <text x="311" y="290" text-anchor="middle" class="lbl" font-size="11">SHAP for reasons (Ch 20)</text>
   <rect x="400" y="226" width="150" height="80" rx="6" fill="var(--s2)" fill-opacity=".14" stroke="var(--s2)" stroke-width="1.5"/>
   <text x="475" y="244" text-anchor="middle" class="lbl-strong" font-size="11">1st: logistic / linear</text>
   <text x="475" y="258" text-anchor="middle" class="lbl-strong" font-size="11">2nd: gradient boosting</text>
   <text x="475" y="274" text-anchor="middle" class="lbl" font-size="11">(HistGB / LightGBM)</text>
-  <text x="475" y="290" text-anchor="middle" class="lbl" font-size="11">RF if no time to tune (Ch 10)</text>
+  <text x="475" y="290" text-anchor="middle" class="lbl" font-size="11">RF if no time to tune</text>
   <rect x="564" y="226" width="150" height="80" rx="6" fill="var(--s7)" fill-opacity=".14" stroke="var(--s7)" stroke-width="1.5"/>
   <text x="639" y="244" text-anchor="middle" class="lbl-strong" font-size="11">1st: still a GBM</text>
   <text x="639" y="258" text-anchor="middle" class="lbl" font-size="11">2nd: neural net (Ch 15–16)</text>
@@ -236,7 +236,7 @@
   <rect x="20" y="422" width="180" height="58" class="box"/><text x="110" y="442" text-anchor="middle" class="lbl-strong" font-size="11">"What to show each user?"</text><text x="110" y="458" text-anchor="middle" class="lbl" font-size="11">item-item CF → MF / two-tower</text><text x="110" y="472" text-anchor="middle" class="lbl" font-size="11">judge by online A/B lift</text>
   <rect x="212" y="422" width="180" height="58" class="box"/><text x="302" y="442" text-anchor="middle" class="lbl-strong" font-size="11">"Which rows are weird?"</text><text x="302" y="458" text-anchor="middle" class="lbl" font-size="11">robust z → Isolation Forest</text><text x="302" y="472" text-anchor="middle" class="lbl" font-size="11">judge by reviewed top-k</text>
   <rect x="404" y="422" width="180" height="58" class="box"/><text x="494" y="442" text-anchor="middle" class="lbl-strong" font-size="11">"Did / will X cause Y?"</text><text x="494" y="458" text-anchor="middle" class="lbl" font-size="11">A/B test → adjustment → uplift</text><text x="494" y="472" text-anchor="middle" class="lbl" font-size="11">judge by effect + CI, Qini</text>
-  <rect x="596" y="422" width="184" height="58" class="box"/><text x="688" y="442" text-anchor="middle" class="lbl-strong" font-size="11">"Group these" / "compress"</text><text x="688" y="458" text-anchor="middle" class="lbl" font-size="11">k-means / HDBSCAN, PCA/UMAP</text><text x="688" y="472" text-anchor="middle" class="lbl" font-size="11">judge by usefulness (Ch 12)</text>
+  <rect x="596" y="422" width="184" height="58" class="box"/><text x="688" y="442" text-anchor="middle" class="lbl-strong" font-size="11">"Group these" / "compress"</text><text x="688" y="458" text-anchor="middle" class="lbl" font-size="11">k-means, HDBSCAN, PCA</text><text x="688" y="472" text-anchor="middle" class="lbl" font-size="11">judge by usefulness (Ch 12)</text>
   <!-- universal rules -->
   <rect x="20" y="500" width="760" height="144" rx="8" fill="var(--accent-soft)" stroke="var(--accent)" stroke-width="1.5"/>
   <text x="36" y="522" class="lbl-strong" font-size="13">Rules that override the chart</text>
@@ -275,11 +275,11 @@
   <text x="536" y="170" class="lbl" font-size="10">yes</text>
   <rect x="225" y="186" width="145" height="56" rx="6" fill="var(--s2)" fill-opacity=".12" stroke="var(--s2)"/>
   <text x="297" y="204" text-anchor="middle" class="lbl-strong" font-size="11">balanced</text>
-  <text x="297" y="219" text-anchor="middle" class="lbl" font-size="11">ROC-AUC to compare models;</text>
-  <text x="297" y="233" text-anchor="middle" class="lbl" font-size="11">accuracy only vs a baseline</text>
+  <text x="297" y="219" text-anchor="middle" class="lbl" font-size="11">ROC-AUC to compare;</text>
+  <text x="297" y="233" text-anchor="middle" class="lbl" font-size="11">accuracy only vs baseline</text>
   <rect x="430" y="186" width="145" height="56" rx="6" fill="var(--s2)" fill-opacity=".12" stroke="var(--s2)"/>
   <text x="502" y="204" text-anchor="middle" class="lbl-strong" font-size="11">imbalanced</text>
-  <text x="502" y="219" text-anchor="middle" class="lbl" font-size="11">PR-AUC to compare models;</text>
+  <text x="502" y="219" text-anchor="middle" class="lbl" font-size="11">PR-AUC to compare;</text>
   <text x="502" y="233" text-anchor="middle" class="lbl" font-size="11">never accuracy (Ch 6, 13)</text>
   <line x1="297" y1="242" x2="297" y2="262" class="arrow" marker-end="url(#arr-f23-3)"/><line x1="502" y1="242" x2="502" y2="262" class="arrow" marker-end="url(#arr-f23-3)"/>
   <rect x="290" y="264" width="220" height="36" class="box-accent"/><text x="400" y="287" text-anchor="middle" class="lbl-strong" font-size="12">Then: what will the decision use?</text>
@@ -288,13 +288,13 @@
     <rect x="200" y="316" width="130" height="66" rx="6" fill="var(--s3)" fill-opacity=".12" stroke="var(--s3)"/>
     <text x="265" y="334" text-anchor="middle" class="lbl-strong" font-size="11">a yes/no action</text>
     <text x="265" y="349" text-anchor="middle">precision &amp; recall at</text>
-    <text x="265" y="363" text-anchor="middle">a cost-chosen threshold;</text>
+    <text x="265" y="363" text-anchor="middle">cost-chosen threshold;</text>
     <text x="265" y="377" text-anchor="middle">expected cost/profit</text>
     <rect x="340" y="316" width="130" height="66" rx="6" fill="var(--s3)" fill-opacity=".12" stroke="var(--s3)"/>
     <text x="405" y="334" text-anchor="middle" class="lbl-strong" font-size="11">a probability</text>
     <text x="405" y="349" text-anchor="middle">log loss / Brier score</text>
     <text x="405" y="363" text-anchor="middle">+ calibration curve;</text>
-    <text x="405" y="377" text-anchor="middle">calibrate if needed (Ch 13)</text>
+    <text x="405" y="377" text-anchor="middle">calibrate (Ch 13)</text>
     <rect x="480" y="316" width="130" height="66" rx="6" fill="var(--s3)" fill-opacity=".12" stroke="var(--s3)"/>
     <text x="545" y="334" text-anchor="middle" class="lbl-strong" font-size="11">a top-k list</text>
     <text x="545" y="349" text-anchor="middle">precision@k, recall@k,</text>
@@ -329,21 +329,21 @@
   <defs><marker id="arr-f23-4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
   <rect x="20" y="40" width="110" height="50" class="box"/><text x="75" y="61" text-anchor="middle" class="lbl-strong" font-size="11">1 Raw data</text><text x="75" y="77" text-anchor="middle" class="lbl" font-size="10">EDA, missingness</text>
   <line x1="130" y1="65" x2="158" y2="65" class="arrow" marker-end="url(#arr-f23-4)"/>
-  <rect x="160" y="40" width="110" height="50" class="box"/><text x="215" y="61" text-anchor="middle" class="lbl-strong" font-size="11">2 Leak check</text><text x="215" y="77" text-anchor="middle" class="lbl" font-size="10">drop AUC ≈ 1 columns</text>
+  <rect x="160" y="40" width="110" height="50" class="box"/><text x="215" y="61" text-anchor="middle" class="lbl-strong" font-size="11">2 Leak check</text><text x="215" y="77" text-anchor="middle" class="lbl" font-size="10">drop AUC≈1 cols</text>
   <line x1="270" y1="65" x2="298" y2="65" class="arrow" marker-end="url(#arr-f23-4)"/>
   <rect x="300" y="40" width="110" height="50" class="box-accent"/><text x="355" y="61" text-anchor="middle" class="lbl-strong" font-size="11">3 Split once</text><text x="355" y="77" text-anchor="middle" class="lbl" font-size="10">stratified, seeded</text>
   <!-- train branch -->
   <line x1="410" y1="55" x2="468" y2="55" class="arrow" marker-end="url(#arr-f23-4)"/>
   <text x="438" y="48" text-anchor="middle" class="lbl" font-size="10">80% train</text>
   <rect x="470" y="30" width="310" height="140" rx="8" fill="var(--s1)" fill-opacity=".08" stroke="var(--s1)" stroke-dasharray="5 3"/>
-  <text x="625" y="48" text-anchor="middle" class="lbl-strong" font-size="11">training data only: everything below is cross-validated</text>
+  <text x="625" y="48" text-anchor="middle" class="lbl-strong" font-size="11">training data only: all decisions by CV</text>
   <rect x="482" y="60" width="90" height="44" class="box"/><text x="527" y="78" text-anchor="middle" class="lbl-strong" font-size="10">3 Baselines</text><text x="527" y="92" text-anchor="middle" class="lbl" font-size="10">dummy, linear</text>
   <line x1="572" y1="82" x2="584" y2="82" class="arrow" marker-end="url(#arr-f23-4)"/>
   <rect x="586" y="60" width="90" height="44" class="box"/><text x="631" y="78" text-anchor="middle" class="lbl-strong" font-size="10">4 Pipeline + CV</text><text x="631" y="92" text-anchor="middle" class="lbl" font-size="10">prep → model</text>
   <line x1="676" y1="82" x2="688" y2="82" class="arrow" marker-end="url(#arr-f23-4)"/>
   <rect x="690" y="60" width="80" height="44" class="box"/><text x="730" y="78" text-anchor="middle" class="lbl-strong" font-size="10">5 Tune</text><text x="730" y="92" text-anchor="middle" class="lbl" font-size="10">small search</text>
   <path d="M730,104 L730,120 L580,120 L580,128" class="arrow" fill="none" marker-end="url(#arr-f23-4)"/>
-  <rect x="500" y="130" width="160" height="32" rx="6" fill="var(--s2)" fill-opacity=".18" stroke="var(--s2)"/><text x="580" y="150" text-anchor="middle" class="lbl-strong" font-size="10">6 Threshold on out-of-fold probs × cost matrix</text>
+  <rect x="470" y="130" width="220" height="32" rx="6" fill="var(--s2)" fill-opacity=".18" stroke="var(--s2)"/><text x="580" y="150" text-anchor="middle" class="lbl-strong" font-size="10">6 Threshold on out-of-fold probs × cost matrix</text>
   <!-- test branch -->
   <line x1="355" y1="90" x2="355" y2="208" class="arrow" marker-end="url(#arr-f23-4)"/>
   <text x="362" y="150" class="lbl" font-size="10">20% test</text>
@@ -356,7 +356,7 @@
   <line x1="600" y1="235" x2="648" y2="235" class="arrow" marker-end="url(#arr-f23-4)"/>
   <rect x="650" y="210" width="130" height="50" rx="6" fill="var(--s3)" fill-opacity=".18" stroke="var(--s3)" stroke-width="1.5"/><text x="715" y="231" text-anchor="middle" class="lbl-strong" font-size="11">8 Artifact</text><text x="715" y="247" text-anchor="middle" class="lbl" font-size="10">joblib + metadata JSON</text>
   <line x1="420" y1="235" x2="468" y2="235" class="arrow" marker-end="url(#arr-f23-4)"/>
-  <text x="20" y="285" class="lbl" font-size="11">Rule: nothing that touches the test set feeds back into a modeling decision. Thresholds, features and hyperparameters are chosen inside the dashed box.</text>
+  <text x="20" y="285" class="lbl" font-size="11">Rule: nothing that touches the test set feeds back into a modeling decision; every choice is made inside the dashed box.</text>
 </svg>
 <figcaption><strong>Figure 23.4 — The eight blocks as a data flow.</strong> The split in Block 3 creates two worlds: the training world, where every decision (baselines, pipeline, tuning, threshold) is made by cross-validation, and the sealed test set, which the frozen pipeline meets exactly once in Block 7. Block 8 turns the result into a file.</figcaption>
 </figure>
@@ -757,7 +757,7 @@ top_shap = pd.Series(np.<span class="fn">abs</span>(sv).<span class="fn">mean</s
   <line x1="312.0" y1="60" x2="312.0" y2="220" stroke="var(--ink)" stroke-width="1.5"/>
   <text x="312.0" y="54" text-anchor="middle" class="lbl-strong" font-size="10">point estimate 0.834</text>
   <circle cx="243.0" cy="205" r="5" fill="var(--s2)"/><text x="243.0" y="196" text-anchor="middle" class="lbl" fill="var(--s2)" font-size="10" font-weight="700">CV 0.811</text>
-  <circle cx="345.0" cy="205" r="5" fill="var(--s3)"/><text x="353.0" y="209" class="lbl" fill="var(--s3)" font-size="10" font-weight="700">colleague's 0.845</text>
+  <circle cx="345.0" cy="205" r="5" fill="var(--s3)"/><text x="353.0" y="196" class="lbl" fill="var(--s3)" font-size="10" font-weight="700">colleague's 0.845</text>
   <rect x="590" y="40" width="190" height="150" rx="8" class="box"/>
   <text x="685" y="62" text-anchor="middle" class="lbl-strong" font-size="11">How to read it</text>
   <text x="600" y="86" class="lbl" font-size="10">Anything inside the violet lines is</text>

@@ -80,15 +80,8 @@ def scaled_dot_product_attention(Q: np.ndarray, K: np.ndarray, V: np.ndarray,
     Example (Figure 18.4): with make_three_token_example(), weights[0] == [0.401, 0.198, 0.401]
     and output[0] == [3.0, 4.0]. Without the sqrt(d_k) you would get [0.422, 0.155, 0.422].
     """
-    Q, K, V = np.asarray(Q, float), np.asarray(K, float), np.asarray(V, float)
-    d_k = Q.shape[-1]
-    scores = Q @ K.T / math.sqrt(d_k)
-    if mask is not None:
-        scores = np.where(np.asarray(mask) == 0, -np.inf, scores)
-    scores = scores - scores.max(axis=-1, keepdims=True)
-    e = np.exp(scores)
-    weights = e / e.sum(axis=-1, keepdims=True)
-    return weights @ V, weights
+    # TODO: scores = Q @ K.T / sqrt(d_k); apply mask with np.where(mask == 0, -np.inf, scores); stable softmax over the last axis; return (weights @ V, weights)
+    raise NotImplementedError("Task: scaled_dot_product_attention")
 
 
 # ---------------------------------------------------------------- Task 2
@@ -98,7 +91,8 @@ def causal_mask(T: int) -> np.ndarray:
 
     Example: causal_mask(3) == [[1, 0, 0], [1, 1, 0], [1, 1, 1]]
     """
-    return np.tril(np.ones((T, T), dtype=int))
+    # TODO: np.tril(np.ones((T, T), dtype=int))
+    raise NotImplementedError("Task: causal_mask")
 
 
 # ---------------------------------------------------------------- Task 3
@@ -109,18 +103,16 @@ def split_heads(x: np.ndarray, n_heads: int) -> np.ndarray:
     Example: x of shape (2, 5, 16) with 4 heads -> (2, 4, 5, 4), and
     split_heads(x, 4)[:, 0] == x[..., :4].
     """
-    B, T, D = x.shape
-    if D % n_heads:
-        raise ValueError(f"D={D} not divisible by n_heads={n_heads}")
-    return x.reshape(B, T, n_heads, D // n_heads).transpose(0, 2, 1, 3)
+    # TODO: check divisibility; reshape to (B, T, n_heads, D // n_heads) then transpose to (B, n_heads, T, D // n_heads)
+    raise NotImplementedError("Task: split_heads")
 
 
 def merge_heads(x: np.ndarray) -> np.ndarray:
     """Inverse of split_heads: (B, h, T, d_head) -> (B, T, h * d_head), concatenating the
     heads back in order so merge_heads(split_heads(x, h)) == x exactly.
     """
-    B, h, T, d = x.shape
-    return x.transpose(0, 2, 1, 3).reshape(B, T, h * d)
+    # TODO: transpose back to (B, T, h, d) and reshape to (B, T, h * d)
+    raise NotImplementedError("Task: merge_heads")
 
 
 # ---------------------------------------------------------------- Task 4
@@ -132,15 +124,8 @@ def sinusoidal_positional_encoding(max_len: int, d_model: int) -> np.ndarray:
     Example: PE[0] == [0, 1, 0, 1, ...]; PE[1, 0] == sin(1); PE[1, 1] == cos(1);
     every (sin, cos) pair has unit norm.
     """
-    if d_model % 2:
-        raise ValueError("d_model must be even")
-    pos = np.arange(max_len)[:, None]
-    i = np.arange(0, d_model, 2)[None, :]
-    angle = pos / np.power(10000.0, i / d_model)
-    pe = np.zeros((max_len, d_model))
-    pe[:, 0::2] = np.sin(angle)
-    pe[:, 1::2] = np.cos(angle)
-    return pe
+    # TODO: pos column vector, i = arange(0, d_model, 2); angle = pos / 10000 ** (i / d_model); sin into even columns, cos into odd columns
+    raise NotImplementedError("Task: sinusoidal_positional_encoding")
 
 
 # ---------------------------------------------------------------- Task 5
@@ -170,8 +155,8 @@ def build_encoder(vocab: int = 1000, d_model: int = 64, nhead: int = 4, dim_feed
     Its forward maps LongTensor ids (B, T) with T <= max_len to (B, T, d_model): the shape
     is preserved through every block, which is what lets blocks stack.
     """
-    torch.manual_seed(seed)
-    return TokenPosEncoder(vocab, d_model, nhead, dim_feedforward, num_layers, max_len)
+    # TODO: torch.manual_seed(seed); return TokenPosEncoder(vocab, d_model, nhead, dim_feedforward, num_layers, max_len)
+    raise NotImplementedError("Task: build_encoder")
 
 
 def encoder_param_count(d_model: int, dim_feedforward: int, num_layers: int) -> int:
@@ -182,33 +167,11 @@ def encoder_param_count(d_model: int, dim_feedforward: int, num_layers: int) -> 
               + two LayerNorms (2*d each).
     Example: d_model=64, dim_feedforward=256, num_layers=3 -> 149,952 (matches the chapter).
     """
-    d, ff = d_model, dim_feedforward
-    attn = 3 * d * d + 3 * d + d * d + d
-    ffn = d * ff + ff + ff * d + d
-    norms = 2 * (2 * d)
-    return num_layers * (attn + ffn + norms)
+    # TODO: attention = 3*d*d + 3*d + d*d + d; ffn = d*ff + ff + ff*d + d; norms = 2 * 2*d; multiply the sum by num_layers
+    raise NotImplementedError("Task: encoder_param_count")
 
 
 # ---------------------------------------------------------------- Task 6
-class CharLM(nn.Module):
-    """Decoder-style char model: token + position embeddings, ONE TransformerEncoderLayer
-    used with a causal mask, then a linear head to next-char logits. (Solution helper.)"""
-
-    def __init__(self, vocab: int, context: int, d_model: int = 32, nhead: int = 4):
-        super().__init__()
-        self.context = context
-        self.tok = nn.Embedding(vocab, d_model)
-        self.pos = nn.Embedding(context, d_model)
-        self.block = nn.TransformerEncoderLayer(d_model=d_model, nhead=nhead, dim_feedforward=4 * d_model,
-                                                dropout=0.0, batch_first=True)
-        self.head = nn.Linear(d_model, vocab)
-
-    def forward(self, idx: torch.Tensor) -> torch.Tensor:      # (B, t) -> (B, t, vocab)
-        B, t = idx.shape
-        x = self.tok(idx) + self.pos(torch.arange(t))
-        mask = torch.tensor(causal_mask(t)) == 0                 # True = blocked
-        x = self.block(x, src_mask=mask)
-        return self.head(x)
 
 
 def train_char_lm(text: str, steps: int = 150, context: int = 16, d_model: int = 32,
@@ -229,32 +192,8 @@ def train_char_lm(text: str, steps: int = 150, context: int = 16, d_model: int =
     A working model's final loss is far below the initial one (~ln(vocab)), and on a
     repeated sentence the greedy continuation reproduces the text.
     """
-    torch.manual_seed(seed)
-    data, chars = make_char_dataset(text)
-    V = len(chars)
-    model = CharLM(V, context, d_model)
-    opt = torch.optim.AdamW(model.parameters(), lr=lr)
-    losses = []
-    for _ in range(steps):
-        i = torch.randint(0, len(data) - context - 1, (batch_size,))
-        xb = torch.stack([data[j:j + context] for j in i])
-        yb = torch.stack([data[j + 1:j + context + 1] for j in i])
-        loss = F.cross_entropy(model(xb).reshape(-1, V), yb.reshape(-1))
-        opt.zero_grad()
-        loss.backward()
-        opt.step()
-        losses.append(float(loss.item()))
-    prompt = text[:context] if prompt is None else prompt
-    stoi = {c: i for i, c in enumerate(chars)}
-    idx = torch.tensor([[stoi[c] for c in prompt]])
-    model.eval()
-    with torch.no_grad():
-        for _ in range(n_generate):
-            logits = model(idx[:, -context:])[:, -1]
-            idx = torch.cat([idx, logits.argmax(-1, keepdim=True)], dim=1)
-    generated = "".join(chars[i] for i in idx[0].tolist())
-    return {"initial_loss": losses[0], "final_loss": losses[-1], "losses": losses,
-            "generated": generated, "vocab_size": V}
+    # TODO: write a small nn.Module (tok + pos embeddings, nn.TransformerEncoderLayer(d_model, nhead=4, dim_feedforward=4*d_model, dropout=0.0, batch_first=True) called with src_mask=(causal_mask(t) == 0), Linear head); AdamW; random windows; cross_entropy; greedy generation
+    raise NotImplementedError("Task: train_char_lm")
 
 
 if __name__ == "__main__":
