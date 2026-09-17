@@ -1554,7 +1554,7 @@ model = TinyLM(); opt = torch.optim.AdamW(model.parameters(), lr=<span class="nu
     <span class="kw">return</span> torch.stack([data[j:j+T] <span class="kw">for</span> j <span class="kw">in</span> i]), torch.stack([data[j+<span class="nu">1</span>:j+T+<span class="nu">1</span>] <span class="kw">for</span> j <span class="kw">in</span> i])
 
 t0 = time.time()
-<span class="kw">for</span> step <span class="kw">in</span> <span class="fn">range</span>(<span class="nu">301</span>):
+<span class="kw">for</span> step <span class="kw">in</span> <span class="fn">range</span>(<span class="nu">201</span>):
     xb, yb = batch()
     loss = F.cross_entropy(model(xb).reshape(-<span class="nu">1</span>, V), yb.reshape(-<span class="nu">1</span>))
     opt.zero_grad(); loss.backward(); opt.step()
@@ -1572,9 +1572,7 @@ idx = torch.tensor([[stoi[c] <span class="kw">for</span> c <span class="kw">in</
 <span class="out"># step 100  loss ≈ 0.12</span>
 <span class="out"># step 150  loss ≈ 0.06</span>
 <span class="out"># step 200  loss ≈ 0.03</span>
-<span class="out"># step 250  loss ≈ 0.03</span>
-<span class="out"># step 300  loss ≈ 0.04</span>
-<span class="out"># trained in ≈ 10–20s   (CPU-dependent)</span>
+<span class="out"># trained in ≈ 12s   (CPU-dependent)</span>
 <span class="out"># the quick brown fox jumps over the lazy dog. the quick brown fox jump</span></code></pre>
 
 <p>Three things to notice. The starting loss ≈ 3.6 is ln(29), the loss of guessing uniformly over 29 characters — always check that your first loss makes sense. The loss collapses because the data is trivially predictable; on real text a character model plateaus around 1.0–1.5 nats. And generation is the causal loop of Figure 18.3: predict, append, repeat — exactly what a chat model does, at 70 billion parameters instead of 20 thousand.</p>
