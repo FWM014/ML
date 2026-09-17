@@ -117,7 +117,7 @@ Run `python3 tools/check_code.py chapters/NN-file.html`. It extracts every `pyth
 
 ## 7. Visual verification
 
-Run `node tools/shot.js chapters/NN-file.html /tmp/NN.png` (and again with a third arg `dark`). It prints page height and any JS errors — **errors must be `[]`**. Open the PNG (crop into ~1800px slices) and look for clipped SVG text, overlapping labels, empty figures, or broken widgets. Fix and re-shoot until clean.
+Run `node tools/shot.js chapters/NN-file.html /tmp/NN.png light` and again with `dark` (the book defaults to dark; the third argument seeds the stored theme). It prints page height and any JS errors — **errors must be `[]`**. Open the PNG (crop into ~1800px slices) and look for clipped SVG text, overlapping labels, empty figures, or broken widgets. Fix and re-shoot until clean.
 
 ## 8. Checklist before you're done
 

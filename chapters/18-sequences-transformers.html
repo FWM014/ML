@@ -249,10 +249,11 @@ c<sub>t</sub> = f<sub>t</sub> ⊙ c<sub>t−1</sub> + i<sub>t</sub> ⊙ tanh(W<s
 <p>Many valuable tasks map one sequence to another: translate a ticket from German to English, summarize a 40-line log into one sentence, turn a question into a SQL query. The classic design (2014) is the <strong>encoder–decoder</strong>: one RNN (the encoder) reads the input and compresses it into its final hidden state; a second RNN (the decoder) starts from that state and emits the output one token at a time, feeding each emitted token back in as the next input.</p>
 
 <figure class="fig">
-<svg viewBox="0 0 800 270" role="img" aria-label="Encoder RNN reads four input tokens into a single fixed-size vector; decoder RNN generates output tokens from that vector; the single vector is highlighted as the bottleneck">
+<svg viewBox="0 0 800 292" role="img" aria-label="Encoder RNN reads four input tokens into a single fixed-size vector; decoder RNN generates output tokens from that vector; the single vector is highlighted as the bottleneck">
   <defs><marker id="arr-f3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
   <text x="180" y="22" text-anchor="middle" class="lbl-strong" font-size="14">Encoder (reads)</text>
   <text x="620" y="22" text-anchor="middle" class="lbl-strong" font-size="14">Decoder (writes)</text>
+  <g transform="translate(0,22)">
   <g>
     <rect x="30" y="70" width="60" height="40" class="box"/><rect x="110" y="70" width="60" height="40" class="box"/><rect x="190" y="70" width="60" height="40" class="box"/><rect x="270" y="70" width="60" height="40" class="box"/>
     <line x1="90" y1="90" x2="108" y2="90" class="arrow" marker-end="url(#arr-f3)"/><line x1="170" y1="90" x2="188" y2="90" class="arrow" marker-end="url(#arr-f3)"/><line x1="250" y1="90" x2="268" y2="90" class="arrow" marker-end="url(#arr-f3)"/>
@@ -277,10 +278,11 @@ c<sub>t</sub> = f<sub>t</sub> ⊙ c<sub>t−1</sub> + i<sub>t</sub> ⊙ tanh(W<s
     <path d="M522,30 C545,44 560,50 574,64" fill="none" stroke="var(--ink-3)" stroke-dasharray="3 3" marker-end="url(#arr-f3)"/>
     <path d="M592,30 C620,44 640,50 654,64" fill="none" stroke="var(--ink-3)" stroke-dasharray="3 3" marker-end="url(#arr-f3)"/>
     <path d="M684,30 C705,44 720,50 734,64" fill="none" stroke="var(--ink-3)" stroke-dasharray="3 3" marker-end="url(#arr-f3)"/>
-    <text x="640" y="190" text-anchor="middle" class="lbl" font-size="11">dashed: each output is fed back as the next input (autoregressive)</text>
+    <text x="620" y="190" text-anchor="middle" class="lbl" font-size="11">dashed: each output becomes the next input (autoregressive)</text>
     <line x1="500" y1="150" x2="500" y2="112" class="arrow" marker-end="url(#arr-f3)"/><text x="500" y="168" text-anchor="middle" class="lbl-strong" font-size="11">&lt;start&gt;</text>
   </g>
   <text x="400" y="240" text-anchor="middle" class="lbl-strong" font-size="12">Translation quality of this design falls off a cliff beyond ~30 input words: the bottleneck is full.</text>
+  </g>
 </svg>
 <figcaption><strong>Figure 18.3 — The encoder–decoder bottleneck.</strong> The whole input must be squeezed into one fixed-size vector before the decoder sees any of it. Short inputs fit; long ones are lossy-compressed and the decoder has no way to "look back" at a specific word.</figcaption>
 </figure>
@@ -1488,7 +1490,7 @@ w = torch.softmax(masked, dim=-<span class="nu">1</span>)
   <g class="grid"><line x1="220" y1="270" x2="220" y2="45"/><line x1="340" y1="270" x2="340" y2="45"/><line x1="460" y1="270" x2="460" y2="45"/><line x1="580" y1="270" x2="580" y2="45"/></g>
   <!-- envelope power law -->
   <line x1="90" y1="102" x2="700" y2="247" stroke="var(--s7)" stroke-width="2" stroke-dasharray="7 4"/>
-  <text x="380" y="256" class="lbl" font-size="11" fill="var(--s7)" font-weight="700">envelope: L ∝ C<tspan font-size="8" dy="-4">−0.05</tspan><tspan dy="4"> — straight on log-log for 7 orders of magnitude</tspan></text>
+  <text x="380" y="256" class="lbl" font-size="11" fill="var(--s7)" font-weight="700">envelope: L ∝ C<tspan font-size="8" dy="-4">−0.05</tspan><tspan dy="4"> (straight on log-log axes)</tspan></text>
   <!-- small model -->
   <path d="M100,75 C150,110 190,135 240,150 C270,158 300,160 340,161" fill="none" stroke="var(--s1)" stroke-width="2.5"/>
   <text x="112" y="68" class="lbl" font-size="11" fill="var(--s1)" font-weight="700">small model</text>
@@ -1498,7 +1500,7 @@ w = torch.softmax(masked, dim=-<span class="nu">1</span>)
   <!-- large -->
   <path d="M300,128 C370,165 430,200 500,220 C550,232 600,236 660,237" fill="none" stroke="var(--s3)" stroke-width="2.5"/>
   <text x="312" y="122" class="lbl" font-size="11" fill="var(--s3)" font-weight="700">large model</text>
-  <text x="400" y="60" text-anchor="middle" class="lbl" font-size="11">Each size eventually plateaus; the <tspan fill="var(--s7)" font-weight="700">envelope</tspan> keeps falling. Bigger model + more data + more compute is a reliable bet.</text>
+  <text x="400" y="44" text-anchor="middle" class="lbl" font-size="11">Each size eventually plateaus; the <tspan fill="var(--s7)" font-weight="700">envelope</tspan> keeps falling. Bigger model + more data + more compute is a reliable bet.</text>
 </svg>
 <figcaption><strong>Figure 18.10 — Scaling laws: loss is a smooth power law in compute.</strong> Each curve is one model size trained longer; each flattens when it runs out of capacity. The envelope across sizes is a straight line on log-log axes (shape after Kaplan et al. 2020 and Hoffmann et al. 2022, which also showed that data must grow with model size). This predictability, not any single trick, is why the field bet everything on scaling Transformers.</figcaption>
 </figure>
