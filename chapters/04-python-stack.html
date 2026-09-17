@@ -260,7 +260,9 @@ mask = a &gt; <span class="nu">3</span>
   <!-- rule -->
   <rect x="70" y="205" width="662" height="66" class="box"/>
   <text x="401" y="228" text-anchor="middle" class="lbl-strong">The rule: align shapes from the right. Each pair of axes must be equal, or one of them must be 1 (or missing).</text>
-  <text x="401" y="250" text-anchor="middle" class="lbl">(3, 1) vs (1, 4) → OK → (3, 4)      (3, 2) vs (2,) → OK → (3, 2)      (3, 2) vs (3,) → ✗ 2 ≠ 3, neither is 1</text>
+  <text x="180" y="250" text-anchor="middle" class="lbl">(3, 1) vs (1, 4) → OK → (3, 4)</text>
+  <text x="401" y="250" text-anchor="middle" class="lbl">(3, 2) vs (2,) → OK → (3, 2)</text>
+  <text x="625" y="250" text-anchor="middle" class="lbl">(3, 2) vs (3,) → ✗  2 ≠ 3, neither is 1</text>
   <text x="401" y="266" text-anchor="middle" class="lbl" font-size="10">Fix a (3,) that should be a column with  v[:, None]  or  v.reshape(-1, 1)  → (3, 1)</text>
 </svg>
 <figcaption><strong>Figure 4.3 — Broadcasting.</strong> Size-1 axes are stretched (the faded cells) until both shapes match, then the operation runs cell by cell. No data is copied; the stretching is virtual.</figcaption>
@@ -290,6 +292,12 @@ Z = (X - mu) / sd
     <span class="fn">print</span>(<span class="st">"ValueError:"</span>, e)
 <span class="out"># ValueError: operands could not be broadcast together with shapes (3,2) (3,)</span></code></pre>
 
+<p>That standardisation line is the first formula of the book, so here it is properly.</p>
+<div class="formula">z<sub>ij</sub> = (x<sub>ij</sub> − μ<sub>j</sub>) / σ<sub>j</sub></div>
+<div class="callout math"><div class="title">The math (optional)</div>
+<p><strong>x<sub>ij</sub></strong> is the value in row <em>i</em>, column <em>j</em> of the feature matrix. <strong>μ<sub>j</sub></strong> is the mean of column <em>j</em> and <strong>σ<sub>j</sub></strong> its standard deviation, both computed down axis 0. <strong>z<sub>ij</sub></strong> is the standardised value: how many standard deviations row <em>i</em> sits above (positive) or below (negative) the column's average. Every column ends up with mean 0 and standard deviation 1, which is what <code>StandardScaler</code> in Section 6 does. Broadcasting is what lets the (n, p) matrix and the (p,) vector of means be subtracted in one line.</p>
+</div>
+
 <div class="widget" id="w-bcast">
   <div class="w-title">Interactive: broadcasting visualizer</div>
   <div class="controls">
@@ -307,7 +315,7 @@ Z = (X - mu) / sd
       </select></label>
     <span>Result: <span class="readout" id="bc-r">–</span></span>
   </div>
-  <svg viewBox="0 0 760 240" id="bc-svg" role="img" aria-label="Two arrays and their broadcast sum, or an error when shapes are incompatible"></svg>
+  <svg viewBox="0 0 760 222" id="bc-svg" role="img" aria-label="Two arrays and their broadcast sum, or an error when shapes are incompatible"></svg>
   <div class="note">A holds values 10, 20, 30…; B holds 1, 2, 3…. Faded cells are the virtual copies broadcasting makes. Try (3,) + (3, 2): that is the error you will meet most often, and <code>[:, None]</code> is the fix.</div>
 </div>
 
@@ -330,7 +338,7 @@ total_vec = np.sum(x * x)      <span class="cm"># vectorized: one C loop over co
 t_vec = time.perf_counter() - t0
 
 <span class="fn">print</span>(<span class="st">f"loop: {t_loop*1000:6.1f} ms   vectorized: {t_vec*1000:5.2f} ms   speed-up ≈ {t_loop/t_vec:.0f}×"</span>)
-<span class="out"># loop:  130.0 ms   vectorized:  4.00 ms   speed-up ≈ 33×     (your numbers will differ; the ratio won't much)</span>
+<span class="out"># loop:  130.0 ms   vectorized:  4.00 ms   speed-up ≈ 33×    (≈ — machine-dependent)</span>
 <span class="fn">print</span>(np.isclose(total, total_vec))
 <span class="out"># True</span></code></pre>
 
@@ -419,13 +427,13 @@ idx = rng.permutation(<span class="fn">len</span>(X))
   <rect x="330" y="74" width="100" height="112" fill="var(--s2)" fill-opacity=".12" stroke="var(--s2)" stroke-width="1.5" stroke-dasharray="4 3"/>
   <!-- dtype row -->
   <g class="lbl" text-anchor="middle" font-size="11" fill="var(--ink-3)">
-    <text x="90" y="206">RangeIndex</text><text x="175" y="206">int64</text><text x="280" y="206">str</text><text x="380" y="206">float64</text><text x="490" y="206">datetime64</text>
+    <text x="95" y="206" font-size="10">RangeIndex</text><text x="175" y="206">int64</text><text x="280" y="206">str</text><text x="380" y="206">float64</text><text x="490" y="206">datetime64</text>
   </g>
-  <text x="30" y="206" class="lbl" font-size="11">dtype</text>
+  <text x="22" y="206" class="lbl" font-size="10">dtype:</text>
   <!-- callouts -->
-  <line x1="565" y1="116" x2="600" y2="116" class="arrow" marker-end="url(#arr-f45)"/>
-  <text x="606" y="112" class="lbl-strong" font-size="12">one row = orders.loc[1]</text>
-  <text x="606" y="128" class="lbl" font-size="11">(a Series, index = column names)</text>
+  <line x1="560" y1="116" x2="590" y2="116" class="arrow" marker-end="url(#arr-f45)"/>
+  <text x="596" y="112" class="lbl-strong" font-size="12">one row = orders.loc[1]</text>
+  <text x="596" y="128" class="lbl" font-size="11">(a Series; index = col names)</text>
   <line x1="380" y1="190" x2="380" y2="228" class="arrow" stroke="var(--s2)" marker-end="url(#arr-f45)"/>
   <text x="380" y="248" text-anchor="middle" class="lbl-strong" fill="var(--s2)" font-size="12">one column = orders["amount"]  (a Series)</text>
   <text x="380" y="266" text-anchor="middle" class="lbl" font-size="11">a NumPy array + an index + a name; NaN marks a missing value</text>
@@ -474,6 +482,10 @@ orders = pd.read_csv(<span class="st">"orders.csv"</span>, parse_dates=[<span cl
 <span class="out"># max      200.0</span>
 orders.info()                                            <span class="cm"># dtypes + non-null counts + memory in one screen</span></code></pre>
 
+<div class="callout lab"><div class="title">Lab</div>
+<p>Open any CSV you have at work (an export from a CRM, a ticketing tool, a spreadsheet saved as CSV). Run <code>pd.read_csv</code>, then <code>head()</code>, <code>info()</code>, <code>describe()</code>. Write down three things that surprised you: a column with the wrong dtype, a numeric column with a suspicious minimum or maximum, a column with more missing values than you expected. There are always three.</p>
+</div>
+
 <h3>Selecting, filtering, sorting, new columns</h3>
 <p>Two accessors do all row/column selection. <code>.loc[rows, cols]</code> uses <em>labels</em> (index values and column names, and label slices are inclusive). <code>.iloc[rows, cols]</code> uses <em>integer positions</em>, exactly like NumPy. Filtering is a boolean mask in square brackets, combined with <code>&amp;</code>, <code>|</code>, <code>~</code> and <strong>always parenthesised</strong>, because <code>&amp;</code> binds tighter than <code>&gt;</code>. New columns are created by assignment, and datetime and string columns get special <code>.dt</code> and <code>.str</code> accessors.</p>
 
@@ -483,7 +495,8 @@ orders = pd.DataFrame({
     <span class="st">"customer"</span>: [<span class="st">"ana"</span>, <span class="st">"ben"</span>, <span class="st">"ana"</span>, <span class="st">"cy"</span>, <span class="st">"ben"</span>, <span class="st">"ana"</span>],
     <span class="st">"region"</span>:   [<span class="st">"north"</span>, <span class="st">"south"</span>, <span class="st">"north"</span>, <span class="st">"east"</span>, <span class="st">"south"</span>, <span class="st">"north"</span>],
     <span class="st">"amount"</span>:   [<span class="nu">120.0</span>, <span class="nu">80.0</span>, np.nan, <span class="nu">200.0</span>, <span class="nu">65.0</span>, <span class="nu">40.0</span>],
-    <span class="st">"ordered"</span>:  pd.to_datetime([<span class="st">"2024-01-05"</span>, <span class="st">"2024-01-06"</span>, <span class="st">"2024-02-11"</span>, <span class="st">"2024-02-14"</span>, <span class="st">"2024-03-01"</span>, <span class="st">"2024-03-09"</span>]),
+    <span class="st">"ordered"</span>:  pd.to_datetime([<span class="st">"2024-01-05"</span>, <span class="st">"2024-01-06"</span>, <span class="st">"2024-02-11"</span>,
+                                <span class="st">"2024-02-14"</span>, <span class="st">"2024-03-01"</span>, <span class="st">"2024-03-09"</span>]),
 })
 <span class="cm"># ---- selecting: loc = by label, iloc = by position ---------------------------</span>
 <span class="fn">print</span>(orders.loc[<span class="nu">0</span>, <span class="st">"customer"</span>], orders.iloc[<span class="nu">0</span>, <span class="nu">1</span>])         <span class="cm"># same cell, two ways</span>
@@ -636,7 +649,7 @@ orders[<span class="st">"cust_upper"</span>] = orders[<span class="st">"customer
     <text x="720" y="24" text-anchor="middle" class="lbl-strong">how="outer"</text>
     <circle cx="705" cy="70" r="30" fill="var(--s7)" fill-opacity=".45" stroke="var(--s1)" stroke-width="2"/><circle cx="735" cy="70" r="30" fill="var(--s7)" fill-opacity=".45" stroke="var(--s2)" stroke-width="2"/>
     <text x="720" y="120" text-anchor="middle" class="lbl" font-size="11">ana, ben, cy, dee</text>
-    <text x="720" y="134" text-anchor="middle" class="lbl" font-size="11">keep everyone, NaN-fill</text>
+    <text x="720" y="134" text-anchor="middle" class="lbl" font-size="11">keep everyone (NaNs)</text>
   </g>
   <!-- result for left join (the one you use most) -->
   <text x="490" y="168" text-anchor="middle" class="lbl-strong">pd.merge(orders, customers, on="cust", how="left")</text>
@@ -849,7 +862,8 @@ ax[<span class="nu">0</span>, <span class="nu">0</span>].hist(df[<span class="st
 ax[<span class="nu">0</span>, <span class="nu">0</span>].set(title=<span class="st">"1. Histogram: one feature"</span>, xlabel=<span class="st">"alcohol"</span>)
 
 ax[<span class="nu">0</span>, <span class="nu">1</span>].scatter(df[<span class="st">"alcohol"</span>], df[<span class="st">"color_intensity"</span>], c=df[<span class="st">"target"</span>], s=<span class="nu">18</span>)
-ax[<span class="nu">0</span>, <span class="nu">1</span>].set(title=<span class="st">"2. Scatter: two features, colored by class"</span>, xlabel=<span class="st">"alcohol"</span>, ylabel=<span class="st">"color_intensity"</span>)
+ax[<span class="nu">0</span>, <span class="nu">1</span>].set(title=<span class="st">"2. Scatter: two features, colored by class"</span>,
+             xlabel=<span class="st">"alcohol"</span>, ylabel=<span class="st">"color_intensity"</span>)
 
 epochs = np.arange(<span class="nu">1</span>, <span class="nu">31</span>)
 ax[<span class="nu">1</span>, <span class="nu">0</span>].plot(epochs, <span class="nu">2.0</span> * np.exp(-epochs / <span class="nu">6</span>) + <span class="nu">0.3</span>, label=<span class="st">"train loss"</span>)
@@ -882,32 +896,32 @@ fig.savefig(<span class="st">"eda_grid.png"</span>, dpi=<span class="nu">110</sp
 <svg viewBox="0 0 780 360" role="img" aria-label="The scikit-learn API: an Estimator has fit; Predictors add predict, predict_proba and score; Transformers add transform and fit_transform; a Pipeline chains transformers then a final predictor and exposes the same fit and predict; joblib dump and load persist the whole pipeline; get_params and set_params configure any estimator">
   <defs><marker id="arr-f49" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
   <!-- Estimator root -->
-  <rect x="290" y="20" width="200" height="58" class="box-accent"/>
+  <rect x="210" y="20" width="360" height="58" class="box-accent"/>
   <text x="390" y="42" text-anchor="middle" class="lbl-strong" font-size="13">Estimator</text>
-  <text x="390" y="60" text-anchor="middle" class="lbl" font-family="ui-monospace, Menlo, monospace">.fit(X, y)  ·  .get_params()  ·  .set_params(**kw)</text>
+  <text x="390" y="60" text-anchor="middle" class="lbl" font-family="ui-monospace, Menlo, monospace" font-size="11">.fit(X, y) · .get_params() · .set_params(**kw)</text>
   <!-- children -->
-  <line x1="340" y1="78" x2="200" y2="118" class="arrow" marker-end="url(#arr-f49)"/>
-  <line x1="440" y1="78" x2="580" y2="118" class="arrow" marker-end="url(#arr-f49)"/>
-  <rect x="60" y="120" width="280" height="86" class="box"/>
-  <text x="200" y="142" text-anchor="middle" class="lbl-strong" font-size="13">Transformer  (changes X)</text>
-  <text x="200" y="162" text-anchor="middle" class="lbl" font-family="ui-monospace, Menlo, monospace">.transform(X)  ·  .fit_transform(X)</text>
-  <text x="200" y="182" text-anchor="middle" class="lbl" font-size="11">StandardScaler · OneHotEncoder · SimpleImputer</text>
-  <text x="200" y="198" text-anchor="middle" class="lbl" font-size="11">PCA · TfidfVectorizer · PolynomialFeatures</text>
-  <rect x="440" y="120" width="280" height="86" class="box"/>
-  <text x="580" y="142" text-anchor="middle" class="lbl-strong" font-size="13">Predictor  (produces ŷ)</text>
-  <text x="580" y="162" text-anchor="middle" class="lbl" font-family="ui-monospace, Menlo, monospace">.predict(X) · .predict_proba(X) · .score(X, y)</text>
-  <text x="580" y="182" text-anchor="middle" class="lbl" font-size="11">LogisticRegression · RandomForestClassifier</text>
-  <text x="580" y="198" text-anchor="middle" class="lbl" font-size="11">LinearRegression · SVC · KNeighbors · GradientBoosting</text>
+  <line x1="330" y1="78" x2="215" y2="118" class="arrow" marker-end="url(#arr-f49)"/>
+  <line x1="450" y1="78" x2="565" y2="118" class="arrow" marker-end="url(#arr-f49)"/>
+  <rect x="30" y="120" width="350" height="86" class="box"/>
+  <text x="205" y="142" text-anchor="middle" class="lbl-strong" font-size="13">Transformer  (changes X)</text>
+  <text x="205" y="162" text-anchor="middle" class="lbl" font-family="ui-monospace, Menlo, monospace" font-size="11">.transform(X) · .fit_transform(X)</text>
+  <text x="205" y="182" text-anchor="middle" class="lbl" font-size="11">StandardScaler · OneHotEncoder · SimpleImputer</text>
+  <text x="205" y="198" text-anchor="middle" class="lbl" font-size="11">PCA · TfidfVectorizer · PolynomialFeatures</text>
+  <rect x="400" y="120" width="350" height="86" class="box"/>
+  <text x="575" y="142" text-anchor="middle" class="lbl-strong" font-size="13">Predictor  (produces ŷ)</text>
+  <text x="575" y="162" text-anchor="middle" class="lbl" font-family="ui-monospace, Menlo, monospace" font-size="11">.predict(X) · .predict_proba(X) · .score(X, y)</text>
+  <text x="575" y="182" text-anchor="middle" class="lbl" font-size="11">LogisticRegression · RandomForestClassifier · SVC</text>
+  <text x="575" y="198" text-anchor="middle" class="lbl" font-size="11">LinearRegression · KNeighbors · GradientBoosting</text>
   <!-- pipeline -->
-  <line x1="200" y1="206" x2="200" y2="240" class="arrow" marker-end="url(#arr-f49)"/>
-  <line x1="580" y1="206" x2="580" y2="240" class="arrow" marker-end="url(#arr-f49)"/>
-  <rect x="60" y="242" width="660" height="60" rx="8" fill="var(--s7)" fill-opacity=".12" stroke="var(--s7)" stroke-width="1.5"/>
-  <text x="390" y="264" text-anchor="middle" class="lbl-strong" font-size="13" fill="var(--s7)">Pipeline([("scale", StandardScaler()), ("clf", LogisticRegression())])</text>
-  <text x="390" y="284" text-anchor="middle" class="lbl" font-size="11">transformers… then one predictor · behaves like a single Estimator: .fit / .predict / .score / .get_params("clf__C")</text>
+  <line x1="205" y1="206" x2="205" y2="240" class="arrow" marker-end="url(#arr-f49)"/>
+  <line x1="575" y1="206" x2="575" y2="240" class="arrow" marker-end="url(#arr-f49)"/>
+  <rect x="30" y="242" width="720" height="60" rx="8" fill="var(--s7)" fill-opacity=".12" stroke="var(--s7)" stroke-width="1.5"/>
+  <text x="390" y="264" text-anchor="middle" class="lbl-strong" font-size="12" fill="var(--s7)">Pipeline([("scale", StandardScaler()), ("clf", LogisticRegression())])</text>
+  <text x="390" y="284" text-anchor="middle" class="lbl" font-size="11">transformers… then one predictor · behaves like one Estimator: .fit / .predict / .score / .get_params("clf__C")</text>
   <!-- joblib -->
   <line x1="390" y1="302" x2="390" y2="322" class="arrow" marker-end="url(#arr-f49)"/>
-  <rect x="200" y="324" width="380" height="30" class="box"/>
-  <text x="390" y="344" text-anchor="middle" class="lbl-strong" font-family="ui-monospace, Menlo, monospace" font-size="12">joblib.dump(pipe, "model.joblib")   ↔   pipe = joblib.load(...)</text>
+  <rect x="80" y="324" width="620" height="30" class="box"/>
+  <text x="390" y="344" text-anchor="middle" class="lbl-strong" font-family="ui-monospace, Menlo, monospace" font-size="11">joblib.dump(pipe, "model.joblib")   ↔   pipe = joblib.load("model.joblib")</text>
 </svg>
 <figcaption><strong>Figure 4.9 — The scikit-learn API map.</strong> Everything is an Estimator with <code>fit</code>. Transformers add <code>transform</code>; predictors add <code>predict</code>/<code>score</code>. A Pipeline glues them into one object with the same interface, and joblib saves that one object.</figcaption>
 </figure>
@@ -969,9 +983,9 @@ scaler = StandardScaler().fit(X_tr)
   <text x="315" y="130" class="lbl" font-size="10" fill="var(--critical)">mean uses</text><text x="315" y="142" class="lbl" font-size="10" fill="var(--critical)">test rows!</text>
   <line x1="190" y1="152" x2="190" y2="178" class="arrow" marker-end="url(#arr-f410)"/>
   <rect x="80" y="180" width="220" height="40" class="box"/><text x="190" y="205" text-anchor="middle" class="lbl-strong">train_test_split</text>
-  <line x1="140" y1="220" x2="120" y2="248" class="arrow" marker-end="url(#arr-f410)"/><line x1="240" y1="220" x2="260" y2="248" class="arrow" marker-end="url(#arr-f410)"/>
+  <line x1="140" y1="220" x2="120" y2="248" class="arrow" marker-end="url(#arr-f410)"/><line x1="240" y1="220" x2="265" y2="248" class="arrow" marker-end="url(#arr-f410)"/>
   <rect x="60" y="250" width="120" height="34" class="box"/><text x="120" y="272" text-anchor="middle" class="lbl">model.fit(train)</text>
-  <rect x="200" y="250" width="120" height="34" class="box"/><text x="260" y="272" text-anchor="middle" class="lbl">score(test) ↑ optimistic</text>
+  <rect x="195" y="250" width="150" height="34" class="box"/><text x="270" y="272" text-anchor="middle" class="lbl">score(test): optimistic</text>
   <!-- divider -->
   <line x1="390" y1="20" x2="390" y2="290" class="grid" stroke-dasharray="4 4"/>
   <!-- right: pipeline -->
@@ -985,7 +999,7 @@ scaler = StandardScaler().fit(X_tr)
   <text x="500" y="194" text-anchor="middle" class="lbl-strong" fill="var(--s7)">pipe.fit(X_train, y_train)</text>
   <text x="500" y="212" text-anchor="middle" class="lbl" font-size="11">scaler.fit → transform →</text>
   <text x="500" y="228" text-anchor="middle" class="lbl" font-size="11">model.fit — train rows only</text>
-  <line x1="675" y1="146" x2="675" y2="246" class="arrow" marker-end="url(#arr-f410)"/>
+  <line x1="738" y1="146" x2="738" y2="246" class="arrow" marker-end="url(#arr-f410)"/>
   <line x1="580" y1="207" x2="600" y2="207" class="arrow" stroke="var(--s7)" marker-end="url(#arr-f410)"/>
   <text x="608" y="202" class="lbl" font-size="10">stored mean_, scale_,</text><text x="608" y="214" class="lbl" font-size="10">coef_ flow to predict</text>
   <rect x="600" y="248" width="150" height="36" class="box"/><text x="675" y="266" text-anchor="middle" class="lbl-strong" font-size="11">pipe.predict(X_test)</text><text x="675" y="279" text-anchor="middle" class="lbl" font-size="10">honest score</text>
@@ -1083,7 +1097,8 @@ new_patient = X_test[:<span class="nu">1</span>]                                
 
 <span class="cm"># lines to paste into requirements.txt (the pip name of sklearn is scikit-learn)</span>
 names = {<span class="st">"sklearn"</span>: <span class="st">"scikit-learn"</span>}
-<span class="fn">print</span>(<span class="st">"\n"</span>.join(<span class="st">f"{names.get(m.__name__, m.__name__)}=={m.__version__}"</span> <span class="kw">for</span> m <span class="kw">in</span> (numpy, pandas, sklearn, matplotlib)))
+<span class="kw">for</span> m <span class="kw">in</span> (numpy, pandas, sklearn, matplotlib):
+    <span class="fn">print</span>(<span class="st">f"{names.get(m.__name__, m.__name__)}=={m.__version__}"</span>)
 <span class="out"># numpy==2.4.6</span>
 <span class="out"># pandas==3.0.5</span>
 <span class="out"># scikit-learn==1.9.1</span>
@@ -1300,7 +1315,7 @@ names = {<span class="st">"sklearn"</span>: <span class="st">"scikit-learn"</spa
       s += '<text x="635" y="90" text-anchor="middle" font-size="12" font-weight="700" fill="var(--critical)">ValueError</text>';
       s += '<text x="635" y="108" text-anchor="middle" font-size="11">operands could not be broadcast</text>';
       s += '<text x="635" y="124" text-anchor="middle" font-size="11">together with shapes (' + A.join(",") + (A.length === 1 ? "," : "") + ') (' + B.join(",") + (B.length === 1 ? "," : "") + ')</text>';
-      s += '<text x="380" y="210" text-anchor="middle" font-size="11" opacity=".8">Right-aligned axes disagree and neither is 1. Add an axis: v[:, None] turns (3,) into (3, 1).</text>';
+      s += '<text x="380" y="200" text-anchor="middle" font-size="11" opacity=".8">Right-aligned axes disagree and neither is 1. Add an axis: v[:, None] turns (3,) into (3, 1).</text>';
       out.textContent = "error";
     } else {
       var full = R.length === 1 ? [1, R[0]] : R;
@@ -1310,7 +1325,7 @@ names = {<span class="st">"sklearn"</span>: <span class="st">"scikit-learn"</spa
       s += '<text x="500" y="100" text-anchor="middle" font-size="22" font-weight="700">=</text>';
       s += label(610, 22, "A + B  (" + R.join(", ") + (R.length === 1 ? "," : "") + ")");
       s += grid(530, 36, "R", full, null, "var(--s7)");
-      s += '<text x="380" y="210" text-anchor="middle" font-size="11" opacity=".8">Faded cells are virtual copies along a size-1 axis. Result shape = element-wise max of the aligned shapes.</text>';
+      s += '<text x="380" y="200" text-anchor="middle" font-size="11" opacity=".8">Faded cells are virtual copies along a size-1 axis. Result shape = element-wise max of the aligned shapes.</text>';
       out.textContent = "(" + R.join(", ") + (R.length === 1 ? "," : "") + ")";
     }
     svg.innerHTML = s;

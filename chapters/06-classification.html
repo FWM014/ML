@@ -1,0 +1,1135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>06 · Classification &amp; Its Metrics — ML: Zero to Expert</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body data-chapter="06">
+<header class="topbar"></header>
+<div class="progress-track"><div></div></div>
+<div class="shell">
+<nav class="sidebar"></nav>
+<main class="content"><div class="container">
+
+<header class="ch-header">
+  <div class="kicker">Part I · Foundations · Chapter 06</div>
+  <h1>Classification &amp; Its Metrics</h1>
+  <p class="lede">Most business ML is a yes/no question: fraud or not, churn or not, sick or not. This chapter teaches the model that answers it (logistic regression) and, far more importantly, how to tell whether <em>any</em> classifier is good — which is where most real projects go wrong.</p>
+  <div class="meta"><span class="level">Beginner</span> <span>⏱ 75 min read</span> <span>·</span> <span>Prereqs: Ch 5</span></div>
+</header>
+
+<div class="objectives">
+  <h3>By the end of this chapter you will be able to</h3>
+  <ul>
+    <li>Explain why a straight line cannot predict yes/no, and how the sigmoid turns a linear score into a probability.</li>
+    <li>Build a confusion matrix from raw counts and read precision, recall, specificity, F1 and F<sub>β</sub> off it without looking anything up.</li>
+    <li>Explain the "accuracy paradox" to a manager in one sentence and pick the right metric for fraud, medical screening, spam and a fixed-budget outreach campaign.</li>
+    <li>Draw an ROC curve from a ranked list by hand, say what AUC means, and know when a precision–recall curve is the better picture.</li>
+    <li>Choose a decision threshold from a business cost matrix instead of blindly using 0.5.</li>
+    <li>Evaluate a multiclass model with macro, micro and weighted averages, and judge probability quality with log-loss and the Brier score.</li>
+  </ul>
+</div>
+
+<div class="toc-inline"><strong>In this chapter</strong>
+<ol>
+  <li><a href="#s1">Why a line can't say yes or no</a></li>
+  <li><a href="#s2">Logistic regression: score → probability</a></li>
+  <li><a href="#s3">Probabilities, labels and the threshold</a></li>
+  <li><a href="#s4">The confusion matrix, built carefully</a></li>
+  <li><a href="#s5">Accuracy, precision, recall and friends</a></li>
+  <li><a href="#s6">The precision–recall tradeoff</a></li>
+  <li><a href="#s7">ROC, AUC and the PR curve</a></li>
+  <li><a href="#s8">Choosing the metric and the threshold</a></li>
+  <li><a href="#s9">Multiclass: softmax and averaging</a></li>
+  <li><a href="#s10">How good are the probabilities?</a></li>
+  <li><a href="#quiz">Quiz &amp; exercises</a></li>
+</ol></div>
+
+<!-- ============================================================ -->
+<h2 id="s1">1. Why a line can't say yes or no</h2>
+
+<p>Chapter 5 gave you linear regression: a weighted sum of features that predicts a number. Your first instinct for a yes/no question might be "just predict 1 for yes and 0 for no with the same machinery." Let's see why that fails, because the failure explains everything that follows.</p>
+
+<p>Take our running example for this chapter: a payments company sees <strong>1,000 card transactions</strong> in an hour, of which <strong>50 are fraudulent</strong>. Plot the transaction amount on the x-axis and the label (1 = fraud, 0 = legit) on the y-axis and fit a straight line. Three things go wrong at once.</p>
+
+<figure class="fig">
+<svg viewBox="0 0 760 310" role="img" aria-label="Scatter of transactions with label 0 or 1 against amount. A straight line fit goes below 0 and above 1, while an S-shaped sigmoid curve stays between 0 and 1 and matches the data">
+  <defs><marker id="arr-f1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+  <line x1="60" y1="150" x2="700" y2="150" class="grid" stroke-dasharray="4 4"/>
+  <line x1="60" y1="70" x2="700" y2="70" class="grid"/>
+  <line x1="60" y1="230" x2="700" y2="230" class="grid"/>
+  <line x1="60" y1="290" x2="720" y2="290" class="axis" marker-end="url(#arr-f1)"/>
+  <line x1="60" y1="290" x2="60" y2="30" class="axis" marker-end="url(#arr-f1)"/>
+  <text x="390" y="306" text-anchor="middle" class="lbl">transaction amount ($)</text>
+  <text x="46" y="74" text-anchor="end" class="lbl">1 = fraud</text>
+  <text x="46" y="234" text-anchor="end" class="lbl">0 = legit</text>
+  <text x="46" y="154" text-anchor="end" class="lbl">0.5</text>
+  <!-- legit points at y=230 -->
+  <g class="fill-s1" opacity=".9">
+    <circle cx="80" cy="230" r="5"/><circle cx="95" cy="230" r="5"/><circle cx="115" cy="230" r="5"/><circle cx="130" cy="230" r="5"/><circle cx="150" cy="230" r="5"/><circle cx="170" cy="230" r="5"/><circle cx="190" cy="230" r="5"/><circle cx="205" cy="230" r="5"/><circle cx="225" cy="230" r="5"/><circle cx="245" cy="230" r="5"/><circle cx="262" cy="230" r="5"/><circle cx="285" cy="230" r="5"/><circle cx="305" cy="230" r="5"/><circle cx="330" cy="230" r="5"/><circle cx="360" cy="230" r="5"/><circle cx="395" cy="230" r="5"/><circle cx="440" cy="230" r="5"/>
+  </g>
+  <!-- fraud points at y=70 -->
+  <g class="fill-s2" opacity=".9">
+    <circle cx="340" cy="70" r="5"/><circle cx="380" cy="70" r="5"/><circle cx="420" cy="70" r="5"/><circle cx="455" cy="70" r="5"/><circle cx="480" cy="70" r="5"/><circle cx="510" cy="70" r="5"/><circle cx="540" cy="70" r="5"/><circle cx="575" cy="70" r="5"/><circle cx="600" cy="70" r="5"/><circle cx="630" cy="70" r="5"/><circle cx="660" cy="70" r="5"/><circle cx="690" cy="70" r="5"/>
+  </g>
+  <!-- straight line -->
+  <line x1="60" y1="268" x2="700" y2="34" stroke="var(--critical)" stroke-width="2.5"/>
+  <text x="560" y="40" text-anchor="end" class="lbl" fill="var(--critical)" font-weight="700">straight line: predicts 1.2 here…</text>
+  <text x="200" y="262" class="lbl" fill="var(--critical)" font-weight="700">…and −0.1 here. What is a −10% fraud?</text>
+  <!-- sigmoid -->
+  <path d="M100,229.6 L250,222.5 L300,211 L350,187 L400,150 L450,113 L500,89 L550,77.5 L600,72.9 L700,70.4" fill="none" stroke="var(--s7)" stroke-width="3"/>
+  <text x="470" y="132" class="lbl" fill="var(--s7)" font-weight="700">sigmoid: always between 0 and 1</text>
+  <line x1="400" y1="150" x2="400" y2="290" stroke="var(--s7)" stroke-dasharray="4 3"/>
+  <text x="406" y="284" class="lbl" fill="var(--s7)">p = 0.5 here</text>
+</svg>
+<figcaption><strong>Figure 6.1 — A line is the wrong shape for yes/no.</strong> The straight fit shoots past 1 for big amounts and below 0 for small ones, and one far-away point (a $10,000 fraud) would tilt the whole line. The S-shaped sigmoid stays inside [0, 1] and flattens out at the extremes, so it can be read as a <em>probability</em>.</figcaption>
+</figure>
+
+<ol class="steps">
+  <li><strong>The output is unbounded.</strong> A line happily predicts 1.2 or −0.1. Those numbers are not labels and not probabilities; nobody can act on "−10% fraud".</li>
+  <li><strong>Outliers swing the line.</strong> One $10,000 fraud at the far right drags the line up, shifting where it crosses 0.5 and mislabeling ordinary transactions. Squared error punishes the line for being "too right" about an obvious case.</li>
+  <li><strong>The wrong loss.</strong> Squared error is far too gentle on confident mistakes: its penalty is capped at 1, so a model that says "0.999 fraud" about a legitimate purchase pays barely more than one that says 0.8. Worse, squared error wrapped around an S-curve is no longer a single bowl, so gradient descent can get stuck. Probabilities need a loss built for probabilities.</li>
+</ol>
+
+<div class="callout eli9"><div class="title">Explain it like I'm 9</div>
+<p>Imagine a dimmer switch for a light. A straight line is a slider with no ends — you can keep pushing it past "fully on" into nonsense. The sigmoid is a dimmer with hard stops: you can push as hard as you like but it only ever goes from "completely off" (0) to "completely on" (1), and most of the interesting action happens in the middle.</p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s2">2. Logistic regression: score → probability</h2>
+
+<p>The fix is beautifully small. Keep the linear machinery from Chapter 5 — a weighted sum of features — but instead of using it as the answer, treat it as a <strong>score</strong>, then squash the score through an S-shaped function into (0, 1). The score is often called the <em>logit</em>; the squashing function is the <strong>sigmoid</strong> (also called the logistic function, which is where the model's slightly misleading name comes from — logistic regression is a classifier).</p>
+
+<figure class="fig">
+<svg viewBox="0 0 760 320" role="img" aria-label="Flow: features go into a linear score z, the sigmoid maps z to a probability p, and a threshold turns p into a label. Below, the sigmoid curve of p against z">
+  <defs><marker id="arr-f2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+  <!-- flow -->
+  <rect x="20" y="30" width="120" height="50" class="box"/><text x="80" y="52" text-anchor="middle" class="lbl-strong">features</text><text x="80" y="69" text-anchor="middle" class="lbl">amount, hour, …</text>
+  <line x1="140" y1="55" x2="170" y2="55" class="arrow" marker-end="url(#arr-f2)"/>
+  <rect x="172" y="30" width="150" height="50" class="box-accent"/><text x="247" y="52" text-anchor="middle" class="lbl-strong">linear score</text><text x="247" y="69" text-anchor="middle" class="lbl">z = w·x + b  (any real)</text>
+  <line x1="322" y1="55" x2="352" y2="55" class="arrow" marker-end="url(#arr-f2)"/>
+  <rect x="354" y="30" width="120" height="50" class="box-accent"/><text x="414" y="52" text-anchor="middle" class="lbl-strong">sigmoid σ(z)</text><text x="414" y="69" text-anchor="middle" class="lbl">squash to (0, 1)</text>
+  <line x1="474" y1="55" x2="504" y2="55" class="arrow" marker-end="url(#arr-f2)"/>
+  <rect x="506" y="30" width="110" height="50" class="box"/><text x="561" y="52" text-anchor="middle" class="lbl-strong">probability p</text><text x="561" y="69" text-anchor="middle" class="lbl">P(fraud | x)</text>
+  <line x1="616" y1="55" x2="646" y2="55" class="arrow" marker-end="url(#arr-f2)"/>
+  <rect x="648" y="30" width="92" height="50" class="box"/><text x="694" y="52" text-anchor="middle" class="lbl-strong">label</text><text x="694" y="69" text-anchor="middle" class="lbl">p ≥ t ?</text>
+  <!-- sigmoid plot -->
+  <line x1="100" y1="270" x2="680" y2="270" class="axis" marker-end="url(#arr-f2)"/>
+  <line x1="100" y1="270" x2="100" y2="115" class="axis" marker-end="url(#arr-f2)"/>
+  <text x="380" y="300" text-anchor="middle" class="lbl">score z = w·x + b</text>
+  <text x="90" y="134" text-anchor="end" class="lbl">1</text>
+  <text x="90" y="204" text-anchor="end" class="lbl">0.5</text>
+  <text x="90" y="274" text-anchor="end" class="lbl">0</text>
+  <text x="62" y="200" text-anchor="middle" class="lbl" transform="rotate(-90 62 200)">p = σ(z)</text>
+  <line x1="100" y1="130" x2="680" y2="130" class="grid" stroke-dasharray="4 4"/>
+  <line x1="100" y1="200" x2="680" y2="200" class="grid" stroke-dasharray="4 4"/>
+  <line x1="380" y1="130" x2="380" y2="270" class="grid" stroke-dasharray="4 4"/>
+  <g class="lbl"><text x="100" y="286" text-anchor="middle">−6</text><text x="240" y="286" text-anchor="middle">−3</text><text x="380" y="286" text-anchor="middle">0</text><text x="520" y="286" text-anchor="middle">3</text><text x="660" y="286" text-anchor="middle">6</text></g>
+  <path d="M100,269.7 L193.3,267.5 L240,263.4 L286.7,253.3 L333.3,232.3 L380,200 L426.7,167.7 L473.3,146.7 L520,136.6 L566.7,132.5 L660,130.4" fill="none" stroke="var(--s7)" stroke-width="3"/>
+  <circle cx="380" cy="200" r="5" fill="var(--s7)"/>
+  <text x="392" y="196" class="lbl-strong" fill="var(--s7)">z = 0 ⇔ p = 0.5</text>
+  <text x="560" y="160" text-anchor="middle" class="lbl">z = +3 → p ≈ 0.95</text>
+  <text x="220" y="245" text-anchor="middle" class="lbl">z = −3 → p ≈ 0.05</text>
+</svg>
+<figcaption><strong>Figure 6.2 — Logistic regression is linear regression plus a squash.</strong> The linear score z can be any real number. The sigmoid maps it to a probability: z = 0 gives 0.5, large positive z approaches 1, large negative z approaches 0. A threshold then converts the probability into a label.</figcaption>
+</figure>
+
+<div class="callout math"><div class="title">The math (optional)</div>
+<div class="formula">z = w<sub>0</sub> + w<sub>1</sub>x<sub>1</sub> + … + w<sub>n</sub>x<sub>n</sub> = <span class="var">w</span>·<span class="var">x</span> + b</div>
+<div class="formula">p = σ(z) = 1 / (1 + e<sup>−z</sup>)</div>
+<p><strong>z</strong> is the linear score (the logit): the same weighted sum as in Chapter 5. <strong>σ</strong> (sigma) is the sigmoid, which maps any real number into (0, 1). <strong>e<sup>−z</sup></strong> is the exponential; when z is large and positive it vanishes and p → 1; when z is large and negative it explodes and p → 0. The inverse relationship is the <em>log-odds</em>: log(p / (1 − p)) = z. So logistic regression is a linear model for the log-odds, which is why each weight w<sub>j</sub> has a clean interpretation: increasing feature j by one unit multiplies the odds of "yes" by e<sup>w<sub>j</sub></sup>.</p>
+</div>
+
+<p>Play with the two knobs. The weight w controls <strong>steepness</strong> (how quickly the model flips from "no" to "yes" as x grows — the sign flips the direction), and the bias b <strong>slides</strong> the whole curve left or right, moving the point where p = 0.5.</p>
+
+<div class="widget" id="w-sigmoid">
+  <div class="w-title">Interactive: the sigmoid's two knobs</div>
+  <div class="controls">
+    <label>weight w <input type="range" id="sg-w" min="-3" max="3" step="0.1" value="1" data-out="sg-w-out"> <output id="sg-w-out"></output></label>
+    <label>bias b <input type="range" id="sg-b" min="-4" max="4" step="0.1" value="0" data-out="sg-b-out"> <output id="sg-b-out"></output></label>
+    <span>p = 0.5 at x = <span class="readout" id="sg-x0">–</span></span>
+  </div>
+  <svg viewBox="0 0 700 260" id="sg-svg" role="img" aria-label="Sigmoid curve p = sigmoid(w x + b) with adjustable weight and bias"></svg>
+  <div class="note">Larger |w| → a sharper, more confident switch; w near 0 → the model shrugs (p ≈ 0.5 everywhere). Negative w flips the direction. The bias moves the boundary to x = −b/w without changing its steepness.</div>
+</div>
+
+<h3>The decision boundary is a straight line in feature space</h3>
+
+<p>With one feature the boundary is a point (where z = 0). With two features it is a <strong>line</strong>; with n features, a flat (n−1)-dimensional plane. Whatever the dimension, logistic regression divides the world with one straight cut. Points far from the cut get confident probabilities; points near it get probabilities near 0.5. That is the model's honesty: it is unsure exactly where you would be unsure.</p>
+
+<figure class="fig">
+<svg viewBox="0 0 760 330" role="img" aria-label="Two-dimensional scatter of legit and fraud transactions with a straight decision boundary; dashed lines mark probability 0.25 and 0.75; a couple of points sit on the wrong side">
+  <defs><marker id="arr-f3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+  <polygon points="70,32 720,32 720,280 620,280 70,100" fill="var(--s2)" fill-opacity=".07"/>
+  <polygon points="70,100 620,280 70,280" fill="var(--s1)" fill-opacity=".09"/>
+  <line x1="70" y1="280" x2="720" y2="280" class="axis" marker-end="url(#arr-f3)"/>
+  <line x1="70" y1="280" x2="70" y2="30" class="axis" marker-end="url(#arr-f3)"/>
+  <text x="395" y="304" text-anchor="middle" class="lbl">x₁ = transaction amount ($)</text>
+  <text x="40" y="160" text-anchor="middle" class="lbl" transform="rotate(-90 40 160)">x₂ = km from home address</text>
+  <line x1="70" y1="100" x2="620" y2="280" stroke="var(--s7)" stroke-width="3"/>
+  <line x1="70" y1="55" x2="720" y2="268" stroke="var(--s7)" stroke-width="1.2" stroke-dasharray="5 4" opacity=".7"/>
+  <line x1="70" y1="145" x2="483" y2="280" stroke="var(--s7)" stroke-width="1.2" stroke-dasharray="5 4" opacity=".7"/>
+  <text x="78" y="90" class="lbl-strong" fill="var(--s7)">boundary: z = 0 (p = 0.5)</text>
+  <text x="78" y="48" class="lbl" fill="var(--s7)">p = 0.75</text>
+  <text x="78" y="140" class="lbl" fill="var(--s7)">p = 0.25</text>
+  <g class="fill-s1">
+    <circle cx="100" cy="200" r="6"/><circle cx="110" cy="260" r="6"/><circle cx="160" cy="250" r="6"/><circle cx="200" cy="270" r="6"/><circle cx="240" cy="255" r="6"/><circle cx="330" cy="265" r="6"/><circle cx="470" cy="265" r="6"/><circle cx="520" cy="260" r="6"/><circle cx="560" cy="270" r="6"/><circle cx="140" cy="170" r="6"/><circle cx="95" cy="175" r="6"/><circle cx="200" cy="180" r="6"/><circle cx="280" cy="200" r="6"/><circle cx="350" cy="215" r="6"/><circle cx="400" cy="262" r="6"/>
+  </g>
+  <g class="fill-s2">
+    <circle cx="300" cy="60" r="6"/><circle cx="360" cy="90" r="6"/><circle cx="420" cy="70" r="6"/><circle cx="450" cy="120" r="6"/><circle cx="500" cy="90" r="6"/><circle cx="540" cy="110" r="6"/><circle cx="600" cy="80" r="6"/><circle cx="640" cy="60" r="6"/><circle cx="660" cy="150" r="6"/><circle cx="700" cy="200" r="6"/><circle cx="560" cy="180" r="6"/><circle cx="480" cy="45" r="6"/><circle cx="400" cy="125" r="6"/><circle cx="620" cy="230" r="6"/><circle cx="200" cy="60" r="6"/>
+  </g>
+  <circle cx="330" cy="150" r="6" class="fill-s1" stroke="var(--critical)" stroke-width="3"/>
+  <circle cx="250" cy="225" r="6" class="fill-s2" stroke="var(--critical)" stroke-width="3"/>
+  <text x="342" y="146" class="lbl" fill="var(--critical)">legit, but p ≈ 0.7 → false positive</text>
+  <text x="262" y="240" class="lbl" fill="var(--critical)">fraud, but p ≈ 0.3 → false negative</text>
+  <text x="705" y="50" text-anchor="end" class="lbl-strong" fill="var(--s2)">predicted fraud</text>
+  <text x="80" y="273" class="lbl-strong" fill="var(--s1)">predicted legit</text>
+</svg>
+<figcaption><strong>Figure 6.3 — The decision boundary in feature space.</strong> Logistic regression draws one straight cut where z = 0. The dashed lines are the p = 0.25 and p = 0.75 contours: parallel to the boundary, because the probability depends only on the signed distance from it. Two points sit on the wrong side — the false positive and the false negative we will count all chapter.</figcaption>
+</figure>
+
+<h3>The loss: punish confident wrong answers</h3>
+
+<p>How do we fit the weights? Squared error was the wrong loss for probabilities, so we use <strong>log-loss</strong> (also called cross-entropy or negative log-likelihood). For a single example it is simple: if the truth is 1, the loss is −log(p); if the truth is 0, the loss is −log(1 − p). Look at what this does (Figure 6.4): a confident, correct prediction costs almost nothing; a confident, <em>wrong</em> prediction costs a fortune — the curve goes to infinity as p approaches the wrong end.</p>
+
+<figure class="fig">
+<svg viewBox="0 0 760 300" role="img" aria-label="Two curves of loss against predicted probability: negative log p when the truth is 1, and negative log of one minus p when the truth is 0. Both go to zero at the correct end and to infinity at the wrong end">
+  <defs><marker id="arr-f4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+  <line x1="80" y1="260" x2="720" y2="260" class="axis" marker-end="url(#arr-f4)"/>
+  <line x1="80" y1="260" x2="80" y2="30" class="axis" marker-end="url(#arr-f4)"/>
+  <text x="390" y="290" text-anchor="middle" class="lbl">predicted probability p of "yes"</text>
+  <text x="40" y="150" text-anchor="middle" class="lbl" transform="rotate(-90 40 150)">loss for this example</text>
+  <g class="lbl"><text x="80" y="276" text-anchor="middle">0</text><text x="235" y="276" text-anchor="middle">0.25</text><text x="390" y="276" text-anchor="middle">0.5</text><text x="545" y="276" text-anchor="middle">0.75</text><text x="700" y="276" text-anchor="middle">1</text></g>
+  <g class="lbl"><text x="70" y="264" text-anchor="end">0</text><text x="70" y="220" text-anchor="end">1</text><text x="70" y="176" text-anchor="end">2</text><text x="70" y="132" text-anchor="end">3</text><text x="70" y="88" text-anchor="end">4</text></g>
+  <line x1="80" y1="216" x2="700" y2="216" class="grid"/><line x1="80" y1="172" x2="700" y2="172" class="grid"/><line x1="80" y1="128" x2="700" y2="128" class="grid"/><line x1="80" y1="84" x2="700" y2="84" class="grid"/>
+  <path d="M86.2,57.6 L111,128 L142,158.8 L204,189.2 L266,207.2 L390,229.6 L514,244.2 L638,255.4 L700,260" fill="none" stroke="var(--s1)" stroke-width="3"/>
+  <path d="M693.8,57.6 L669,128 L638,158.8 L576,189.2 L514,207.2 L390,229.6 L266,244.2 L142,255.4 L80,260" fill="none" stroke="var(--s2)" stroke-width="3"/>
+  <text x="150" y="110" class="lbl-strong" fill="var(--s1)">truth = 1: loss = −log p</text>
+  <text x="630" y="110" text-anchor="end" class="lbl-strong" fill="var(--s2)">truth = 0: loss = −log(1 − p)</text>
+  <circle cx="638" cy="255.4" r="5" fill="var(--s1)"/><text x="640" y="248" text-anchor="end" class="lbl" fill="var(--s1)">p = 0.9, truth 1: cost 0.1</text>
+  <circle cx="638" cy="158.8" r="5" fill="var(--s2)"/><text x="600" y="150" text-anchor="end" class="lbl" fill="var(--s2)">p = 0.9, truth 0: cost 2.3</text>
+  <circle cx="390" cy="229.6" r="5" fill="var(--ink)"/><text x="400" y="222" class="lbl">p = 0.5: cost 0.69 either way</text>
+</svg>
+<figcaption><strong>Figure 6.4 — Log-loss punishes confident wrong answers.</strong> Saying p = 0.9 when the truth is 1 costs 0.1; saying p = 0.9 when the truth is 0 costs 2.3, twenty-three times more; saying p = 0.999 when the truth is 0 costs 6.9. Hedging at 0.5 costs a moderate 0.69 no matter what. The model learns to be confident only when it has earned it.</figcaption>
+</figure>
+
+<div class="callout math"><div class="title">The math (optional)</div>
+<div class="formula">L = −(1/N) ∑<sub>i</sub> [ y<sub>i</sub> log p<sub>i</sub> + (1 − y<sub>i</sub>) log(1 − p<sub>i</sub>) ]</div>
+<p><strong>N</strong> is the number of training examples. <strong>y<sub>i</sub></strong> ∈ {0, 1} is the true label of example i and <strong>p<sub>i</sub></strong> = σ(w·x<sub>i</sub> + b) the predicted probability. Exactly one of the two terms inside the bracket is active for each example (the other is multiplied by zero), which is how one formula covers both curves in Figure 6.4. Minimizing L is the same as maximizing the likelihood of the observed labels, which is why statisticians call the fitted weights the <em>maximum-likelihood estimate</em>.</p>
+</div>
+
+<p><strong>Fitting</strong> is gradient descent exactly as in Chapter 5, with one lucky detail: the gradient of log-loss with respect to the weights is ∑<sub>i</sub> (p<sub>i</sub> − y<sub>i</sub>) x<sub>i</sub> — "prediction minus truth, times the input" — the same form as for linear regression. There is no closed-form solution, but log-loss is <em>convex</em> (one bowl, one minimum), so gradient descent and the smarter optimizers scikit-learn uses by default (<code>lbfgs</code>) always find the best weights. In practice you never write this loop; you call <code>fit</code>.</p>
+
+<div class="callout warn"><div class="title">Common mistake</div>
+<p>Feeding unscaled features to logistic regression. The default solver converges slowly (you will see <code>ConvergenceWarning</code>) and the built-in regularization (Chapter 7) penalizes big-unit features unfairly. Always wrap it in a <code>Pipeline</code> with <code>StandardScaler</code>, as below. Also note the default <code>C=1.0</code> <em>is</em> a regularization strength — logistic regression in sklearn is never "plain".</p>
+</div>
+
+<pre class="code" data-lang="python"><code><span class="cm"># Block 1: logistic regression on breast cancer, probabilities, confusion matrix, report</span>
+<span class="kw">import</span> numpy <span class="kw">as</span> np
+<span class="kw">from</span> sklearn.datasets <span class="kw">import</span> load_breast_cancer
+<span class="kw">from</span> sklearn.model_selection <span class="kw">import</span> train_test_split
+<span class="kw">from</span> sklearn.pipeline <span class="kw">import</span> make_pipeline
+<span class="kw">from</span> sklearn.preprocessing <span class="kw">import</span> StandardScaler
+<span class="kw">from</span> sklearn.linear_model <span class="kw">import</span> LogisticRegression
+<span class="kw">from</span> sklearn.metrics <span class="kw">import</span> confusion_matrix, classification_report, accuracy_score
+
+X, y = load_breast_cancer(return_X_y=<span class="kw">True</span>)
+<span class="cm"># In this dataset 1 = benign, 0 = malignant. Flip so that 1 = malignant = &quot;the thing we hunt&quot;.</span>
+y = <span class="nu">1</span> - y
+X_tr, X_te, y_tr, y_te = train_test_split(X, y, test_size=<span class="nu">0.3</span>, stratify=y, random_state=<span class="nu">42</span>)
+
+clf = make_pipeline(StandardScaler(), LogisticRegression(max_iter=<span class="nu">1000</span>))
+clf.fit(X_tr, y_tr)
+
+proba = clf.predict_proba(X_te)[:, <span class="nu">1</span>]<span class="cm">      # P(malignant) for each test tumor</span>
+pred  = (proba &gt;= <span class="nu">0.5</span>).astype(int)<span class="cm">          # same as clf.predict(X_te)</span>
+<span class="fn">print</span>(<span class="st">&quot;first 5 probabilities:&quot;</span>, np.<span class="fn">round</span>(proba[:<span class="nu">5</span>], <span class="nu">3</span>))
+<span class="fn">print</span>(<span class="st">&quot;accuracy:&quot;</span>, <span class="fn">round</span>(accuracy_score(y_te, pred), <span class="nu">3</span>))
+<span class="fn">print</span>(<span class="st">&quot;confusion matrix [[TN FP] [FN TP]]:\n&quot;</span>, confusion_matrix(y_te, pred))
+<span class="fn">print</span>(classification_report(y_te, pred, target_names=[<span class="st">&quot;benign&quot;</span>, <span class="st">&quot;malignant&quot;</span>], digits=<span class="nu">3</span>))
+<span class="out"># first 5 probabilities: [0.113 0.002 0.    0.003 0.019]</span>
+<span class="out"># accuracy: 0.971</span>
+<span class="out"># confusion matrix [[TN FP] [FN TP]]:</span>
+<span class="out">#  [[106   1]</span>
+<span class="out">#  [  4  60]]</span>
+<span class="out">#               precision    recall  f1-score   support</span>
+<span class="out">#</span>
+<span class="out">#       benign      0.964     0.991     0.977       107</span>
+<span class="out">#    malignant      0.984     0.938     0.960        64</span>
+<span class="out">#</span>
+<span class="out">#     accuracy                          0.971       171</span>
+<span class="out">#    macro avg      0.974     0.964     0.968       171</span>
+<span class="out"># weighted avg      0.971     0.971     0.971       171</span></code></pre>
+
+<p>Read that report carefully; by the end of the chapter every number in it will be an old friend. For now notice two things: <code>predict_proba</code> gives a probability per row, and <code>predict</code> is nothing more than "probability ≥ 0.5". That innocent 0.5 is our next topic.</p>
+
+<!-- ============================================================ -->
+<h2 id="s3">3. Probabilities, labels and the threshold</h2>
+
+<p>A classifier really produces two things, and confusing them is the root of most metric arguments at work:</p>
+
+<div class="grid2">
+  <div class="card accent"><h4>A score (probability)</h4><p>"This transaction is 0.83 likely to be fraud." Continuous, rankable, carries uncertainty. This is what the model actually learned.</p></div>
+  <div class="card accent"><h4>A hard label</h4><p>"Block it." Produced by comparing the score with a <strong>threshold</strong> t: label = 1 if p ≥ t. The threshold is a <em>business decision</em>, not a model property.</p></div>
+</div>
+
+<p>The default threshold of 0.5 is only sensible when a false alarm costs the same as a miss. For fraud (a miss costs $200, a review costs $5) it is absurd, and we will replace it with a number derived from those costs in Section 8. For now, hold onto the picture: <strong>the model gives you a dial; the threshold is where you set it</strong>, and every metric in the next sections depends on both.</p>
+
+<div class="callout key"><div class="title">Key idea</div>
+<p>Separate the two questions. <em>How well does the model rank cases?</em> (a property of the scores — measured by AUC, average precision, log-loss). <em>How good are the decisions at the threshold we chose?</em> (a property of the labels — measured by precision, recall, F1, cost). Train and compare models on the first; tune the threshold and report to stakeholders on the second.</p>
+</div>
+
+<div class="callout eli9"><div class="title">Explain it like I'm 9</div>
+<p>A smoke detector measures smoke as a number all the time. The <em>alarm</em> only goes off when the number crosses a line someone set. Set the line low and it screams every time you make toast (false alarms); set it high and it sleeps through a real fire (misses). The detector didn't change — only the line did.</p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s4">4. The confusion matrix, built carefully</h2>
+
+<p>Everything in classification evaluation starts with four counts. Take our 1,000 transactions (50 fraud, 950 legit), run the model with threshold 0.5, and sort every transaction into one of four buckets by <em>what it really was</em> and <em>what we said</em>.</p>
+
+<figure class="fig">
+<svg viewBox="0 0 760 360" role="img" aria-label="A two-by-two confusion matrix for 1000 transactions with 50 fraud: 35 true positives, 15 false negatives, 20 false positives, 930 true negatives, with recall computed along the fraud row and precision down the flagged column">
+  <defs><marker id="arr-f5" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+  <text x="400" y="26" text-anchor="middle" class="lbl-strong" font-size="14">Predicted</text>
+  <text x="300" y="56" text-anchor="middle" class="lbl-strong">flagged as fraud (55)</text>
+  <text x="500" y="56" text-anchor="middle" class="lbl-strong">passed as legit (945)</text>
+  <text x="30" y="180" text-anchor="middle" class="lbl-strong" font-size="14" transform="rotate(-90 30 180)">Actual</text>
+  <text x="120" y="112" text-anchor="middle" class="lbl-strong">fraud</text><text x="120" y="130" text-anchor="middle" class="lbl">(50 cases)</text>
+  <text x="120" y="232" text-anchor="middle" class="lbl-strong">legit</text><text x="120" y="250" text-anchor="middle" class="lbl">(950 cases)</text>
+  <!-- cells -->
+  <rect x="200" y="70" width="200" height="110" fill="var(--good)" fill-opacity=".18" stroke="var(--good)" stroke-width="2"/>
+  <text x="300" y="100" text-anchor="middle" class="lbl-strong" font-size="13">TRUE POSITIVE</text>
+  <text x="300" y="138" text-anchor="middle" font-size="30" font-weight="800" fill="var(--good)">35</text>
+  <text x="300" y="164" text-anchor="middle" class="lbl">caught fraud</text>
+  <rect x="400" y="70" width="200" height="110" fill="var(--critical)" fill-opacity=".14" stroke="var(--critical)" stroke-width="2"/>
+  <text x="500" y="100" text-anchor="middle" class="lbl-strong" font-size="13">FALSE NEGATIVE</text>
+  <text x="500" y="138" text-anchor="middle" font-size="30" font-weight="800" fill="var(--critical)">15</text>
+  <text x="500" y="164" text-anchor="middle" class="lbl">missed fraud (a "miss")</text>
+  <rect x="200" y="180" width="200" height="110" fill="var(--critical)" fill-opacity=".14" stroke="var(--critical)" stroke-width="2"/>
+  <text x="300" y="210" text-anchor="middle" class="lbl-strong" font-size="13">FALSE POSITIVE</text>
+  <text x="300" y="248" text-anchor="middle" font-size="30" font-weight="800" fill="var(--critical)">20</text>
+  <text x="300" y="274" text-anchor="middle" class="lbl">false alarm</text>
+  <rect x="400" y="180" width="200" height="110" fill="var(--surface-2)" stroke="var(--ink-3)" stroke-width="1.5"/>
+  <text x="500" y="210" text-anchor="middle" class="lbl-strong" font-size="13">TRUE NEGATIVE</text>
+  <text x="500" y="248" text-anchor="middle" font-size="30" font-weight="800">930</text>
+  <text x="500" y="274" text-anchor="middle" class="lbl">correctly ignored</text>
+  <!-- recall annotation along the fraud row -->
+  <path d="M610,125 L640,125" class="arrow" marker-end="url(#arr-f5)" stroke="var(--s1)"/>
+  <text x="648" y="112" class="lbl-strong" fill="var(--s1)">Recall</text>
+  <text x="648" y="128" class="lbl" fill="var(--s1)">= TP / (TP+FN)</text>
+  <text x="648" y="144" class="lbl" fill="var(--s1)">= 35 / 50 = 70%</text>
+  <!-- specificity along legit row -->
+  <path d="M610,235 L640,235" class="arrow" marker-end="url(#arr-f5)" stroke="var(--ink-2)"/>
+  <text x="648" y="222" class="lbl-strong">Specificity</text>
+  <text x="648" y="238" class="lbl">= TN / (TN+FP)</text>
+  <text x="648" y="254" class="lbl">= 930 / 950 = 97.9%</text>
+  <!-- precision down the flagged column -->
+  <path d="M300,296 L300,318" class="arrow" marker-end="url(#arr-f5)" stroke="var(--s2)"/>
+  <text x="300" y="338" text-anchor="middle" class="lbl-strong" fill="var(--s2)">Precision = TP / (TP+FP) = 35 / 55 = 63.6%</text>
+  <text x="500" y="338" text-anchor="middle" class="lbl">Accuracy = (35 + 930) / 1000 = 96.5%</text>
+</svg>
+<figcaption><strong>Figure 6.5 — The confusion matrix for our 1,000 transactions at threshold 0.5.</strong> Rows are the truth, columns are the model's call. "Positive" always means the class you are hunting for (fraud). Recall reads along the true-fraud row; precision reads down the flagged column; specificity reads along the legit row. Memorize the geometry and you will never need to look up a formula again.</figcaption>
+</figure>
+
+<p>Vocabulary you must own, because every stakeholder uses a different word for the same cell:</p>
+
+<div class="tbl-wrap">
+<table class="tbl">
+<thead><tr><th>Cell</th><th>Meaning in the fraud example</th><th>Also called</th><th>Count</th></tr></thead>
+<tbody>
+<tr><td><strong>TP</strong> true positive</td><td>Fraud that we flagged</td><td>hit, detection</td><td class="num">35</td></tr>
+<tr><td><strong>FN</strong> false negative</td><td>Fraud that slipped through</td><td>miss, Type II error</td><td class="num">15</td></tr>
+<tr><td><strong>FP</strong> false positive</td><td>Legit transaction we blocked</td><td>false alarm, Type I error</td><td class="num">20</td></tr>
+<tr><td><strong>TN</strong> true negative</td><td>Legit transaction we let through</td><td>correct rejection</td><td class="num">930</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="callout warn"><div class="title">Common mistake</div>
+<p>scikit-learn's <code>confusion_matrix(y_true, y_pred)</code> puts <strong>true negatives in the top-left</strong>: the layout is <code>[[TN, FP], [FN, TP]]</code>, rows = truth, columns = prediction, classes sorted ascending. Textbooks and other libraries often draw TP top-left. Before you read any confusion matrix, find out which class is "positive" and which axis is the truth. Unpack safely with <code>tn, fp, fn, tp = confusion_matrix(y, pred).ravel()</code>.</p>
+</div>
+
+<div class="callout eli9"><div class="title">Explain it like I'm 9</div>
+<p>A guard dog at a gate. True positive: it barked at a burglar. False negative: a burglar walked past and it stayed asleep. False positive: it barked at the mail carrier. True negative: it let your grandmother in quietly. A good dog does lots of the first and last and little of the middle two — but "how much barking is too much" depends on whether you have more burglars or more mail carriers.</p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s5">5. Accuracy, precision, recall and friends</h2>
+
+<h3>Accuracy and the accuracy paradox</h3>
+
+<p><strong>Accuracy</strong> is the fraction of all calls that were right: (TP + TN) / N = (35 + 930) / 1000 = <strong>96.5%</strong>. Sounds excellent. Now consider a "model" that never flags anything: it gets all 950 legit transactions right and all 50 frauds wrong, for an accuracy of <strong>95.0%</strong>. Our carefully trained model beats a rock by 1.5 points, and a slightly worse model would lose to it. This is the <strong>accuracy paradox</strong>: on imbalanced data, accuracy mostly measures the imbalance, not the model.</p>
+
+<div class="callout key"><div class="title">Key idea</div>
+<p>Before you quote any accuracy, quote the <strong>majority-class baseline</strong> (the base rate of the bigger class). 95% accuracy on a 95/5 problem is zero skill. 80% accuracy on a 50/50 problem is real skill. Accuracy is only meaningful relative to that baseline, and on imbalanced problems you should usually not lead with it at all.</p>
+</div>
+
+<h3>Precision and recall: two questions, two denominators</h3>
+
+<p>The two metrics that survive imbalance both look only at the positive class, but from different directions:</p>
+
+<div class="grid2">
+  <div class="card accent"><h4>Precision — "when we flag, are we right?"</h4><p>TP / (TP + FP) = 35 / 55 = <strong>63.6%</strong>. Denominator: everything we <em>flagged</em>. Low precision means lots of false alarms: angry customers, wasted analyst hours. The <em>operations</em> team cares about this.</p></div>
+  <div class="card accent"><h4>Recall — "of the real ones, how many did we catch?"</h4><p>TP / (TP + FN) = 35 / 50 = <strong>70%</strong>. Denominator: everything that was <em>truly positive</em>. Low recall means misses: fraud losses, undiagnosed patients. The <em>risk</em> team cares about this. Also called <strong>sensitivity</strong> or true positive rate (TPR).</p></div>
+</div>
+
+<p><strong>Specificity</strong> is recall for the negative class: TN / (TN + FP) = 930 / 950 = 97.9%, "of the legit ones, how many did we leave alone?" Its complement, the <strong>false positive rate</strong> FPR = FP / (FP + TN) = 2.1%, is the x-axis of the ROC curve in Section 7. Doctors talk in sensitivity/specificity; engineers talk in precision/recall; they are looking at the same 2×2 grid.</p>
+
+<div class="callout math"><div class="title">The math (optional)</div>
+<div class="formula">Precision = TP / (TP + FP)    Recall = TP / (TP + FN)    Specificity = TN / (TN + FP)</div>
+<div class="formula">F<sub>1</sub> = 2 · Precision · Recall / (Precision + Recall) = 2TP / (2TP + FP + FN)</div>
+<div class="formula">F<sub>β</sub> = (1 + β²) · Precision · Recall / (β² · Precision + Recall)</div>
+<p><strong>F<sub>1</sub></strong> is the harmonic mean of precision and recall. The harmonic mean is dragged toward the <em>smaller</em> of the two, so a model cannot buy a high F<sub>1</sub> by maxing one and ignoring the other: precision 1.0 with recall 0.1 gives F<sub>1</sub> = 0.18, not 0.55. <strong>β</strong> says how many times more you care about recall than precision. β = 2 (F<sub>2</sub>) weights recall heavily — right for fraud and disease screening. β = 0.5 weights precision — right when each flag triggers an expensive human action. For our example: F<sub>1</sub> = 70 / 105 = 0.667, F<sub>2</sub> = 0.686, F<sub>0.5</sub> = 0.648.</p>
+</div>
+
+<div class="callout eli9"><div class="title">Explain it like I'm 9</div>
+<p>You're fishing for salmon in a lake that also has trout. <strong>Precision</strong>: of the fish in your bucket, what fraction are salmon? <strong>Recall</strong>: of all the salmon in the lake, what fraction ended up in your bucket? A tiny net gives you a pure bucket (high precision) but leaves most salmon behind (low recall). Dragging the whole lake catches every salmon (recall 100%) but the bucket is mostly trout (low precision). F<sub>1</sub> is the score you get only if <em>both</em> are decent.</p>
+</div>
+
+<h3>Who cares about which metric</h3>
+
+<div class="tbl-wrap">
+<table class="tbl">
+<thead><tr><th>Metric</th><th>Plain-English question</th><th>Our example</th><th>Typical owner</th></tr></thead>
+<tbody>
+<tr><td>Accuracy</td><td>How often are we right overall?</td><td class="num">96.5% (baseline 95%)</td><td>Nobody, once they understand the paradox</td></tr>
+<tr><td>Precision</td><td>When we raise the alarm, how often is it real?</td><td class="num">63.6%</td><td>Ops / customer support (false-alarm cost)</td></tr>
+<tr><td>Recall (sensitivity, TPR)</td><td>Of the real cases, how many do we catch?</td><td class="num">70%</td><td>Risk / compliance / clinicians (miss cost)</td></tr>
+<tr><td>Specificity (TNR)</td><td>Of the innocent cases, how many do we leave alone?</td><td class="num">97.9%</td><td>Clinicians, anyone quoting FPR</td></tr>
+<tr><td>F<sub>1</sub></td><td>Balanced summary when both errors matter equally</td><td class="num">0.667</td><td>Model comparison in a leaderboard</td></tr>
+<tr><td>F<sub>2</sub> / F<sub>0.5</sub></td><td>Summary tilted toward recall / precision</td><td class="num">0.686 / 0.648</td><td>Whoever owns the asymmetric cost</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="callout pro"><div class="title">At work</div>
+<p>Never report precision or recall alone; report the pair, at a stated threshold, with the counts behind them ("at threshold 0.5 we catch 35 of 50 frauds and raise 20 false alarms per 1,000 transactions"). Counts per thousand are what a business owner can turn into dollars and headcount. A bare "recall = 0.70" invites the question "is that good?" and you will not have an answer.</p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s6">6. The precision–recall tradeoff</h2>
+
+<p>Precision and recall pull in opposite directions, and the threshold is the rope. Lower the threshold and you flag more transactions: recall rises (you catch more fraud) but precision falls (more of your flags are wrong). Raise it and the reverse happens. Table first, with the same 1,000 transactions at four thresholds:</p>
+
+<div class="tbl-wrap">
+<table class="tbl">
+<thead><tr><th>Threshold</th><th>TP</th><th>FP</th><th>FN</th><th>TN</th><th>Precision</th><th>Recall</th><th>Accuracy</th><th>F<sub>1</sub></th></tr></thead>
+<tbody>
+<tr><td>0.7 (strict)</td><td class="num">25</td><td class="num">5</td><td class="num">25</td><td class="num">945</td><td class="num">83.3%</td><td class="num">50%</td><td class="num">97.0%</td><td class="num">0.625</td></tr>
+<tr><td><strong>0.5 (default)</strong></td><td class="num">35</td><td class="num">20</td><td class="num">15</td><td class="num">930</td><td class="num">63.6%</td><td class="num">70%</td><td class="num">96.5%</td><td class="num">0.667</td></tr>
+<tr><td>0.3 (loose)</td><td class="num">45</td><td class="num">80</td><td class="num">5</td><td class="num">870</td><td class="num">36.0%</td><td class="num">90%</td><td class="num">91.5%</td><td class="num">0.514</td></tr>
+<tr><td>0.1 (paranoid)</td><td class="num">49</td><td class="num">300</td><td class="num">1</td><td class="num">650</td><td class="num">14.0%</td><td class="num">98%</td><td class="num">69.9%</td><td class="num">0.246</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>Notice that accuracy is highest at the <em>strictest</em> threshold, where we miss half the fraud. That is the accuracy paradox again, in motion. Also notice that <em>no</em> row is "best": 0.7 is right if analysts are scarce; 0.3 is right if fraud losses dominate. Figure 6.6 draws the whole sweep.</p>
+
+<figure class="fig">
+<svg viewBox="0 0 760 310" role="img" aria-label="Precision rising, recall falling and F1 peaking as the decision threshold moves from 0 to 1">
+  <defs><marker id="arr-f6" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+  <line x1="80" y1="250" x2="720" y2="250" class="axis" marker-end="url(#arr-f6)"/>
+  <line x1="80" y1="250" x2="80" y2="30" class="axis" marker-end="url(#arr-f6)"/>
+  <text x="390" y="284" text-anchor="middle" class="lbl">decision threshold t  (flag if p ≥ t)</text>
+  <text x="40" y="150" text-anchor="middle" class="lbl" transform="rotate(-90 40 150)">metric value</text>
+  <g class="lbl"><text x="80" y="268" text-anchor="middle">0</text><text x="204" y="268" text-anchor="middle">0.2</text><text x="328" y="268" text-anchor="middle">0.4</text><text x="452" y="268" text-anchor="middle">0.6</text><text x="576" y="268" text-anchor="middle">0.8</text><text x="700" y="268" text-anchor="middle">1</text></g>
+  <g class="lbl"><text x="70" y="254" text-anchor="end">0</text><text x="70" y="154" text-anchor="end">0.5</text><text x="70" y="54" text-anchor="end">1</text></g>
+  <line x1="80" y1="150" x2="700" y2="150" class="grid"/><line x1="80" y1="50" x2="700" y2="50" class="grid"/>
+  <line x1="390" y1="50" x2="390" y2="250" stroke="var(--s7)" stroke-dasharray="5 4"/>
+  <text x="396" y="46" class="lbl" fill="var(--s7)">default 0.5</text>
+  <path d="M80,50 L111,50 L142,54 L266,70 L390,110 L452,130 L514,150 L638,210 L700,250" fill="none" stroke="var(--s1)" stroke-width="3"/>
+  <path d="M80,240 L111,231.8 L142,222 L266,178 L390,122.8 L452,100 L514,83.4 L638,68.2 L690,60" fill="none" stroke="var(--s2)" stroke-width="3"/>
+  <path d="M80,231 L111,216.6 L142,200.8 L266,147.2 L390,116.6 L452,116.6 L514,125 L638,184.4 L700,250" fill="none" stroke="var(--s3)" stroke-width="2.5" stroke-dasharray="7 4"/>
+  <text x="150" y="42" class="lbl-strong" fill="var(--s1)">recall: catch everything at low t…</text>
+  <text x="600" y="234" text-anchor="end" class="lbl-strong" fill="var(--s1)">…catch nothing at high t</text>
+  <text x="560" y="80" class="lbl-strong" fill="var(--s2)">precision</text>
+  <text x="150" y="228" class="lbl-strong" fill="var(--s2)">precision ≈ base rate (5%) at t = 0</text>
+  <text x="470" y="140" class="lbl-strong" fill="var(--s3)">F₁ peaks in between</text>
+  <circle cx="390" cy="110" r="5" fill="var(--s1)"/><circle cx="390" cy="122.8" r="5" fill="var(--s2)"/>
+</svg>
+<figcaption><strong>Figure 6.6 — Moving the threshold trades recall for precision.</strong> At t = 0 you flag everything: recall 100%, precision equal to the 5% base rate. At t = 1 you flag nothing. F<sub>1</sub> peaks somewhere in the middle, but the peak of F<sub>1</sub> is only the right operating point if false alarms and misses cost the same, which they rarely do.</figcaption>
+</figure>
+
+<p>Now drive it yourself. The widget below draws the model's score distribution for 950 legit and 50 fraudulent transactions (the two histograms overlap — that overlap <em>is</em> the difficulty of the problem). Slide the threshold: every count, metric, and the dot on the ROC curve update together.</p>
+
+<div class="widget" id="w-threshold">
+  <div class="w-title">Interactive: one threshold, every metric</div>
+  <div class="controls">
+    <label>threshold <input type="range" id="th-t" min="0.02" max="0.98" step="0.01" value="0.5" data-out="th-t-out"> <output id="th-t-out"></output></label>
+    <span>TP <span class="readout" id="th-tp">–</span> FP <span class="readout" id="th-fp">–</span> FN <span class="readout" id="th-fn">–</span> TN <span class="readout" id="th-tn">–</span></span>
+    <span>precision <span class="readout" id="th-p">–</span> recall <span class="readout" id="th-r">–</span> F1 <span class="readout" id="th-f">–</span> accuracy <span class="readout" id="th-a">–</span></span>
+  </div>
+  <svg viewBox="0 0 760 300" id="th-svg" role="img" aria-label="Two overlapping score histograms with a movable threshold, and the corresponding point on the ROC curve"></svg>
+  <div class="note">Left: legit scores (blue) and fraud scores (orange), each histogram scaled to its own peak so the rare class is visible. Everything right of the violet line is flagged. Right: the ROC curve for this model; the dot is where your threshold sits on it. Try to find the threshold that catches 90% of fraud and see what it costs in false alarms.</div>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s7">7. ROC, AUC and the PR curve</h2>
+
+<p>Figure 6.6 needs a whole plot per model. To <em>compare models</em> independent of any threshold, we summarize the entire sweep in one curve and one number. There are two standard curves; you need both and you need to know when each lies.</p>
+
+<h3>ROC, built step by step</h3>
+
+<p>The <strong>receiver operating characteristic</strong> (a name inherited from radar operators in the 1940s) plots recall (TPR) against the false positive rate (FPR) as the threshold sweeps from 1 down to 0. The cleanest way to understand it is to build one by hand from ten examples:</p>
+
+<ol class="steps">
+  <li><strong>Sort every example by its score, highest first.</strong> Forget the numbers; only the order matters from here on.</li>
+  <li><strong>Start at (0, 0)</strong> — threshold above everything, nothing flagged: no true positives, no false positives.</li>
+  <li><strong>Walk down the list, lowering the threshold one example at a time.</strong> Each time you pass a <em>positive</em>, TPR rises by 1/(number of positives): step <em>up</em>. Each time you pass a <em>negative</em>, FPR rises by 1/(number of negatives): step <em>right</em>.</li>
+  <li><strong>You end at (1, 1)</strong> with everything flagged. The path you drew is the ROC curve; the area under it is the AUC.</li>
+</ol>
+
+<figure class="fig">
+<svg viewBox="0 0 760 350" role="img" aria-label="Left: ten examples ranked by score with labels positive or negative. Right: the ROC staircase built by stepping up on each positive and right on each negative, with the area under it shaded">
+  <defs><marker id="arr-f7" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+  <text x="150" y="28" text-anchor="middle" class="lbl-strong" font-size="14">1. Rank by score</text>
+  <g class="lbl"><text x="60" y="52" text-anchor="middle" class="lbl-strong">rank</text><text x="120" y="52" text-anchor="middle" class="lbl-strong">score</text><text x="185" y="52" text-anchor="middle" class="lbl-strong">truth</text><text x="260" y="52" text-anchor="middle" class="lbl-strong">step</text></g>
+  <g class="lbl">
+    <rect x="40" y="60" width="260" height="24" fill="var(--s2)" fill-opacity=".12"/><text x="60" y="77" text-anchor="middle">1</text><text x="120" y="77" text-anchor="middle">0.95</text><text x="185" y="77" text-anchor="middle" font-weight="700" fill="var(--s2)">fraud</text><text x="260" y="77" text-anchor="middle">↑ up</text>
+    <rect x="40" y="84" width="260" height="24" fill="var(--s2)" fill-opacity=".12"/><text x="60" y="101" text-anchor="middle">2</text><text x="120" y="101" text-anchor="middle">0.91</text><text x="185" y="101" text-anchor="middle" font-weight="700" fill="var(--s2)">fraud</text><text x="260" y="101" text-anchor="middle">↑ up</text>
+    <rect x="40" y="108" width="260" height="24" fill="var(--s1)" fill-opacity=".10"/><text x="60" y="125" text-anchor="middle">3</text><text x="120" y="125" text-anchor="middle">0.80</text><text x="185" y="125" text-anchor="middle" fill="var(--s1)">legit</text><text x="260" y="125" text-anchor="middle">→ right</text>
+    <rect x="40" y="132" width="260" height="24" fill="var(--s2)" fill-opacity=".12"/><text x="60" y="149" text-anchor="middle">4</text><text x="120" y="149" text-anchor="middle">0.72</text><text x="185" y="149" text-anchor="middle" font-weight="700" fill="var(--s2)">fraud</text><text x="260" y="149" text-anchor="middle">↑ up</text>
+    <rect x="40" y="156" width="260" height="24" fill="var(--s1)" fill-opacity=".10"/><text x="60" y="173" text-anchor="middle">5</text><text x="120" y="173" text-anchor="middle">0.60</text><text x="185" y="173" text-anchor="middle" fill="var(--s1)">legit</text><text x="260" y="173" text-anchor="middle">→ right</text>
+    <rect x="40" y="180" width="260" height="24" fill="var(--s1)" fill-opacity=".10"/><text x="60" y="197" text-anchor="middle">6</text><text x="120" y="197" text-anchor="middle">0.55</text><text x="185" y="197" text-anchor="middle" fill="var(--s1)">legit</text><text x="260" y="197" text-anchor="middle">→ right</text>
+    <rect x="40" y="204" width="260" height="24" fill="var(--s2)" fill-opacity=".12"/><text x="60" y="221" text-anchor="middle">7</text><text x="120" y="221" text-anchor="middle">0.41</text><text x="185" y="221" text-anchor="middle" font-weight="700" fill="var(--s2)">fraud</text><text x="260" y="221" text-anchor="middle">↑ up</text>
+    <rect x="40" y="228" width="260" height="24" fill="var(--s1)" fill-opacity=".10"/><text x="60" y="245" text-anchor="middle">8</text><text x="120" y="245" text-anchor="middle">0.30</text><text x="185" y="245" text-anchor="middle" fill="var(--s1)">legit</text><text x="260" y="245" text-anchor="middle">→ right</text>
+    <rect x="40" y="252" width="260" height="24" fill="var(--s1)" fill-opacity=".10"/><text x="60" y="269" text-anchor="middle">9</text><text x="120" y="269" text-anchor="middle">0.18</text><text x="185" y="269" text-anchor="middle" fill="var(--s1)">legit</text><text x="260" y="269" text-anchor="middle">→ right</text>
+    <rect x="40" y="276" width="260" height="24" fill="var(--s1)" fill-opacity=".10"/><text x="60" y="293" text-anchor="middle">10</text><text x="120" y="293" text-anchor="middle">0.07</text><text x="185" y="293" text-anchor="middle" fill="var(--s1)">legit</text><text x="260" y="293" text-anchor="middle">→ right</text>
+  </g>
+  <text x="170" y="330" text-anchor="middle" class="lbl">4 fraud, 6 legit → up-steps of 1/4, right-steps of 1/6</text>
+  <!-- ROC panel -->
+  <text x="560" y="28" text-anchor="middle" class="lbl-strong" font-size="14">2. Walk the list</text>
+  <polygon points="430,300 430,170 473.3,170 473.3,105 560,105 560,40 690,40 690,300" fill="var(--s1)" fill-opacity=".12"/>
+  <line x1="430" y1="300" x2="700" y2="300" class="axis" marker-end="url(#arr-f7)"/>
+  <line x1="430" y1="300" x2="430" y2="34" class="axis" marker-end="url(#arr-f7)"/>
+  <line x1="430" y1="300" x2="690" y2="40" stroke="var(--ink-3)" stroke-dasharray="4 4"/>
+  <text x="560" y="330" text-anchor="middle" class="lbl">false positive rate = FP / 6</text>
+  <text x="404" y="170" text-anchor="middle" class="lbl" transform="rotate(-90 404 170)">true positive rate = TP / 4</text>
+  <g class="lbl"><text x="430" y="316" text-anchor="middle">0</text><text x="690" y="316" text-anchor="middle">1</text><text x="422" y="304" text-anchor="end">0</text><text x="422" y="44" text-anchor="end">1</text></g>
+  <path d="M430,300 L430,235 L430,170 L473.3,170 L473.3,105 L516.7,105 L560,105 L560,40 L603.3,40 L646.7,40 L690,40" fill="none" stroke="var(--s1)" stroke-width="3"/>
+  <g class="lbl" fill="var(--s1)">
+    <circle cx="430" cy="235" r="4" fill="var(--s2)"/><circle cx="430" cy="170" r="4" fill="var(--s2)"/><circle cx="473.3" cy="170" r="4" fill="var(--s1)"/><circle cx="473.3" cy="105" r="4" fill="var(--s2)"/><circle cx="516.7" cy="105" r="4" fill="var(--s1)"/><circle cx="560" cy="105" r="4" fill="var(--s1)"/><circle cx="560" cy="40" r="4" fill="var(--s2)"/><circle cx="603.3" cy="40" r="4" fill="var(--s1)"/><circle cx="646.7" cy="40" r="4" fill="var(--s1)"/><circle cx="690" cy="40" r="4" fill="var(--s1)"/>
+  </g>
+  <text x="440" y="228" class="lbl">1</text><text x="440" y="163" class="lbl">2</text><text x="480" y="163" class="lbl">3</text><text x="480" y="98" class="lbl">4</text><text x="525" y="98" class="lbl">5</text><text x="546" y="98" class="lbl">6</text><text x="566" y="58" class="lbl">7</text>
+  <text x="600" y="200" text-anchor="middle" class="lbl-strong" fill="var(--s1)">AUC = 20 / 24 = 0.83</text>
+  <text x="600" y="218" text-anchor="middle" class="lbl">shaded area</text>
+  <text x="640" y="290" text-anchor="end" class="lbl" fill="var(--ink-3)">chance = 0.5</text>
+</svg>
+<figcaption><strong>Figure 6.7 — Building an ROC curve by hand.</strong> Rank by score, then step up for every positive and right for every negative. The staircase is the ROC curve; a perfect ranker goes straight up then straight right (AUC = 1); random ranking hugs the diagonal (AUC = 0.5). Here 20 of the 24 (fraud, legit) pairs are ranked correctly, so AUC = 0.83.</figcaption>
+</figure>
+
+<div class="callout key"><div class="title">Key idea: what AUC means</div>
+<p><strong>AUC is the probability that a randomly chosen positive gets a higher score than a randomly chosen negative.</strong> Check it on Figure 6.7: there are 4 × 6 = 24 (fraud, legit) pairs; the fraud outranks the legit in 20 of them; 20/24 = 0.83 = the shaded area. That is why AUC is a pure <em>ranking</em> metric: it ignores the threshold, ignores calibration, and is unchanged if you squash or stretch all scores monotonically.</p>
+</div>
+
+<p>Rules of thumb: AUC 0.5 is a coin flip, 0.7 is "some signal", 0.8 is a good business model, 0.9+ is excellent (or leaking — see Chapter 7), and AUC below 0.5 means your labels are flipped. AUC is insensitive to class imbalance, which is both its strength (comparable across datasets) and its weakness, as the next figure shows.</p>
+
+<h3>The precision–recall curve, and when it beats ROC</h3>
+
+<p>The <strong>PR curve</strong> plots precision against recall over the same sweep. Its summary number is <strong>average precision (AP)</strong>, the area under it (computed as a weighted mean of precisions at each recall step; scikit-learn's <code>average_precision_score</code>). The crucial difference: FPR's denominator is the <em>negatives</em>, of which we have 950; precision's denominator is the <em>flags</em>. With heavy imbalance, a few hundred false positives barely move FPR (300/950 = 0.32 looks tolerable on an ROC) but crush precision (49/349 = 14%). The ROC curve can look superb while the model is useless in practice.</p>
+
+<figure class="fig">
+<svg viewBox="0 0 760 330" role="img" aria-label="Left: an ROC curve hugging the top-left corner with AUC 0.96. Right: the PR curve of the same model on 5 percent positives, sagging to low precision with average precision 0.45">
+  <defs><marker id="arr-f8" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+  <!-- ROC -->
+  <text x="200" y="28" text-anchor="middle" class="lbl-strong" font-size="14">Same model, ROC view: "excellent!"</text>
+  <line x1="60" y1="280" x2="350" y2="280" class="axis" marker-end="url(#arr-f8)"/>
+  <line x1="60" y1="280" x2="60" y2="40" class="axis" marker-end="url(#arr-f8)"/>
+  <line x1="60" y1="280" x2="340" y2="50" stroke="var(--ink-3)" stroke-dasharray="4 4"/>
+  <text x="200" y="310" text-anchor="middle" class="lbl">false positive rate</text>
+  <text x="34" y="165" text-anchor="middle" class="lbl" transform="rotate(-90 34 165)">recall (TPR)</text>
+  <g class="lbl"><text x="60" y="296" text-anchor="middle">0</text><text x="340" y="296" text-anchor="middle">1</text><text x="52" y="284" text-anchor="end">0</text><text x="52" y="54" text-anchor="end">1</text></g>
+  <path d="M60,280 L65.6,142 L74,96 L88,73 L116,61.5 L172,54.6 L228,52 L340,50" fill="none" stroke="var(--s1)" stroke-width="3"/>
+  <polygon points="60,280 65.6,142 74,96 88,73 116,61.5 172,54.6 228,52 340,50 340,280" fill="var(--s1)" fill-opacity=".10"/>
+  <text x="210" y="180" text-anchor="middle" class="lbl-strong" fill="var(--s1)">AUC = 0.96</text>
+  <circle cx="149.6" cy="59" r="5" fill="var(--s7)"/>
+  <text x="160" y="80" class="lbl" fill="var(--s7)">FPR 0.32, recall 0.98:</text>
+  <text x="160" y="96" class="lbl" fill="var(--s7)">looks fine here…</text>
+  <!-- PR -->
+  <text x="570" y="28" text-anchor="middle" class="lbl-strong" font-size="14">PR view, 5% positives: "hmm."</text>
+  <line x1="430" y1="280" x2="720" y2="280" class="axis" marker-end="url(#arr-f8)"/>
+  <line x1="430" y1="280" x2="430" y2="40" class="axis" marker-end="url(#arr-f8)"/>
+  <text x="570" y="310" text-anchor="middle" class="lbl">recall</text>
+  <text x="404" y="165" text-anchor="middle" class="lbl" transform="rotate(-90 404 165)">precision</text>
+  <g class="lbl"><text x="430" y="296" text-anchor="middle">0</text><text x="710" y="296" text-anchor="middle">1</text><text x="422" y="284" text-anchor="end">0</text><text x="422" y="54" text-anchor="end">1</text></g>
+  <line x1="430" y1="268.5" x2="710" y2="268.5" stroke="var(--ink-3)" stroke-dasharray="4 4"/>
+  <text x="708" y="262" text-anchor="end" class="lbl" fill="var(--ink-3)">no-skill = base rate 0.05</text>
+  <path d="M430,50 L458,73 L514,96 L570,142 L598,176.5 L626,199.5 L654,222.5 L682,245.5 L704.4,257 L710,268.5" fill="none" stroke="var(--s2)" stroke-width="3"/>
+  <polygon points="430,50 458,73 514,96 570,142 598,176.5 626,199.5 654,222.5 682,245.5 704.4,257 710,268.5 710,280 430,280" fill="var(--s2)" fill-opacity=".10"/>
+  <text x="520" y="230" text-anchor="middle" class="lbl-strong" fill="var(--s2)">AP = 0.45</text>
+  <circle cx="704.4" cy="248" r="5" fill="var(--s7)"/>
+  <text x="696" y="238" text-anchor="end" class="lbl" fill="var(--s7)">…same point: precision 0.14,</text>
+  <text x="696" y="254" text-anchor="end" class="lbl" fill="var(--s7)">6 of 7 flags are false alarms</text>
+</svg>
+<figcaption><strong>Figure 6.8 — When positives are rare, the PR curve tells the truth.</strong> The same operating point (recall 0.98, 300 false positives out of 950 negatives) sits near the top-left of the ROC but at precision 0.14 on the PR curve. ROC hides false positives behind the huge negative count; precision does not. Use PR/AP when positives are rare and false alarms are the constraint; use ROC/AUC for balanced problems or when you care about ranking across the whole population.</figcaption>
+</figure>
+
+<div class="callout warn"><div class="title">Common mistake</div>
+<p>Reporting AUC = 0.95 on a 1-in-1,000 problem and calling the model "production ready". At that imbalance, an AUC of 0.95 can coexist with a precision of 2% at any useful recall. Always look at the PR curve (or simply precision at the recall you need) before promising anything. Conversely, do not compare AP across datasets with different base rates: AP's floor is the base rate, so 0.30 may be excellent on a 1% problem and terrible on a 30% one.</p>
+</div>
+
+<pre class="code" data-lang="python"><code><span class="kw">import</span> numpy <span class="kw">as</span> np
+<span class="kw">from</span> sklearn.datasets <span class="kw">import</span> load_breast_cancer
+<span class="kw">from</span> sklearn.model_selection <span class="kw">import</span> train_test_split
+<span class="kw">from</span> sklearn.pipeline <span class="kw">import</span> make_pipeline
+<span class="kw">from</span> sklearn.preprocessing <span class="kw">import</span> StandardScaler
+<span class="kw">from</span> sklearn.linear_model <span class="kw">import</span> LogisticRegression
+<span class="kw">from</span> sklearn.metrics <span class="kw">import</span> (roc_auc_score, average_precision_score, precision_recall_curve,
+                             precision_score, recall_score, f1_score, confusion_matrix)
+
+X, y = load_breast_cancer(return_X_y=<span class="kw">True</span>); y = <span class="nu">1</span> - y
+X_tr, X_te, y_tr, y_te = train_test_split(X, y, test_size=<span class="nu">0.3</span>, stratify=y, random_state=<span class="nu">42</span>)
+clf = make_pipeline(StandardScaler(), LogisticRegression(max_iter=<span class="nu">1000</span>)).fit(X_tr, y_tr)
+proba = clf.predict_proba(X_te)[:, <span class="nu">1</span>]
+
+<span class="fn">print</span>(<span class="st">&quot;ROC AUC:&quot;</span>, <span class="fn">round</span>(roc_auc_score(y_te, proba), <span class="nu">4</span>))
+<span class="fn">print</span>(<span class="st">&quot;Average precision (PR AUC):&quot;</span>, <span class="fn">round</span>(average_precision_score(y_te, proba), <span class="nu">4</span>))
+
+<span class="cm"># Threshold tuning loop: one row of the confusion matrix per threshold</span>
+<span class="fn">print</span>(<span class="st">&quot;\n thr    TP  FP  FN   TN   prec  recall    F1    FPR&quot;</span>)
+<span class="kw">for</span> t <span class="kw">in</span> [<span class="nu">0.9</span>, <span class="nu">0.7</span>, <span class="nu">0.5</span>, <span class="nu">0.3</span>, <span class="nu">0.1</span>, <span class="nu">0.05</span>]:
+    p = (proba &gt;= t).astype(int)
+    tn, fp, fn, tp = confusion_matrix(y_te, p).ravel()
+    <span class="fn">print</span>(<span class="st">f&quot;{t:4.2f}  {tp:4d} {fp:3d} {fn:3d} {tn:4d}  {precision_score(y_te, p):.3f}  {recall_score(y_te, p):.3f}  {f1_score(y_te, p):.3f}  {fp/(fp+tn):.3f}&quot;</span>)
+
+<span class="cm"># Pick the threshold that guarantees recall &gt;= 0.99 with the best precision</span>
+prec, rec, pr_thr = precision_recall_curve(y_te, proba)
+ok = rec[:-<span class="nu">1</span>] &gt;= <span class="nu">0.99</span><span class="cm">                  # last (prec, rec) point has no threshold</span>
+best = np.argmax(np.where(ok, prec[:-<span class="nu">1</span>], -<span class="nu">1</span>))
+<span class="fn">print</span>(<span class="st">f&quot;\nrecall&gt;=0.99 → threshold={pr_thr[best]:.3f}, precision={prec[best]:.3f}, recall={rec[best]:.3f}&quot;</span>)
+<span class="out"># ROC AUC: 0.9975</span>
+<span class="out"># Average precision (PR AUC): 0.9963</span>
+<span class="out">#</span>
+<span class="out">#  thr    TP  FP  FN   TN   prec  recall    F1    FPR</span>
+<span class="out"># 0.90    51   0  13  107  1.000  0.797  0.887  0.000</span>
+<span class="out"># 0.70    59   0   5  107  1.000  0.922  0.959  0.000</span>
+<span class="out"># 0.50    60   1   4  106  0.984  0.938  0.960  0.009</span>
+<span class="out"># 0.30    62   1   2  106  0.984  0.969  0.976  0.009</span>
+<span class="out"># 0.10    63   7   1  100  0.900  0.984  0.940  0.065</span>
+<span class="out"># 0.05    64  14   0   93  0.821  1.000  0.901  0.131</span>
+<span class="out">#</span>
+<span class="out"># recall&gt;=0.99 → threshold=0.059, precision=0.842, recall=1.000</span></code></pre>
+
+<div class="callout pro"><div class="title">At work</div>
+<p>The threshold-tuning loop above is the single most valuable ten lines in this chapter. Tune the threshold on a <em>validation</em> set, never on the test set (Chapter 7 explains why), and store the chosen threshold next to the model as part of the artifact. Models get retrained; a threshold tuned for last quarter's score distribution silently drifts. Re-tune it every time you retrain.</p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s8">8. Choosing the metric and the threshold</h2>
+
+<p>There is no universally right metric. The right one is determined by (a) how imbalanced the classes are, (b) which error is more expensive, and (c) whether there is a fixed budget of actions. Here is the decision table I would put on the wall:</p>
+
+<div class="tbl-wrap">
+<table class="tbl">
+<thead><tr><th>Situation</th><th>Expensive error</th><th>Lead metric</th><th>Threshold strategy</th></tr></thead>
+<tbody>
+<tr><td><strong>Fraud / abuse detection</strong> (rare, misses cost money, alarms cost analyst time)</td><td>Both, asymmetrically</td><td>PR-AUC to compare models; recall at a precision floor, or expected cost</td><td>Minimize expected cost from the cost matrix (below)</td></tr>
+<tr><td><strong>Medical screening</strong> (missing disease is catastrophic; follow-up test exists)</td><td>False negative</td><td>Recall (sensitivity) at a specificity floor; F<sub>2</sub></td><td>Set the threshold so recall ≥ 0.95–0.99, accept lower precision</td></tr>
+<tr><td><strong>Spam filtering</strong> (losing a real email is worse than seeing spam)</td><td>False positive</td><td>Precision at high recall; F<sub>0.5</sub></td><td>Raise the threshold until precision ≈ 0.99+</td></tr>
+<tr><td><strong>Churn outreach with a fixed budget</strong> (agents can call 500 customers this month)</td><td>Wasted calls</td><td><strong>Precision@k</strong> (precision among the top k = 500 scores), lift</td><td>No threshold: rank and take the top k</td></tr>
+<tr><td><strong>Balanced classes, symmetric costs</strong> (A/B categorization)</td><td>Either</td><td>Accuracy, ROC-AUC, log-loss</td><td>0.5 is actually fine</td></tr>
+<tr><td><strong>Probabilities feed a downstream calculation</strong> (pricing, expected value)</td><td>Miscalibration</td><td>Log-loss, Brier score, calibration curve</td><td>Threshold irrelevant; ship the probability</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="callout eli9"><div class="title">Explain it like I'm 9</div>
+<p>Precision@k is "if you can only open 10 boxes, how many treasures did you find?" It doesn't matter how the model scored the other boxes. When the number of actions is fixed by a budget, ranking is all that counts and the threshold takes care of itself.</p>
+</div>
+
+<h3>Cost-sensitive thresholding: a worked example</h3>
+
+<p>The most defensible way to set a threshold is to write down what each cell of the confusion matrix costs and pick the threshold that minimizes the total. For our payments company, a manual review of a flagged transaction costs <strong>$5</strong> of analyst time (the cost of a false positive; we also pay it for true positives, but that is the same at any threshold that catches them, so it does not change the decision), and a fraud that slips through costs on average <strong>$200</strong> (the false negative). Correct calls cost nothing. Now reuse the table from Section 6:</p>
+
+<div class="tbl-wrap">
+<table class="tbl">
+<thead><tr><th>Threshold</th><th>FP</th><th>FN</th><th>FP cost (× $5)</th><th>FN cost (× $200)</th><th>Total per 1,000 txns</th></tr></thead>
+<tbody>
+<tr><td>0.9</td><td class="num">1</td><td class="num">40</td><td class="num">$5</td><td class="num">$8,000</td><td class="num">$8,005</td></tr>
+<tr><td>0.7</td><td class="num">5</td><td class="num">25</td><td class="num">$25</td><td class="num">$5,000</td><td class="num">$5,025</td></tr>
+<tr><td>0.5 (default)</td><td class="num">20</td><td class="num">15</td><td class="num">$100</td><td class="num">$3,000</td><td class="num">$3,100</td></tr>
+<tr><td><strong>0.3</strong></td><td class="num">80</td><td class="num">5</td><td class="num">$400</td><td class="num">$1,000</td><td class="num"><strong>$1,400</strong></td></tr>
+<tr><td>0.2</td><td class="num">180</td><td class="num">4</td><td class="num">$900</td><td class="num">$800</td><td class="num">$1,700</td></tr>
+<tr><td>0.1</td><td class="num">300</td><td class="num">1</td><td class="num">$1,500</td><td class="num">$200</td><td class="num">$1,700</td></tr>
+<tr><td>0.05</td><td class="num">500</td><td class="num">0</td><td class="num">$2,500</td><td class="num">$0</td><td class="num">$2,500</td></tr>
+</tbody>
+</table>
+</div>
+
+<figure class="fig">
+<svg viewBox="0 0 760 310" role="img" aria-label="Expected cost against threshold: false-positive cost rises as the threshold falls, false-negative cost rises as it climbs, and their sum is U-shaped with a minimum near 0.3">
+  <defs><marker id="arr-f9" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+  <line x1="80" y1="260" x2="720" y2="260" class="axis" marker-end="url(#arr-f9)"/>
+  <line x1="80" y1="260" x2="80" y2="30" class="axis" marker-end="url(#arr-f9)"/>
+  <text x="390" y="292" text-anchor="middle" class="lbl">decision threshold t</text>
+  <text x="34" y="150" text-anchor="middle" class="lbl" transform="rotate(-90 34 150)">cost per 1,000 transactions</text>
+  <g class="lbl"><text x="80" y="276" text-anchor="middle">0</text><text x="204" y="276" text-anchor="middle">0.2</text><text x="328" y="276" text-anchor="middle">0.4</text><text x="452" y="276" text-anchor="middle">0.6</text><text x="576" y="276" text-anchor="middle">0.8</text><text x="700" y="276" text-anchor="middle">1</text></g>
+  <g class="lbl"><text x="72" y="264" text-anchor="end">$0</text><text x="72" y="211" text-anchor="end">$2k</text><text x="72" y="162" text-anchor="end">$4k</text><text x="72" y="113" text-anchor="end">$6k</text><text x="72" y="64" text-anchor="end">$8k</text></g>
+  <line x1="80" y1="211.1" x2="700" y2="211.1" class="grid"/><line x1="80" y1="162.2" x2="700" y2="162.2" class="grid"/><line x1="80" y1="113.3" x2="700" y2="113.3" class="grid"/><line x1="80" y1="64.4" x2="700" y2="64.4" class="grid"/>
+  <path d="M111,199 L142,223.3 L204,238 L266,250.2 L328,255.1 L390,257.6 L514,259.4 L638,259.9" fill="none" stroke="var(--s2)" stroke-width="2.5" stroke-dasharray="6 4"/>
+  <path d="M111,260 L142,255.1 L204,240.4 L266,235.6 L328,211.1 L390,186.7 L514,137.8 L638,64.4" fill="none" stroke="var(--s1)" stroke-width="2.5" stroke-dasharray="6 4"/>
+  <path d="M111,199 L142,218.4 L204,218.4 L266,225.8 L328,206.2 L390,184.2 L514,137.2 L638,64.3" fill="none" stroke="var(--s7)" stroke-width="3.5"/>
+  <circle cx="266" cy="225.8" r="6" fill="var(--s7)"/>
+  <line x1="266" y1="225.8" x2="266" y2="260" stroke="var(--s7)" stroke-dasharray="3 3"/>
+  <text x="266" y="200" text-anchor="middle" class="lbl-strong" fill="var(--s7)">minimum: t ≈ 0.3, $1,400</text>
+  <circle cx="390" cy="184.2" r="5" fill="var(--ink-3)"/>
+  <text x="400" y="176" class="lbl">default 0.5: $3,100 (2.2× worse)</text>
+  <text x="640" y="130" text-anchor="end" class="lbl-strong" fill="var(--s1)">missed-fraud cost (FN × $200)</text>
+  <text x="120" y="188" class="lbl-strong" fill="var(--s2)">review cost (FP × $5)</text>
+  <text x="560" y="86" text-anchor="end" class="lbl-strong" fill="var(--s7)">total</text>
+</svg>
+<figcaption><strong>Figure 6.9 — Pick the threshold where total cost bottoms out.</strong> False-positive cost (orange) rises as the threshold drops; false-negative cost (blue) rises as it climbs; their sum (violet) is U-shaped. For this cost ratio the optimum is around 0.3, less than half the default, and the default costs more than twice as much. The curve is flat near the minimum, so a threshold anywhere in 0.2–0.35 is fine; being at 0.5 is not.</figcaption>
+</figure>
+
+<div class="callout math"><div class="title">The math (optional)</div>
+<div class="formula">Expected cost(t) = C<sub>FP</sub> · FP(t) + C<sub>FN</sub> · FN(t)</div>
+<div class="formula">If probabilities are calibrated, flag when p ≥ t* = C<sub>FP</sub> / (C<sub>FP</sub> + C<sub>FN</sub>)</div>
+<p><strong>C<sub>FP</sub></strong> and <strong>C<sub>FN</sub></strong> are the costs of one false alarm and one miss; <strong>FP(t)</strong> and <strong>FN(t)</strong> are the counts at threshold t, read from the validation set. The second line is the Bayes decision rule: flag whenever the expected cost of not flagging, p · C<sub>FN</sub>, exceeds the expected cost of flagging, (1 − p) · C<sub>FP</sub>. With $5 and $200 that gives t* = 5/205 ≈ 0.024. In practice the empirical sweep (first line) usually lands somewhat higher, as our example does, because real models are not perfectly calibrated at the low end (Section 10 and Chapter 13). Trust the sweep on held-out data; use the formula as a sanity check.</p>
+</div>
+
+<pre class="code" data-lang="python"><code><span class="cm"># Cost-sensitive threshold: choose the cutoff that minimizes expected business cost</span>
+<span class="kw">import</span> numpy <span class="kw">as</span> np
+<span class="kw">from</span> sklearn.datasets <span class="kw">import</span> make_classification
+<span class="kw">from</span> sklearn.model_selection <span class="kw">import</span> train_test_split
+<span class="kw">from</span> sklearn.linear_model <span class="kw">import</span> LogisticRegression
+<span class="kw">from</span> sklearn.metrics <span class="kw">import</span> confusion_matrix
+
+X, y = make_classification(n_samples=<span class="nu">20000</span>, n_features=<span class="nu">12</span>, n_informative=<span class="nu">4</span>, n_redundant=<span class="nu">2</span>,
+                           weights=[<span class="nu">0.95</span>, <span class="nu">0.05</span>], class_sep=<span class="nu">1.5</span>, flip_y=<span class="nu">0.005</span>, random_state=<span class="nu">7</span>)
+X_tr, X_te, y_tr, y_te = train_test_split(X, y, test_size=<span class="nu">0.5</span>, stratify=y, random_state=<span class="nu">7</span>)
+proba = LogisticRegression(max_iter=<span class="nu">1000</span>).fit(X_tr, y_tr).predict_proba(X_te)[:, <span class="nu">1</span>]
+<span class="fn">print</span>(<span class="st">&quot;test size:&quot;</span>, <span class="fn">len</span>(y_te), <span class="st">&quot;| fraud cases:&quot;</span>, y_te.<span class="fn">sum</span>())
+
+COST_FP = <span class="nu">5</span><span class="cm">      # $ to manually review a legitimate transaction we flagged</span>
+COST_FN = <span class="nu">200</span><span class="cm">    # $ lost when a fraud slips through</span>
+<span class="kw">def</span> cost_at(t):
+    tn, fp, fn, tp = confusion_matrix(y_te, (proba &gt;= t).astype(int)).ravel()
+    <span class="kw">return</span> COST_FP * fp + COST_FN * fn, fp, fn
+
+<span class="fn">print</span>(<span class="st">&quot;  thr    cost    FP   FN&quot;</span>)
+<span class="kw">for</span> t <span class="kw">in</span> [<span class="nu">0.9</span>, <span class="nu">0.5</span>, <span class="nu">0.3</span>, <span class="nu">0.1</span>, <span class="nu">0.05</span>, <span class="nu">0.02</span>]:
+    c, fp, fn = cost_at(t)
+    <span class="fn">print</span>(<span class="st">f&quot;{t:5.2f}  {c:6d}  {fp:4d}  {fn:3d}&quot;</span>)
+
+grid = np.arange(<span class="nu">0.01</span>, <span class="nu">1.0</span>, <span class="nu">0.01</span>)
+costs = [cost_at(t)[<span class="nu">0</span>] <span class="kw">for</span> t <span class="kw">in</span> grid]
+<span class="fn">print</span>(<span class="st">f&quot;\nbest threshold = {grid[int(np.argmin(costs))]:.2f}  → cost ${min(costs):,}&quot;</span>)
+<span class="fn">print</span>(<span class="st">f&quot;vs default 0.50 → cost ${cost_at(0.5)[0]:,}&quot;</span>)
+<span class="fn">print</span>(<span class="st">f&quot;Bayes rule for a calibrated model: t* = C_FP/(C_FP+C_FN) = {COST_FP/(COST_FP+COST_FN):.3f}&quot;</span>)
+<span class="out"># test size: 10000 | fraud cases: 523</span>
+<span class="out">#   thr    cost    FP   FN</span>
+<span class="out">#  0.90   49215     3  246</span>
+<span class="out">#  0.50   18325    25   91</span>
+<span class="out">#  0.30   10770    74   52</span>
+<span class="out">#  0.10    7800   280   32</span>
+<span class="out">#  0.05    7670   494   26</span>
+<span class="out">#  0.02    9425  1005   22</span>
+<span class="out">#</span>
+<span class="out"># best threshold = 0.08  → cost $7,260</span>
+<span class="out"># vs default 0.50 → cost $18,325</span>
+<span class="out"># Bayes rule for a calibrated model: t* = C_FP/(C_FP+C_FN) = 0.024</span></code></pre>
+
+<div class="callout pro"><div class="title">At work</div>
+<p>You will not know C<sub>FN</sub> exactly. Ask the business for a range ("a missed fraud costs us between $100 and $400") and check whether the chosen threshold moves much across that range. Usually the cost curve is flat near its minimum and the decision is robust. If it is not, you have discovered that the <em>cost estimate</em>, not the model, is the thing to improve — a far cheaper fix.</p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s9">9. Multiclass: softmax and averaging</h2>
+
+<p>Many problems have more than two answers: which of 5 support teams gets the ticket, which of 3 grape varieties made this wine, which of 10 digits is in this image. Two ideas extend everything above.</p>
+
+<h3>Softmax: a sigmoid for K classes</h3>
+
+<p>Logistic regression computes one score z. For K classes, compute K scores (one linear model per class) and turn them into K probabilities that sum to 1 with the <strong>softmax</strong>: exponentiate each score and divide by the total. The class with the largest probability is the prediction. When K = 2, softmax collapses exactly to the sigmoid. Log-loss generalizes too: the loss for an example is −log of the probability assigned to the <em>true</em> class.</p>
+
+<div class="callout math"><div class="title">The math (optional)</div>
+<div class="formula">p<sub>k</sub> = e<sup>z<sub>k</sub></sup> / ∑<sub>j=1..K</sub> e<sup>z<sub>j</sub></sup>      Loss = −log p<sub>true class</sub></div>
+<p><strong>z<sub>k</sub></strong> = w<sub>k</sub>·x + b<sub>k</sub> is the linear score for class k, with its own weight vector. <strong>e<sup>z<sub>k</sub></sup></strong> makes every score positive and amplifies differences (a score 3 higher becomes a probability e³ ≈ 20 times higher). Dividing by the sum forces the probabilities to add to 1. Adding the same constant to every score changes nothing, which is why only score <em>differences</em> matter. This same softmax is the last layer of nearly every neural-network classifier in Part III.</p>
+</div>
+
+<p>The alternative, <strong>one-vs-rest (OvR)</strong>, trains K separate binary classifiers ("class 1 vs everything else", …) and picks the most confident. It works with any binary algorithm (Chapter 11's SVM, for instance) and parallelizes trivially, but its probabilities do not naturally sum to 1. scikit-learn's <code>LogisticRegression</code> uses true softmax (multinomial) by default; <code>OneVsRestClassifier</code> wraps anything else.</p>
+
+<h3>The multiclass confusion matrix</h3>
+
+<p>With K classes the matrix is K×K: rows are the truth, columns are the prediction, the diagonal is the correct calls. Everything off the diagonal is a specific kind of mistake, and <em>which</em> cells are populated is usually the most useful diagnostic in the whole evaluation. Here is the matrix from the wine model in the code below (deliberately over-regularized so it makes a few mistakes):</p>
+
+<figure class="fig">
+<svg viewBox="0 0 760 320" role="img" aria-label="A three-by-three confusion matrix heatmap for three wine classes with counts 19,5,0 / 1,28,0 / 0,1,18, with per-class recall on the right margin and precision on the bottom margin">
+  <text x="330" y="26" text-anchor="middle" class="lbl-strong" font-size="14">Predicted class</text>
+  <text x="210" y="52" text-anchor="middle" class="lbl-strong">class 0</text><text x="330" y="52" text-anchor="middle" class="lbl-strong">class 1</text><text x="450" y="52" text-anchor="middle" class="lbl-strong">class 2</text>
+  <text x="36" y="170" text-anchor="middle" class="lbl-strong" font-size="14" transform="rotate(-90 36 170)">True class</text>
+  <text x="120" y="102" text-anchor="middle" class="lbl-strong">class 0</text><text x="120" y="118" text-anchor="middle" class="lbl">(24)</text>
+  <text x="120" y="172" text-anchor="middle" class="lbl-strong">class 1</text><text x="120" y="188" text-anchor="middle" class="lbl">(29)</text>
+  <text x="120" y="242" text-anchor="middle" class="lbl-strong">class 2</text><text x="120" y="258" text-anchor="middle" class="lbl">(19)</text>
+  <!-- row 0 -->
+  <rect x="150" y="62" width="120" height="70" fill="var(--s1)" fill-opacity=".55" stroke="var(--border)"/><text x="210" y="105" text-anchor="middle" font-size="24" font-weight="800">19</text>
+  <rect x="270" y="62" width="120" height="70" fill="var(--critical)" fill-opacity=".35" stroke="var(--border)"/><text x="330" y="105" text-anchor="middle" font-size="24" font-weight="800">5</text>
+  <rect x="390" y="62" width="120" height="70" fill="var(--surface-2)" stroke="var(--border)"/><text x="450" y="105" text-anchor="middle" font-size="24" font-weight="800" fill="var(--ink-3)">0</text>
+  <!-- row 1 -->
+  <rect x="150" y="132" width="120" height="70" fill="var(--critical)" fill-opacity=".12" stroke="var(--border)"/><text x="210" y="175" text-anchor="middle" font-size="24" font-weight="800">1</text>
+  <rect x="270" y="132" width="120" height="70" fill="var(--s1)" fill-opacity=".8" stroke="var(--border)"/><text x="330" y="175" text-anchor="middle" font-size="24" font-weight="800" fill="#fff">28</text>
+  <rect x="390" y="132" width="120" height="70" fill="var(--surface-2)" stroke="var(--border)"/><text x="450" y="175" text-anchor="middle" font-size="24" font-weight="800" fill="var(--ink-3)">0</text>
+  <!-- row 2 -->
+  <rect x="150" y="202" width="120" height="70" fill="var(--surface-2)" stroke="var(--border)"/><text x="210" y="245" text-anchor="middle" font-size="24" font-weight="800" fill="var(--ink-3)">0</text>
+  <rect x="270" y="202" width="120" height="70" fill="var(--critical)" fill-opacity=".12" stroke="var(--border)"/><text x="330" y="245" text-anchor="middle" font-size="24" font-weight="800">1</text>
+  <rect x="390" y="202" width="120" height="70" fill="var(--s1)" fill-opacity=".5" stroke="var(--border)"/><text x="450" y="245" text-anchor="middle" font-size="24" font-weight="800">18</text>
+  <!-- recall margin -->
+  <text x="540" y="52" class="lbl-strong">recall (row)</text>
+  <text x="540" y="102" class="lbl">19/24 = 0.79</text>
+  <text x="540" y="172" class="lbl">28/29 = 0.97</text>
+  <text x="540" y="242" class="lbl">18/19 = 0.95</text>
+  <!-- precision margin -->
+  <text x="120" y="296" text-anchor="middle" class="lbl-strong">precision (col)</text>
+  <text x="210" y="296" text-anchor="middle" class="lbl">19/20 = 0.95</text>
+  <text x="330" y="296" text-anchor="middle" class="lbl">28/34 = 0.82</text>
+  <text x="450" y="296" text-anchor="middle" class="lbl">18/18 = 1.00</text>
+  <text x="640" y="150" text-anchor="middle" class="lbl-strong">the story:</text>
+  <text x="640" y="168" text-anchor="middle" class="lbl">5 class-0 wines get</text>
+  <text x="640" y="184" text-anchor="middle" class="lbl">called class 1. Nothing</text>
+  <text x="640" y="200" text-anchor="middle" class="lbl">else is confused.</text>
+</svg>
+<figcaption><strong>Figure 6.10 — A 3×3 confusion matrix says <em>which</em> classes get confused.</strong> Accuracy is 65/72 = 0.90, but the matrix shows the errors are almost all one kind: class 0 mistaken for class 1. That points straight at the fix (features that separate those two), which no single-number metric could do. Per-class recall lives on the row margin, per-class precision on the column margin.</figcaption>
+</figure>
+
+<h3>Macro, micro and weighted averages — a worked example</h3>
+
+<p>With K classes you get K precisions, K recalls and K F<sub>1</sub> scores. To report one number you must average them, and the three ways to do so answer different questions. Using the per-class F<sub>1</sub> values from Figure 6.10 (class 0: 0.864, class 1: 0.889, class 2: 0.973; supports 24, 29, 19):</p>
+
+<div class="tbl-wrap">
+<table class="tbl">
+<thead><tr><th>Average</th><th>How it is computed</th><th>Worked value</th><th>What it rewards</th></tr></thead>
+<tbody>
+<tr><td><strong>Macro</strong></td><td>Plain mean of the per-class scores</td><td class="num">(0.864 + 0.889 + 0.973) / 3 = <strong>0.909</strong></td><td>Every class counts equally, however rare. Use when the small classes matter (rare defect types, minority segments).</td></tr>
+<tr><td><strong>Micro</strong></td><td>Pool all TP, FP, FN across classes, then compute the metric once</td><td class="num">65 correct / 72 = <strong>0.903</strong></td><td>Every <em>example</em> counts equally, so big classes dominate. For single-label problems micro-F<sub>1</sub> = micro-precision = micro-recall = accuracy.</td></tr>
+<tr><td><strong>Weighted</strong></td><td>Mean of per-class scores weighted by class support</td><td class="num">(24·0.864 + 29·0.889 + 19·0.973) / 72 = <strong>0.903</strong></td><td>A compromise that follows the class sizes; it is what <code>classification_report</code> prints last, and it can hide a collapsed rare class.</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="callout key"><div class="title">Key idea</div>
+<p>If the classes are imbalanced, <strong>macro</strong> and <strong>micro/weighted</strong> can disagree wildly: a model that nails the 90% class and ignores a 2% class has a great micro score and a terrible macro score. Decide which you care about <em>before</em> you see the numbers, and say which you used every time you report one. When in doubt, report macro-F<sub>1</sub> plus the full per-class table.</p>
+</div>
+
+<pre class="code" data-lang="python"><code><span class="cm"># Multiclass: softmax logistic regression on the wine dataset, macro vs micro vs weighted</span>
+<span class="kw">import</span> numpy <span class="kw">as</span> np
+<span class="kw">from</span> sklearn.datasets <span class="kw">import</span> load_wine
+<span class="kw">from</span> sklearn.model_selection <span class="kw">import</span> train_test_split
+<span class="kw">from</span> sklearn.pipeline <span class="kw">import</span> make_pipeline
+<span class="kw">from</span> sklearn.preprocessing <span class="kw">import</span> StandardScaler
+<span class="kw">from</span> sklearn.linear_model <span class="kw">import</span> LogisticRegression
+<span class="kw">from</span> sklearn.metrics <span class="kw">import</span> confusion_matrix, classification_report, f1_score
+
+X, y = load_wine(return_X_y=<span class="kw">True</span>)
+X_tr, X_te, y_tr, y_te = train_test_split(X, y, test_size=<span class="nu">0.4</span>, stratify=y, random_state=<span class="nu">3</span>)
+clf = make_pipeline(StandardScaler(), LogisticRegression(max_iter=<span class="nu">1000</span>, C=<span class="nu">0.003</span>)).fit(X_tr, y_tr)
+
+proba = clf.predict_proba(X_te)<span class="cm">          # one column per class, rows sum to 1 (softmax)</span>
+<span class="fn">print</span>(<span class="st">&quot;probabilities of first row:&quot;</span>, np.<span class="fn">round</span>(proba[<span class="nu">0</span>], <span class="nu">3</span>), <span class="st">&quot;sum =&quot;</span>, proba[<span class="nu">0</span>].<span class="fn">sum</span>().<span class="fn">round</span>(<span class="nu">3</span>))
+pred = clf.predict(X_te)<span class="cm">                 # = argmax of the probability row</span>
+<span class="fn">print</span>(<span class="st">&quot;confusion matrix (rows = true, cols = predicted):\n&quot;</span>, confusion_matrix(y_te, pred))
+<span class="fn">print</span>(classification_report(y_te, pred, digits=<span class="nu">3</span>))
+<span class="fn">print</span>(<span class="st">&quot;macro F1   :&quot;</span>, <span class="fn">round</span>(f1_score(y_te, pred, average=<span class="st">&quot;macro&quot;</span>), <span class="nu">3</span>))
+<span class="fn">print</span>(<span class="st">&quot;micro F1   :&quot;</span>, <span class="fn">round</span>(f1_score(y_te, pred, average=<span class="st">&quot;micro&quot;</span>), <span class="nu">3</span>), <span class="st">&quot;(= accuracy)&quot;</span>)
+<span class="fn">print</span>(<span class="st">&quot;weighted F1:&quot;</span>, <span class="fn">round</span>(f1_score(y_te, pred, average=<span class="st">&quot;weighted&quot;</span>), <span class="nu">3</span>))
+<span class="out"># probabilities of first row: [0.506 0.333 0.161] sum = 1.0</span>
+<span class="out"># confusion matrix (rows = true, cols = predicted):</span>
+<span class="out">#  [[19  5  0]</span>
+<span class="out">#  [ 1 28  0]</span>
+<span class="out">#  [ 0  1 18]]</span>
+<span class="out">#               precision    recall  f1-score   support</span>
+<span class="out">#</span>
+<span class="out">#            0      0.950     0.792     0.864        24</span>
+<span class="out">#            1      0.824     0.966     0.889        29</span>
+<span class="out">#            2      1.000     0.947     0.973        19</span>
+<span class="out">#</span>
+<span class="out">#     accuracy                          0.903        72</span>
+<span class="out">#    macro avg      0.925     0.902     0.908        72</span>
+<span class="out"># weighted avg      0.912     0.903     0.903        72</span>
+<span class="out">#</span>
+<span class="out"># macro F1   : 0.908</span>
+<span class="out"># micro F1   : 0.903 (= accuracy)</span>
+<span class="out"># weighted F1: 0.903</span></code></pre>
+
+<div class="callout eli9"><div class="title">Explain it like I'm 9</div>
+<p>Three kids take a spelling test: the big class has 50 kids, the two small ones have 5 each. <em>Micro</em> average: "what fraction of all 60 kids passed?" — the big class decides. <em>Macro</em> average: "what's the average of the three classes' pass rates?" — a tiny class that all failed drags the score down just as hard as if the big class had. Same test, two honest answers to two different questions.</p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s10">10. How good are the probabilities?</h2>
+
+<p>Every metric so far either used hard labels (precision, recall, F<sub>1</sub>) or only the <em>ranking</em> of scores (AUC, AP). None of them checks whether "p = 0.8" actually means 80%. That matters whenever the probability itself feeds a decision: expected-cost thresholding (Section 8), pricing, prioritization by risk, or any "expected value" calculation. Two metrics score the probabilities directly.</p>
+
+<div class="grid2">
+  <div class="card accent"><h4>Log-loss (cross-entropy)</h4><p>The training loss of Section 2, now used as a metric: the mean of −log p<sub>true class</sub>. Unbounded: a single p = 0.001 on a true positive contributes 6.9, about a hundred confident correct answers' worth. Lower is better; the no-skill baseline (always predict the base rate) is a useful yardstick.</p></div>
+  <div class="card accent"><h4>Brier score</h4><p>The mean squared error between the predicted probability and the 0/1 outcome: mean of (p − y)². Bounded in [0, 1], gentler on single disasters, easy to explain ("average squared miss"). Lower is better; the base-rate baseline is π(1 − π) for base rate π, so 0.0475 on our 5% fraud problem.</p></div>
+</div>
+
+<div class="callout math"><div class="title">The math (optional)</div>
+<div class="formula">Log-loss = −(1/N) ∑<sub>i</sub> log p<sub>i</sub>(y<sub>i</sub>)      Brier = (1/N) ∑<sub>i</sub> (p<sub>i</sub> − y<sub>i</sub>)²</div>
+<p><strong>p<sub>i</sub>(y<sub>i</sub>)</strong> is the probability the model gave to the class that actually happened for example i; for a binary problem that is p<sub>i</sub> when y<sub>i</sub> = 1 and 1 − p<sub>i</sub> when y<sub>i</sub> = 0. Both are <em>proper scoring rules</em>: the only way to minimize them in expectation is to report your true belief, so a model cannot game them by hedging or by bluffing. That is the property that makes them the right metrics for probability quality, and the reason log-loss is used as the training objective in the first place.</p>
+</div>
+
+<p>What these catch that AUC cannot: two models with identical rankings (identical AUC) can have very different log-loss, because one is <strong>calibrated</strong> (when it says 0.8, it is right about 80% of the time) and the other is over- or under-confident. Figure 6.4's message applies to evaluation too: confidence is only rewarded when it is earned. The code below shows it — squashing every probability toward 0.5 leaves AUC untouched and wrecks log-loss.</p>
+
+<pre class="code" data-lang="python"><code><span class="cm"># Probability-quality metrics: log-loss and Brier score punish confident wrong answers</span>
+<span class="kw">import</span> numpy <span class="kw">as</span> np
+<span class="kw">from</span> sklearn.datasets <span class="kw">import</span> load_breast_cancer
+<span class="kw">from</span> sklearn.model_selection <span class="kw">import</span> train_test_split
+<span class="kw">from</span> sklearn.pipeline <span class="kw">import</span> make_pipeline
+<span class="kw">from</span> sklearn.preprocessing <span class="kw">import</span> StandardScaler
+<span class="kw">from</span> sklearn.linear_model <span class="kw">import</span> LogisticRegression
+<span class="kw">from</span> sklearn.metrics <span class="kw">import</span> log_loss, brier_score_loss, roc_auc_score
+
+X, y = load_breast_cancer(return_X_y=<span class="kw">True</span>); y = <span class="nu">1</span> - y
+X_tr, X_te, y_tr, y_te = train_test_split(X, y, test_size=<span class="nu">0.3</span>, stratify=y, random_state=<span class="nu">42</span>)
+p = make_pipeline(StandardScaler(), LogisticRegression(max_iter=<span class="nu">1000</span>)).fit(X_tr, y_tr).predict_proba(X_te)[:, <span class="nu">1</span>]
+
+<span class="fn">print</span>(<span class="st">&quot;model    log-loss:&quot;</span>, <span class="fn">round</span>(log_loss(y_te, p), <span class="nu">4</span>), <span class="st">&quot; Brier:&quot;</span>, <span class="fn">round</span>(brier_score_loss(y_te, p), <span class="nu">4</span>))
+
+<span class="cm"># Same ranking, but squash every probability toward 0.5: AUC unchanged, log-loss/Brier worse</span>
+p_timid = <span class="nu">0.5</span> + <span class="nu">0.2</span> * (p - <span class="nu">0.5</span>)
+<span class="fn">print</span>(<span class="st">&quot;timid    log-loss:&quot;</span>, <span class="fn">round</span>(log_loss(y_te, p_timid), <span class="nu">4</span>), <span class="st">&quot; Brier:&quot;</span>, <span class="fn">round</span>(brier_score_loss(y_te, p_timid), <span class="nu">4</span>),
+      <span class="st">&quot; AUC:&quot;</span>, <span class="fn">round</span>(roc_auc_score(y_te, p_timid), <span class="nu">4</span>), <span class="st">&quot;(same as before)&quot;</span>)
+
+<span class="cm"># The no-skill baseline: always predict the base rate</span>
+base = np.full_like(p, y_tr.mean())
+<span class="fn">print</span>(<span class="st">&quot;baseline log-loss:&quot;</span>, <span class="fn">round</span>(log_loss(y_te, base), <span class="nu">4</span>), <span class="st">&quot; Brier:&quot;</span>, <span class="fn">round</span>(brier_score_loss(y_te, base), <span class="nu">4</span>))
+
+<span class="cm"># One confident mistake costs a lot: log-loss of a single example predicted 0.999 when truth is 0</span>
+<span class="fn">print</span>(<span class="st">&quot;single example, p=0.999 but y=0 → loss =&quot;</span>, <span class="fn">round</span>(-np.log(<span class="nu">1</span> - <span class="nu">0.999</span>), <span class="nu">2</span>))
+<span class="out"># model    log-loss: 0.0675  Brier: 0.0187</span>
+<span class="out"># timid    log-loss: 0.527  Brier: 0.1679  AUC: 0.9975 (same as before)</span>
+<span class="out"># baseline log-loss: 0.6612  Brier: 0.2342</span>
+<span class="out"># single example, p=0.999 but y=0 → loss = 6.91</span></code></pre>
+
+<p><strong>Calibration preview.</strong> The tool for <em>seeing</em> probability quality is the reliability diagram: bin predictions by p, and plot the actual fraction of positives in each bin against the bin's mean p. A calibrated model hugs the diagonal. Logistic regression is usually well calibrated out of the box; tree ensembles and SVMs typically are not, and a post-hoc fix (Platt scaling or isotonic regression via <code>CalibratedClassifierCV</code>) repairs them. Chapter 13 covers this in full, together with resampling and class weights for severe imbalance.</p>
+
+<div class="callout pro"><div class="title">At work</div>
+<p>My standard evaluation block for any binary classifier, in this order: (1) base rate and majority baseline; (2) ROC-AUC and average precision on the validation set; (3) the PR curve, eyeballed; (4) precision, recall and counts at the <em>chosen</em> threshold, plus expected cost if costs are known; (5) log-loss or Brier vs the base-rate baseline, plus a reliability diagram if the probabilities will be used as numbers. Then, and only then, the test set — once. Copy this list into your project template.</p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="quiz">Quiz</h2>
+<div class="quiz">
+  <h3>Check your understanding</h3>
+
+  <div class="q">
+    <p class="question">1. A model achieves 99.2% accuracy detecting a defect that occurs in 0.8% of parts. What have you learned about the model?</p>
+    <ul class="opts">
+      <li><button>It is excellent; ship it</button></li>
+      <li><button data-correct>Almost nothing — predicting "no defect" for every part also scores 99.2%</button></li>
+      <li><button>It has a recall of 99.2%</button></li>
+      <li><button>Its AUC must be at least 0.99</button></li>
+    </ul>
+    <div class="explain">This is the accuracy paradox. The majority baseline is 99.2%, so the model has shown zero skill beyond it. Look at recall, precision and the PR curve.</div>
+  </div>
+
+  <div class="q">
+    <p class="question">2. Out of 200 patients, 40 have the disease. The screening model flags 60 patients, 36 of whom are truly ill. What are precision and recall?</p>
+    <ul class="opts">
+      <li><button>Precision 90%, recall 60%</button></li>
+      <li><button data-correct>Precision 60%, recall 90%</button></li>
+      <li><button>Precision 18%, recall 30%</button></li>
+      <li><button>Precision 60%, recall 18%</button></li>
+    </ul>
+    <div class="explain">TP = 36, FP = 60 − 36 = 24, FN = 40 − 36 = 4. Precision = 36/60 = 60%; recall = 36/40 = 90%. Good for screening: few misses, at the price of 24 unnecessary follow-ups.</div>
+  </div>
+
+  <div class="q">
+    <p class="question">3. You lower the decision threshold from 0.5 to 0.2. Which statement is guaranteed?</p>
+    <ul class="opts">
+      <li><button>Precision goes up</button></li>
+      <li><button>Accuracy goes up</button></li>
+      <li><button data-correct>Recall cannot go down</button></li>
+      <li><button>AUC goes up</button></li>
+    </ul>
+    <div class="explain">Lowering the threshold can only add flags, so true positives can only increase or stay: recall is monotone non-decreasing. Precision usually falls, accuracy can go either way, and AUC does not depend on the threshold at all.</div>
+  </div>
+
+  <div class="q">
+    <p class="question">4. What does an ROC-AUC of 0.85 mean?</p>
+    <ul class="opts">
+      <li><button>85% of predictions are correct</button></li>
+      <li><button>Precision is 85% at the default threshold</button></li>
+      <li><button data-correct>A random positive is scored higher than a random negative 85% of the time</button></li>
+      <li><button>The model is calibrated to within 15%</button></li>
+    </ul>
+    <div class="explain">AUC is a ranking metric: the probability that a randomly chosen positive outranks a randomly chosen negative. It says nothing about the threshold, accuracy, or calibration.</div>
+  </div>
+
+  <div class="q">
+    <p class="question">5. A retention team can call 300 customers per month, no more. Which metric should drive the churn model?</p>
+    <ul class="opts">
+      <li><button>Accuracy at threshold 0.5</button></li>
+      <li><button>Specificity</button></li>
+      <li><button data-correct>Precision among the top 300 scores (precision@k)</button></li>
+      <li><button>Brier score</button></li>
+    </ul>
+    <div class="explain">The budget fixes k = 300 actions. Only the quality of the top-300 ranking matters, so precision@k (or lift at the top 300) is the right lead metric; there is no threshold to tune.</div>
+  </div>
+
+  <div class="q">
+    <p class="question">6. Two models have the same ROC-AUC on a validation set, but model A has log-loss 0.20 and model B has 0.45. What is the most likely explanation?</p>
+    <ul class="opts">
+      <li><button>Model B has lower recall</button></li>
+      <li><button data-correct>Model B ranks equally well but its probabilities are poorly calibrated or over-confident</button></li>
+      <li><button>Model A overfits</button></li>
+      <li><button>The validation set is too small for AUC</button></li>
+    </ul>
+    <div class="explain">AUC only sees the ranking; log-loss also sees the probability values. Equal AUC with different log-loss means the ordering is the same but B's probabilities are worse as probabilities — typically overconfident wrong answers. Calibrate B (Chapter 13) before using its probabilities as numbers.</div>
+  </div>
+</div>
+
+<h2 id="exercises">Exercises</h2>
+
+<div class="exercise"><div class="title">Exercise 6.1 — Read the matrix</div>
+<p>A spam filter processed 10,000 emails, of which 2,000 were spam. It sent 1,900 emails to the spam folder, and 1,750 of those really were spam. Compute TP, FP, FN, TN, accuracy, precision, recall, specificity and F<sub>1</sub>. Then: which of the two errors would users complain about most, and which direction should the threshold move?</p>
+<details class="answer"><summary>Show answer</summary>
+<p>TP = 1,750; FP = 1,900 − 1,750 = 150; FN = 2,000 − 1,750 = 250; TN = 8,000 − 150 = 7,850. Accuracy = (1,750 + 7,850)/10,000 = 96.0%. Precision = 1,750/1,900 = 92.1%. Recall = 1,750/2,000 = 87.5%. Specificity = 7,850/8,000 = 98.1%. F<sub>1</sub> = 2·1,750/(2·1,750 + 150 + 250) = 3,500/3,900 = 0.897. Users hate real mail disappearing into the spam folder (the 150 false positives) far more than seeing a little spam. <strong>Raise</strong> the threshold: precision goes up toward 99%, recall drops, and that is the right trade for email. Lead with precision (or F<sub>0.5</sub>), not F<sub>1</sub>.</p>
+</details>
+</div>
+
+<div class="exercise"><div class="title">Exercise 6.2 — Draw the ROC by hand</div>
+<p>Eight loan applicants, sorted by the model's default score from highest to lowest, with D = defaulted and R = repaid: D, D, R, D, R, R, R, R. Draw the ROC staircase (3 defaulters → up-steps of 1/3, 5 repayers → right-steps of 1/5) and compute the AUC by counting correctly ranked (D, R) pairs. Then compute average precision from the same list.</p>
+<details class="answer"><summary>Show answer</summary>
+<p>Pairs: there are 3 × 5 = 15 (D, R) pairs. Defaulter 1 outranks all 5 repayers, defaulter 2 outranks 5, defaulter 3 outranks 4 (one repayer, at rank 3, is above it). Correct pairs = 14, so <strong>AUC = 14/15 ≈ 0.933</strong>. The staircase: up, up, right, up, right, right, right, right. For AP, at each defaulter the precision is: rank 1 → 1/1 = 1.0, rank 2 → 2/2 = 1.0, rank 4 → 3/4 = 0.75. AP = mean of these = (1 + 1 + 0.75)/3 ≈ <strong>0.917</strong> (scikit-learn's step-wise formula gives the same value here because each recall step is 1/3).</p>
+</details>
+</div>
+
+<div class="exercise"><div class="title">Exercise 6.3 — Set a threshold at work</div>
+<p>Take a binary classification problem from your job (or the breast-cancer dataset if you have none) and do three things. (a) Write down the cost of a false positive and a false negative, even if you have to guess a range. (b) Fit a logistic regression on a training split, sweep the threshold from 0.01 to 0.99 on a validation split, and plot total cost against threshold. (c) Report the chosen threshold, the confusion matrix at that threshold, and how much the threshold moves if you double C<sub>FN</sub>. Keep the plot: it is the most persuasive slide you will bring to the meeting that decides whether the model ships.</p>
+<details class="answer"><summary>Show answer</summary>
+<p>Use the code from Section 8 as a template, replacing <code>make_classification</code> with your data. The expected result is a U-shaped cost curve whose minimum is well away from 0.5 whenever the two costs differ substantially. When you double C<sub>FN</sub> the optimum moves toward a lower threshold (flag more). If it barely moves, your decision is robust to the cost estimate; if it moves a lot, spend effort on pinning down the cost, not on the model. Always sweep on validation data and confirm on the test set exactly once.</p>
+</details>
+</div>
+
+<div class="summary">
+  <h3>Chapter summary</h3>
+  <ul class="checklist">
+    <li>A straight line cannot predict yes/no; logistic regression keeps the linear score and squashes it through the sigmoid into a probability. Its boundary is a straight cut in feature space.</li>
+    <li>Log-loss trains it and punishes confident wrong answers. Always scale features; sklearn's <code>C</code> is a regularization strength.</li>
+    <li>A classifier outputs probabilities; the threshold that turns them into labels is a business decision, not a model property.</li>
+    <li>Confusion matrix: rows = truth, columns = prediction. Precision reads down the flagged column (TP/(TP+FP)); recall reads along the positive row (TP/(TP+FN)); specificity is recall of the negatives.</li>
+    <li>Accuracy is meaningless without the majority baseline; on imbalanced data it mostly measures the imbalance.</li>
+    <li>Lowering the threshold raises recall and lowers precision. F<sub>1</sub> balances them; F<sub>β</sub> tilts toward the error you fear more.</li>
+    <li>ROC-AUC = probability a random positive outranks a random negative; threshold-free, imbalance-blind. Use PR curves and average precision when positives are rare.</li>
+    <li>Choose the threshold by minimizing expected cost from a cost matrix on validation data; 0.5 is almost never it. Fixed budgets call for precision@k.</li>
+    <li>Multiclass: softmax probabilities, K×K confusion matrix, and say whether you averaged macro (classes equal) or micro/weighted (examples equal).</li>
+    <li>Log-loss and Brier score judge the probabilities themselves; equal AUC does not mean equal calibration (Chapter 13).</li>
+  </ul>
+</div>
+
+<div class="mark-done"></div>
+<nav class="pager"></nav>
+
+</div></main>
+</div>
+
+<script src="../assets/chapters.js"></script>
+<script src="../assets/app.js"></script>
+<script>
+(function () {
+  /* ---------- Widget 1: sigmoid knobs ---------- */
+  var wS = document.getElementById("sg-w"), bS = document.getElementById("sg-b"), svg = document.getElementById("sg-svg"), x0 = document.getElementById("sg-x0");
+  if (!wS || !svg) return;
+  var L = 60, R = 670, T = 30, B = 210;
+  function X(x) { return L + (x + 6) / 12 * (R - L); }
+  function Y(p) { return B - p * (B - T); }
+  function render() {
+    var w = +wS.value, b = +bS.value, s = "";
+    s += '<line x1="' + L + '" y1="' + B + '" x2="' + R + '" y2="' + B + '" stroke="var(--ink-3)"/>';
+    s += '<line x1="' + L + '" y1="' + B + '" x2="' + L + '" y2="' + T + '" stroke="var(--ink-3)"/>';
+    s += '<line x1="' + L + '" y1="' + Y(0.5) + '" x2="' + R + '" y2="' + Y(0.5) + '" stroke="var(--border)" stroke-dasharray="4 4"/>';
+    s += '<line x1="' + L + '" y1="' + Y(1) + '" x2="' + R + '" y2="' + Y(1) + '" stroke="var(--border)" stroke-dasharray="4 4"/>';
+    for (var t = -6; t <= 6; t += 2) s += '<text x="' + X(t) + '" y="' + (B + 16) + '" text-anchor="middle">' + t + '</text>';
+    s += '<text x="' + (L - 8) + '" y="' + (Y(1) + 4) + '" text-anchor="end">1</text><text x="' + (L - 8) + '" y="' + (Y(0.5) + 4) + '" text-anchor="end">0.5</text><text x="' + (L - 8) + '" y="' + (B + 4) + '" text-anchor="end">0</text>';
+    s += '<text x="' + ((L + R) / 2) + '" y="' + (B + 36) + '" text-anchor="middle" opacity=".75">feature x</text>';
+    s += '<text x="' + (L + 8) + '" y="' + (T + 2) + '" opacity=".75">p = σ(w·x + b)</text>';
+    var d = "";
+    for (var i = 0; i <= 120; i++) { var x = -6 + i / 10, p = 1 / (1 + Math.exp(-(w * x + b))); d += (i ? " L" : "M") + X(x).toFixed(1) + "," + Y(p).toFixed(1); }
+    s += '<path d="' + d + '" fill="none" stroke="var(--s7)" stroke-width="3"/>';
+    if (Math.abs(w) > 1e-6) {
+      var xb = -b / w;
+      if (xb >= -6 && xb <= 6) {
+        s += '<line x1="' + X(xb) + '" y1="' + T + '" x2="' + X(xb) + '" y2="' + B + '" stroke="var(--s2)" stroke-width="2" stroke-dasharray="6 3"/>';
+        s += '<text x="' + (X(xb) + 6) + '" y="' + (Y(0.5) - 8) + '" fill="var(--s2)" font-weight="700">boundary x = −b/w</text>';
+        s += '<circle cx="' + X(xb) + '" cy="' + Y(0.5) + '" r="5" fill="var(--s2)"/>';
+      }
+      x0.textContent = xb.toFixed(2);
+    } else { x0.textContent = "undefined (w = 0)"; }
+    svg.innerHTML = s;
+  }
+  wS.addEventListener("input", render); bS.addEventListener("input", render); render();
+})();
+
+(function () {
+  /* ---------- Widget 2: threshold over score distributions + ROC ---------- */
+  var tS = document.getElementById("th-t"), svg = document.getElementById("th-svg");
+  if (!tS || !svg) return;
+  var out = {};
+  ["tp","fp","fn","tn","p","r","f","a"].forEach(function (k) { out[k] = document.getElementById("th-" + k); });
+  // deterministic synthetic scores: 950 legit, 50 fraud
+  var seed = 3; function rnd() { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; }
+  function gauss() { var u = rnd() || 1e-9, v = rnd(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v); }
+  function clamp(v) { return Math.min(0.995, Math.max(0.005, v)); }
+  var neg = [], pos = [], i;
+  for (i = 0; i < 950; i++) neg.push(clamp(0.22 + 0.13 * gauss()));
+  for (i = 0; i < 50; i++) pos.push(clamp(0.62 + 0.17 * gauss()));
+  var NB = 25, hN = new Array(NB).fill(0), hP = new Array(NB).fill(0);
+  neg.forEach(function (s) { hN[Math.min(NB - 1, Math.floor(s * NB))]++; });
+  pos.forEach(function (s) { hP[Math.min(NB - 1, Math.floor(s * NB))]++; });
+  var mN = Math.max.apply(null, hN), mP = Math.max.apply(null, hP);
+  function counts(t) { var c = { tp: 0, fp: 0, fn: 0, tn: 0 }; pos.forEach(function (s) { if (s >= t) c.tp++; else c.fn++; }); neg.forEach(function (s) { if (s >= t) c.fp++; else c.tn++; }); return c; }
+  // ROC curve points (precomputed)
+  var roc = []; for (var k = 0; k <= 100; k++) { var c0 = counts(k / 100); roc.push([c0.fp / 950, c0.tp / 50]); }
+  // geometry
+  var HL = 40, HR = 440, HT = 30, HB = 240, RL = 500, RR = 740, RT = 30, RB = 270;
+  function hx(v) { return HL + v * (HR - HL); }
+  function rx(v) { return RL + v * (RR - RL); } function ry(v) { return RB - v * (RB - RT); }
+  var rocPath = ""; roc.forEach(function (p, j) { rocPath += (j ? " L" : "M") + rx(p[0]).toFixed(1) + "," + ry(p[1]).toFixed(1); });
+  function render() {
+    var t = +tS.value, c = counts(t), s = "";
+    // histogram panel
+    s += '<rect x="' + hx(t) + '" y="' + HT + '" width="' + (HR - hx(t)) + '" height="' + (HB - HT) + '" fill="var(--s2)" fill-opacity=".07"/>';
+    var bw = (HR - HL) / NB;
+    for (var j = 0; j < NB; j++) {
+      var x = HL + j * bw;
+      var hn = hN[j] / mN * (HB - HT - 20), hp = hP[j] / mP * (HB - HT - 20);
+      s += '<rect x="' + (x + 1) + '" y="' + (HB - hn) + '" width="' + (bw - 2) + '" height="' + hn + '" fill="var(--s1)" fill-opacity=".55"/>';
+      s += '<rect x="' + (x + 1) + '" y="' + (HB - hp) + '" width="' + (bw - 2) + '" height="' + hp + '" fill="var(--s2)" fill-opacity=".6"/>';
+    }
+    s += '<line x1="' + HL + '" y1="' + HB + '" x2="' + HR + '" y2="' + HB + '" stroke="var(--ink-3)"/>';
+    for (var g = 0; g <= 1.001; g += 0.25) s += '<text x="' + hx(g) + '" y="' + (HB + 16) + '" text-anchor="middle">' + g.toFixed(2) + '</text>';
+    s += '<text x="' + ((HL + HR) / 2) + '" y="' + (HB + 34) + '" text-anchor="middle" opacity=".75">model score p(fraud)</text>';
+    s += '<line x1="' + hx(t) + '" y1="' + (HT - 6) + '" x2="' + hx(t) + '" y2="' + HB + '" stroke="var(--s7)" stroke-width="2.5" stroke-dasharray="6 3"/>';
+    s += '<text x="' + (hx(t) + 6) + '" y="' + (HT + 8) + '" fill="var(--s7)" font-weight="700">flag →</text>';
+    s += '<text x="' + (HL + 4) + '" y="' + (HT + 8) + '" fill="var(--s1)" font-weight="700">legit (950)</text>';
+    s += '<text x="' + (HR - 4) + '" y="' + (HT + 8) + '" text-anchor="end" fill="var(--s2)" font-weight="700">fraud (50)</text>';
+    s += '<text x="' + ((HL + HR) / 2) + '" y="' + (HB + 52) + '" text-anchor="middle" font-size="11" opacity=".7">bars scaled per class; the overlap is what makes the problem hard</text>';
+    // ROC panel
+    s += '<line x1="' + RL + '" y1="' + RB + '" x2="' + RR + '" y2="' + RB + '" stroke="var(--ink-3)"/><line x1="' + RL + '" y1="' + RB + '" x2="' + RL + '" y2="' + RT + '" stroke="var(--ink-3)"/>';
+    s += '<line x1="' + RL + '" y1="' + RB + '" x2="' + RR + '" y2="' + RT + '" stroke="var(--border)" stroke-dasharray="4 4"/>';
+    s += '<path d="' + rocPath + '" fill="none" stroke="var(--s1)" stroke-width="2.5"/>';
+    s += '<text x="' + ((RL + RR) / 2) + '" y="' + (RB + 18) + '" text-anchor="middle">false positive rate</text>';
+    s += '<text x="' + (RL - 10) + '" y="' + ((RT + RB) / 2) + '" text-anchor="middle" transform="rotate(-90 ' + (RL - 10) + ' ' + ((RT + RB) / 2) + ')">recall (TPR)</text>';
+    s += '<text x="' + RL + '" y="' + (RB + 18) + '" text-anchor="middle" font-size="10">0</text><text x="' + RR + '" y="' + (RB + 18) + '" text-anchor="middle" font-size="10">1</text>';
+    s += '<text x="' + ((RL + RR) / 2) + '" y="' + (RT - 10) + '" text-anchor="middle" font-weight="700">ROC curve</text>';
+    var fpr = c.fp / 950, tpr = c.tp / 50;
+    s += '<line x1="' + rx(fpr) + '" y1="' + RB + '" x2="' + rx(fpr) + '" y2="' + ry(tpr) + '" stroke="var(--s7)" stroke-dasharray="3 3"/>';
+    s += '<line x1="' + RL + '" y1="' + ry(tpr) + '" x2="' + rx(fpr) + '" y2="' + ry(tpr) + '" stroke="var(--s7)" stroke-dasharray="3 3"/>';
+    s += '<circle cx="' + rx(fpr) + '" cy="' + ry(tpr) + '" r="7" fill="var(--s7)" stroke="var(--surface)" stroke-width="2"/>';
+    s += '<text x="' + Math.min(rx(fpr) + 12, RR - 90) + '" y="' + Math.max(ry(tpr) + 22, RT + 40) + '" fill="var(--s7)" font-size="11">FPR ' + fpr.toFixed(2) + ', TPR ' + tpr.toFixed(2) + '</text>';
+    svg.innerHTML = s;
+    var prec = c.tp + c.fp ? c.tp / (c.tp + c.fp) : 0, rec = c.tp / 50, f1 = prec + rec ? 2 * prec * rec / (prec + rec) : 0;
+    out.tp.textContent = c.tp; out.fp.textContent = c.fp; out.fn.textContent = c.fn; out.tn.textContent = c.tn;
+    out.p.textContent = (100 * prec).toFixed(0) + "%"; out.r.textContent = (100 * rec).toFixed(0) + "%";
+    out.f.textContent = f1.toFixed(2); out.a.textContent = ((c.tp + c.tn) / 10).toFixed(1) + "%";
+  }
+  tS.addEventListener("input", render); render();
+})();
+</script>
+</body>
+</html>

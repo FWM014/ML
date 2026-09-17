@@ -78,6 +78,9 @@ This file is the contract every chapter follows. Read it fully, then read
 | Exercise | `<div class="exercise"><div class="title">Exercise N.k — Name</div><p>…</p><details class="answer"><summary>Show answer</summary>…</details></div>` |
 | Summary | `<div class="summary"><h3>Chapter summary</h3><ul class="checklist"><li>…</li></ul></div>` |
 | Legend | `<div class="legend"><span style="--c:var(--s1)">Series A</span><span style="--c:var(--s2)">Series B</span></div>` |
+| Deep dive (collapsible) | `<details class="deepdive"><summary>Deep dive: Title <span class="time">8 min</span></summary> …any content: p, figures, code, math boxes… </details>` — violet accent, 🔬 icon, collapsed by default. `app.js` gives each one an id (`dd-1`, `dd-2`, …) and builds a "Deep dives in this chapter" box (`.deepdive-index`) right after `.toc-inline`, so keep the summary text short and start it with "Deep dive:". |
+| Deep dive heading (non-collapsible) | `<h3 class="deepdive-h">Title</h3>` — for the rare always-visible in-depth subsection; same violet accent bar. |
+| Lab | `<div class="callout lab"><div class="title">Lab</div>…</div>` — 🧪 hands-on task box (teal tint, distinct from `pro`). |
 
 ## 3. SVG figure rules
 

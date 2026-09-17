@@ -213,7 +213,8 @@ rng = np.random.default_rng(<span class="nu">42</span>)
 n = <span class="nu">2000</span>
 df = pd.DataFrame({
     <span class="st">"customer_id"</span>:      np.arange(<span class="nu">100001</span>, <span class="nu">100001</span> + n),
-    <span class="st">"signup_date"</span>:      pd.to_datetime(<span class="st">"2021-01-01"</span>) + pd.to_timedelta(rng.integers(<span class="nu">0</span>, <span class="nu">1400</span>, n), <span class="st">"D"</span>),
+    <span class="st">"signup_date"</span>:      pd.to_datetime(<span class="st">"2021-01-01"</span>)
+                        + pd.to_timedelta(rng.integers(<span class="nu">0</span>, <span class="nu">1400</span>, n), <span class="st">"D"</span>),
     <span class="st">"plan"</span>:             rng.choice([<span class="st">"basic"</span>, <span class="st">"plus"</span>, <span class="st">"premium"</span>], n, p=[<span class="nu">.5</span>, <span class="nu">.3</span>, <span class="nu">.2</span>]),
     <span class="st">"age"</span>:              rng.integers(<span class="nu">18</span>, <span class="nu">75</span>, n),
     <span class="st">"tenure_months"</span>:    rng.integers(<span class="nu">1</span>, <span class="nu">60</span>, n),
@@ -223,7 +224,8 @@ df = pd.DataFrame({
     <span class="st">"autopay"</span>:          rng.random(n) &lt; <span class="nu">0.6</span>,
 })
 <span class="cm"># the hidden truth: churn is driven by inactivity, support pain, short tenure, no autopay</span>
-logit = -<span class="nu">2.6</span> + <span class="nu">0.035</span>*df.days_since_login + <span class="nu">0.5</span>*df.support_calls - <span class="nu">0.02</span>*df.tenure_months - <span class="nu">0.6</span>*df.autopay
+logit = (-<span class="nu">2.6</span> + <span class="nu">0.035</span>*df.days_since_login + <span class="nu">0.5</span>*df.support_calls
+         - <span class="nu">0.02</span>*df.tenure_months - <span class="nu">0.6</span>*df.autopay)
 df[<span class="st">"churned"</span>] = (rng.random(n) &lt; <span class="nu">1</span>/(<span class="nu">1</span>+np.exp(-logit))).astype(<span class="fn">int</span>)
 
 <span class="fn">print</span>(df.shape)
@@ -363,9 +365,9 @@ df[<span class="st">"churned"</span>] = (rng.random(n) &lt; <span class="nu">1</
   <text x="420" y="92" class="lbl" font-size="10">val</text><rect x="455" y="80" width="200" height="14" fill="var(--s1)"/><rect x="603" y="80" width="52" height="14" fill="var(--s2)"/>
   <text x="420" y="114" class="lbl" font-size="10">test</text><rect x="455" y="102" width="200" height="14" fill="var(--s1)"/><rect x="603" y="102" width="52" height="14" fill="var(--s2)"/>
   <text x="665" y="70" class="lbl" font-size="10">26% churn</text><text x="665" y="92" class="lbl" font-size="10">26% churn</text><text x="665" y="114" class="lbl" font-size="10">26% churn</text>
-  <text x="420" y="140" class="lbl" font-size="11">Random split of 2,000 rows can put 22% churners in val and 30% in test:</text>
-  <text x="420" y="155" class="lbl" font-size="11">the scores would differ for no real reason. Stratify by the label (or by a</text>
-  <text x="420" y="170" class="lbl" font-size="11">key segment). Mandatory when the positive class is rare.</text>
+  <text x="420" y="140" class="lbl" font-size="11">A random split of 2,000 rows can put 22% churners in val and</text>
+  <text x="420" y="155" class="lbl" font-size="11">30% in test: scores differ for no real reason. Stratify by the</text>
+  <text x="420" y="170" class="lbl" font-size="11">label (or a key segment). Mandatory when the positive class is rare.</text>
   <!-- panel 3: time -->
   <rect x="15" y="195" width="380" height="170" rx="8" class="fill-surface2" stroke="var(--border)"/>
   <text x="30" y="218" class="lbl-strong" font-size="13">Time-based</text>
@@ -380,10 +382,10 @@ df[<span class="st">"churned"</span>] = (rng.random(n) &lt; <span class="nu">1</
   <text x="35" y="288" class="lbl" font-size="10">2021</text><text x="380" y="288" text-anchor="end" class="lbl" font-size="10">2024 →</text>
   <line x1="265" y1="240" x2="265" y2="280" stroke="var(--s7)" stroke-width="2" stroke-dasharray="4 3"/>
   <text x="265" y="236" text-anchor="middle" class="lbl-strong" font-size="10" fill="var(--s7)">cut date</text>
-  <text x="30" y="312" class="lbl" font-size="11">Never shuffle. Train on the past, validate on the next block, test on</text>
-  <text x="30" y="327" class="lbl" font-size="11">the latest block. A random split lets the model "see" the future and</text>
-  <text x="30" y="342" class="lbl" font-size="11">overstates performance, sometimes wildly. Mandatory for any forecast,</text>
-  <text x="30" y="357" class="lbl" font-size="11">and wise for anything where the world drifts (fraud, pricing, demand).</text>
+  <text x="30" y="312" class="lbl" font-size="11">Never shuffle. Train on the past, validate on the next block,</text>
+  <text x="30" y="327" class="lbl" font-size="11">test on the latest. A random split lets the model "see" the</text>
+  <text x="30" y="342" class="lbl" font-size="11">future and overstates performance. Mandatory for forecasts;</text>
+  <text x="30" y="357" class="lbl" font-size="11">wise wherever the world drifts (fraud, pricing, demand).</text>
   <!-- panel 4: group -->
   <rect x="405" y="195" width="380" height="170" rx="8" class="fill-surface2" stroke="var(--border)"/>
   <text x="420" y="218" class="lbl-strong" font-size="13">Group</text>
@@ -402,10 +404,10 @@ df[<span class="st">"churned"</span>] = (rng.random(n) &lt; <span class="nu">1</
   <line x1="605" y1="232" x2="605" y2="282" stroke="var(--s7)" stroke-width="2" stroke-dasharray="4 3"/>
   <text x="510" y="292" text-anchor="middle" class="lbl-strong" font-size="10" fill="var(--s1)">train: whole groups</text>
   <text x="680" y="292" text-anchor="middle" class="lbl-strong" font-size="10" fill="var(--s3)">test: other groups</text>
-  <text x="420" y="312" class="lbl" font-size="11">If one patient has 12 scans, a random split puts 10 in train and 2 in</text>
-  <text x="420" y="327" class="lbl" font-size="11">test; the model recognises the patient, not the disease. Keep every</text>
-  <text x="420" y="342" class="lbl" font-size="11">group entirely on one side. Mandatory when the model must work on</text>
-  <text x="420" y="357" class="lbl" font-size="11">new entities. sklearn: GroupShuffleSplit, GroupKFold.</text>
+  <text x="420" y="312" class="lbl" font-size="11">If one patient has 12 scans, a random split puts 10 in train</text>
+  <text x="420" y="327" class="lbl" font-size="11">and 2 in test; the model recognises the patient, not the disease.</text>
+  <text x="420" y="342" class="lbl" font-size="11">Keep every group on one side. Mandatory when the model must</text>
+  <text x="420" y="357" class="lbl" font-size="11">work on new entities. sklearn: GroupShuffleSplit, GroupKFold.</text>
 </svg>
 <figcaption><strong>Figure 2.4 — The split must imitate deployment.</strong> Random is the default; stratified keeps class ratios stable; time-based is required whenever the future is the target; group is required whenever the same entity contributes several rows. Time and group can be combined (Chapter 14).</figcaption>
 </figure>
@@ -416,10 +418,12 @@ df[<span class="st">"churned"</span>] = (rng.random(n) &lt; <span class="nu">1</
 rng = np.random.default_rng(<span class="nu">42</span>); n = <span class="nu">2000</span>
 df = pd.DataFrame({<span class="st">"customer_id"</span>: np.arange(<span class="nu">100001</span>, <span class="nu">100001</span>+n),
     <span class="st">"signup_date"</span>: pd.to_datetime(<span class="st">"2021-01-01"</span>) + pd.to_timedelta(rng.integers(<span class="nu">0</span>, <span class="nu">1400</span>, n), <span class="st">"D"</span>),
-    <span class="st">"plan"</span>: rng.choice([<span class="st">"basic"</span>,<span class="st">"plus"</span>,<span class="st">"premium"</span>], n, p=[<span class="nu">.5</span>,<span class="nu">.3</span>,<span class="nu">.2</span>]), <span class="st">"age"</span>: rng.integers(<span class="nu">18</span>, <span class="nu">75</span>, n),
-    <span class="st">"tenure_months"</span>: rng.integers(<span class="nu">1</span>, <span class="nu">60</span>, n), <span class="st">"monthly_spend"</span>: rng.gamma(<span class="nu">4</span>, <span class="nu">12</span>, n).round(<span class="nu">2</span>),
-    <span class="st">"support_calls"</span>: rng.poisson(<span class="nu">1.2</span>, n), <span class="st">"days_since_login"</span>: rng.integers(<span class="nu">0</span>, <span class="nu">90</span>, n), <span class="st">"autopay"</span>: rng.random(n) &lt; <span class="nu">0.6</span>})
-logit = -<span class="nu">2.6</span> + <span class="nu">0.035</span>*df.days_since_login + <span class="nu">0.5</span>*df.support_calls - <span class="nu">0.02</span>*df.tenure_months - <span class="nu">0.6</span>*df.autopay
+    <span class="st">"plan"</span>: rng.choice([<span class="st">"basic"</span>,<span class="st">"plus"</span>,<span class="st">"premium"</span>], n, p=[<span class="nu">.5</span>,<span class="nu">.3</span>,<span class="nu">.2</span>]),
+    <span class="st">"age"</span>: rng.integers(<span class="nu">18</span>, <span class="nu">75</span>, n), <span class="st">"tenure_months"</span>: rng.integers(<span class="nu">1</span>, <span class="nu">60</span>, n),
+    <span class="st">"monthly_spend"</span>: rng.gamma(<span class="nu">4</span>, <span class="nu">12</span>, n).round(<span class="nu">2</span>), <span class="st">"support_calls"</span>: rng.poisson(<span class="nu">1.2</span>, n),
+    <span class="st">"days_since_login"</span>: rng.integers(<span class="nu">0</span>, <span class="nu">90</span>, n), <span class="st">"autopay"</span>: rng.random(n) &lt; <span class="nu">0.6</span>})
+logit = (-<span class="nu">2.6</span> + <span class="nu">0.035</span>*df.days_since_login + <span class="nu">0.5</span>*df.support_calls
+         - <span class="nu">0.02</span>*df.tenure_months - <span class="nu">0.6</span>*df.autopay)
 df[<span class="st">"churned"</span>] = (rng.random(n) &lt; <span class="nu">1</span>/(<span class="nu">1</span>+np.exp(-logit))).astype(<span class="fn">int</span>)
 
 X = df.drop(columns=[<span class="st">"churned"</span>]); y = df[<span class="st">"churned"</span>]
@@ -437,7 +441,8 @@ X_train, X_val, y_train, y_val = train_test_split(X_trval, y_trval, test_size=<s
 <span class="kw">import</span> numpy <span class="kw">as</span> np, pandas <span class="kw">as</span> pd
 <span class="kw">from</span> sklearn.model_selection <span class="kw">import</span> GroupShuffleSplit
 rng = np.random.default_rng(<span class="nu">42</span>); n = <span class="nu">2000</span>
-df = pd.DataFrame({<span class="st">"signup_date"</span>: pd.to_datetime(<span class="st">"2021-01-01"</span>) + pd.to_timedelta(rng.integers(<span class="nu">0</span>, <span class="nu">1400</span>, n), <span class="st">"D"</span>)})
+df = pd.DataFrame({<span class="st">"signup_date"</span>: pd.to_datetime(<span class="st">"2021-01-01"</span>)
+                                  + pd.to_timedelta(rng.integers(<span class="nu">0</span>, <span class="nu">1400</span>, n), <span class="st">"D"</span>)})
 
 <span class="cm"># --- time-based: sort by date, cut at a date, never shuffle</span>
 df = df.sort_values(<span class="st">"signup_date"</span>)
@@ -490,13 +495,13 @@ overlap = <span class="fn">set</span>(df.company_id.iloc[tr_idx]) &amp; <span cl
   <text x="400" y="40" text-anchor="middle" class="lbl-strong" font-size="13">B · Train–test contamination</text>
   <text x="400" y="58" text-anchor="middle" class="lbl" font-size="11">the split boundary is crossed</text>
   <rect x="295" y="85" width="140" height="40" fill="var(--s1)" fill-opacity=".8"/><rect x="435" y="85" width="70" height="40" fill="var(--s3)" fill-opacity=".8"/>
-  <text x="365" y="110" text-anchor="middle" font-size="11" font-weight="700" fill="#fff">train</text><text x="470" y="110" text-anchor="middle" font-size="11" font-weight="700" fill="#fff">test</text>
+  <text x="330" y="117" text-anchor="middle" font-size="11" font-weight="700" fill="#fff">train</text><text x="490" y="117" text-anchor="middle" font-size="11" font-weight="700" fill="#fff">test</text>
   <rect x="295" y="135" width="210" height="22" rx="4" fill="var(--critical)" fill-opacity=".18" stroke="var(--critical)" stroke-dasharray="4 2"/>
   <text x="400" y="150" text-anchor="middle" class="lbl-strong" font-size="10">scaler / imputer / selector .fit(ALL)</text>
   <!-- duplicate -->
-  <circle cx="380" cy="105" r="6" fill="var(--s7)"/><circle cx="470" cy="105" r="6" fill="var(--s7)"/>
-  <path d="M386,105 L464,105" stroke="var(--s7)" stroke-width="1.5" stroke-dasharray="3 2"/>
-  <text x="425" y="98" text-anchor="middle" class="lbl" font-size="9" fill="var(--s7)">same row twice</text>
+  <circle cx="400" cy="96" r="5" fill="var(--s7)"/><circle cx="455" cy="96" r="5" fill="var(--s7)"/>
+  <path d="M405,96 L450,96" stroke="var(--s7)" stroke-width="1.5" stroke-dasharray="3 2"/>
+  <text x="428" y="80" text-anchor="middle" class="lbl" font-size="9" fill="var(--s7)">same row on both sides</text>
   <text x="400" y="185" text-anchor="middle" class="lbl" font-size="11">Statistics computed on all rows</text>
   <text x="400" y="200" text-anchor="middle" class="lbl" font-size="11">(means, target encodings, "best"</text>
   <text x="400" y="215" text-anchor="middle" class="lbl" font-size="11">features) carry test information</text>
@@ -546,10 +551,12 @@ overlap = <span class="fn">set</span>(df.company_id.iloc[tr_idx]) &amp; <span cl
 rng = np.random.default_rng(<span class="nu">42</span>); n = <span class="nu">2000</span>
 df = pd.DataFrame({<span class="st">"customer_id"</span>: np.arange(<span class="nu">100001</span>, <span class="nu">100001</span>+n),
     <span class="st">"signup_date"</span>: pd.to_datetime(<span class="st">"2021-01-01"</span>) + pd.to_timedelta(rng.integers(<span class="nu">0</span>, <span class="nu">1400</span>, n), <span class="st">"D"</span>),
-    <span class="st">"plan"</span>: rng.choice([<span class="st">"basic"</span>,<span class="st">"plus"</span>,<span class="st">"premium"</span>], n, p=[<span class="nu">.5</span>,<span class="nu">.3</span>,<span class="nu">.2</span>]), <span class="st">"age"</span>: rng.integers(<span class="nu">18</span>, <span class="nu">75</span>, n),
-    <span class="st">"tenure_months"</span>: rng.integers(<span class="nu">1</span>, <span class="nu">60</span>, n), <span class="st">"monthly_spend"</span>: rng.gamma(<span class="nu">4</span>, <span class="nu">12</span>, n).round(<span class="nu">2</span>),
-    <span class="st">"support_calls"</span>: rng.poisson(<span class="nu">1.2</span>, n), <span class="st">"days_since_login"</span>: rng.integers(<span class="nu">0</span>, <span class="nu">90</span>, n), <span class="st">"autopay"</span>: rng.random(n) &lt; <span class="nu">0.6</span>})
-logit = -<span class="nu">2.6</span> + <span class="nu">0.035</span>*df.days_since_login + <span class="nu">0.5</span>*df.support_calls - <span class="nu">0.02</span>*df.tenure_months - <span class="nu">0.6</span>*df.autopay
+    <span class="st">"plan"</span>: rng.choice([<span class="st">"basic"</span>,<span class="st">"plus"</span>,<span class="st">"premium"</span>], n, p=[<span class="nu">.5</span>,<span class="nu">.3</span>,<span class="nu">.2</span>]),
+    <span class="st">"age"</span>: rng.integers(<span class="nu">18</span>, <span class="nu">75</span>, n), <span class="st">"tenure_months"</span>: rng.integers(<span class="nu">1</span>, <span class="nu">60</span>, n),
+    <span class="st">"monthly_spend"</span>: rng.gamma(<span class="nu">4</span>, <span class="nu">12</span>, n).round(<span class="nu">2</span>), <span class="st">"support_calls"</span>: rng.poisson(<span class="nu">1.2</span>, n),
+    <span class="st">"days_since_login"</span>: rng.integers(<span class="nu">0</span>, <span class="nu">90</span>, n), <span class="st">"autopay"</span>: rng.random(n) &lt; <span class="nu">0.6</span>})
+logit = (-<span class="nu">2.6</span> + <span class="nu">0.035</span>*df.days_since_login + <span class="nu">0.5</span>*df.support_calls
+         - <span class="nu">0.02</span>*df.tenure_months - <span class="nu">0.6</span>*df.autopay)
 df[<span class="st">"churned"</span>] = (rng.random(n) &lt; <span class="nu">1</span>/(<span class="nu">1</span>+np.exp(-logit))).astype(<span class="fn">int</span>)
 
 <span class="cm"># refunds are issued BECAUSE the customer cancelled: 75% of churners, 3% of stayers</span>
@@ -561,7 +568,8 @@ y = df[<span class="st">"churned"</span>]
 <span class="kw">for</span> name, cols <span class="kw">in</span> [(<span class="st">"honest"</span>, honest), (<span class="st">"leaky "</span>, leaky)]:
     Xtr, Xte, ytr, yte = train_test_split(df[cols], y, test_size=<span class="nu">0.2</span>, stratify=y, random_state=<span class="nu">0</span>)
     m = GradientBoostingClassifier(random_state=<span class="nu">0</span>).fit(Xtr, ytr)
-    <span class="fn">print</span>(<span class="st">f"{name}: test acc={accuracy_score(yte, m.predict(Xte)):.3f}  AUC={roc_auc_score(yte, m.predict_proba(Xte)[:,1]):.3f}"</span>)
+    acc, auc = accuracy_score(yte, m.predict(Xte)), roc_auc_score(yte, m.predict_proba(Xte)[:, <span class="nu">1</span>])
+    <span class="fn">print</span>(<span class="st">f"{name}: test acc={acc:.3f}  AUC={auc:.3f}"</span>)
 <span class="out"># honest: test acc=0.735  AUC=0.729</span>
 <span class="out"># leaky : test acc=0.925  AUC=0.939</span></code></pre>
 
@@ -578,7 +586,7 @@ y = df[<span class="st">"churned"</span>]
   <div class="note" id="lk-note">Toggle the checkbox. With the leak, the offline score is spectacular and the production score is below the honest model's, because the model relies on a column that is always zero at prediction time. Without the leak, offline and production scores agree, which is the whole point of a test set. (Production numbers are simulated for illustration; the offline ones come from the code above.)</div>
 </div>
 
-<pre class="code" data-lang="python"><code><span class="cm"># Example 2 reproduced: feature selection outside vs. inside cross-validation, on PURE NOISE</span>
+<pre class="code" data-lang="python"><code><span class="cm"># Example 2 reproduced: feature selection outside vs. inside CV, on PURE NOISE</span>
 <span class="kw">import</span> numpy <span class="kw">as</span> np
 <span class="kw">from</span> sklearn.feature_selection <span class="kw">import</span> SelectKBest, f_classif
 <span class="kw">from</span> sklearn.linear_model <span class="kw">import</span> LogisticRegression
@@ -593,7 +601,8 @@ cv = StratifiedKFold(<span class="nu">5</span>, shuffle=<span class="kw">True</s
 X_sel = SelectKBest(f_classif, k=<span class="nu">20</span>).fit_transform(X, y)
 wrong = cross_val_score(LogisticRegression(), X_sel, y, cv=cv).mean()
 <span class="cm"># RIGHT: selection lives inside the Pipeline, so each fold selects using only its own training rows</span>
-right = cross_val_score(make_pipeline(SelectKBest(f_classif, k=<span class="nu">20</span>), LogisticRegression()), X, y, cv=cv).mean()
+pipe  = make_pipeline(SelectKBest(f_classif, k=<span class="nu">20</span>), LogisticRegression())
+right = cross_val_score(pipe, X, y, cv=cv).mean()
 <span class="fn">print</span>(<span class="st">f"selection outside CV: {wrong:.2f}   selection inside pipeline: {right:.2f}   (truth: 0.50)"</span>)
 <span class="out"># selection outside CV: 0.75   selection inside pipeline: 0.50   (truth: 0.50)</span></code></pre>
 
@@ -659,9 +668,9 @@ right = cross_val_score(make_pipeline(SelectKBest(f_classif, k=<span class="nu">
   <text x="28" y="140" text-anchor="middle" class="lbl" transform="rotate(-90 28 140)">customers</text>
   <text x="97" y="62" text-anchor="middle" class="lbl" font-size="10">675</text>
   <line x1="120" y1="45" x2="120" y2="230" stroke="var(--s2)" stroke-width="1.5" stroke-dasharray="4 3"/>
-  <text x="124" y="56" class="lbl" font-size="10" fill="var(--s2)">median 44</text>
+  <text x="134" y="56" class="lbl" font-size="10" fill="var(--s2)">median 44 (orange) · mean 48 (violet)</text>
   <line x1="126" y1="45" x2="126" y2="230" stroke="var(--s7)" stroke-width="1.5" stroke-dasharray="2 2"/>
-  <text x="196" y="110" class="lbl" font-size="10">mean 48 &gt; median:</text>
+  <text x="196" y="110" class="lbl" font-size="10">mean &gt; median:</text>
   <text x="196" y="124" class="lbl" font-size="10">right-skewed, long tail</text>
   <text x="300" y="200" class="lbl" font-size="10" text-anchor="middle">a $216 customer</text>
   <path d="M330,205 L366,224" class="arrow" marker-end="url(#arr-f6)"/>
@@ -682,7 +691,7 @@ right = cross_val_score(make_pipeline(SelectKBest(f_classif, k=<span class="nu">
   <text x="480" y="66" text-anchor="middle" class="lbl" font-size="10">Q1 = 31</text>
   <text x="529" y="66" text-anchor="middle" class="lbl" font-size="10">Q3 = 62</text>
   <text x="501" y="140" text-anchor="middle" class="lbl-strong" font-size="10" fill="var(--s1)">median</text>
-  <text x="598" y="66" text-anchor="middle" class="lbl" font-size="10">Q3 + 1.5·IQR = 107</text>
+  <text x="604" y="80" class="lbl" font-size="10">upper fence: Q3 + 1.5·IQR = 107</text>
   <text x="680" y="126" text-anchor="middle" class="lbl" font-size="10" fill="var(--s2)">31 "outliers": real big spenders,</text>
   <text x="680" y="140" text-anchor="middle" class="lbl" font-size="10" fill="var(--s2)">not errors. Keep them.</text>
   <text x="600" y="200" text-anchor="middle" class="lbl">A boxplot compresses the histogram into five numbers plus flags.</text>
@@ -701,17 +710,17 @@ right = cross_val_score(make_pipeline(SelectKBest(f_classif, k=<span class="nu">
   <text x="20" y="26" class="lbl-strong" font-size="13">Correlation matrix (Pearson r), a typical customer table</text>
   <!-- column headers -->
   <g class="lbl" font-size="10" text-anchor="end">
-    <text x="176" y="52" transform="rotate(-40 176 52)">age</text>
-    <text x="236" y="52" transform="rotate(-40 236 52)">tenure</text>
-    <text x="296" y="52" transform="rotate(-40 296 52)">spend</text>
-    <text x="356" y="52" transform="rotate(-40 356 52)">calls</text>
-    <text x="416" y="52" transform="rotate(-40 416 52)">days_since_login</text>
-    <text x="476" y="52" transform="rotate(-40 476 52)">autopay</text>
-    <text x="536" y="52" transform="rotate(-40 536 52)">churned</text>
+    <text x="180" y="54" transform="rotate(-45 180 54)">age</text>
+    <text x="230" y="54" transform="rotate(-45 230 54)">tenure</text>
+    <text x="280" y="54" transform="rotate(-45 280 54)">spend</text>
+    <text x="330" y="54" transform="rotate(-45 330 54)">calls</text>
+    <text x="380" y="54" transform="rotate(-45 380 54)">recency</text>
+    <text x="430" y="54" transform="rotate(-45 430 54)">autopay</text>
+    <text x="480" y="54" transform="rotate(-45 480 54)">churned</text>
   </g>
   <!-- row labels -->
   <g class="lbl" font-size="11" text-anchor="end">
-    <text x="140" y="92">age</text><text x="140" y="142">tenure</text><text x="140" y="192">spend</text><text x="140" y="242">calls</text><text x="140" y="292">days_since_login</text><text x="140" y="342">autopay</text><text x="140" y="392" class="lbl-strong">churned</text>
+    <text x="140" y="92">age</text><text x="140" y="142">tenure</text><text x="140" y="192">spend</text><text x="140" y="242">calls</text><text x="140" y="292">recency (login)</text><text x="140" y="342">autopay</text><text x="140" y="392" class="lbl-strong">churned</text>
   </g>
   <!-- rows: each cell 50x50 starting x=150,y=62 ; positive s1, negative s2 -->
   <g stroke="var(--surface)" stroke-width="1.5">
@@ -777,35 +786,35 @@ right = cross_val_score(make_pipeline(SelectKBest(f_classif, k=<span class="nu">
     <text x="92" y="246">0–14</text><text x="142" y="246">15–29</text><text x="192" y="246">30–44</text><text x="242" y="246">45–59</text><text x="292" y="246">60–74</text><text x="342" y="246">75–89</text>
   </g>
   <line x1="60" y1="138" x2="380" y2="138" stroke="var(--s2)" stroke-width="1.5" stroke-dasharray="5 3"/>
-  <text x="378" y="150" text-anchor="end" class="lbl" font-size="10" fill="var(--s2)">overall 26%</text>
+  <text x="66" y="134" class="lbl" font-size="10" fill="var(--s2)">overall 26%</text>
   <text x="220" y="266" text-anchor="middle" class="lbl">days since last login (bucket)</text>
   <text x="220" y="286" text-anchor="middle" class="lbl-strong" font-size="11">Monotone, strong: a real, usable signal.</text>
   <!-- missingness matrix -->
   <text x="600" y="24" text-anchor="middle" class="lbl-strong" font-size="13">Missingness matrix (rows × columns)</text>
   <g class="lbl" font-size="10" text-anchor="middle">
-    <text x="470" y="48">age</text><text x="510" y="48">plan</text><text x="550" y="48">spend</text><text x="590" y="48">calls</text><text x="630" y="48">login</text><text x="670" y="48">autopay</text>
+    <text x="448" y="48">age</text><text x="486" y="48">plan</text><text x="524" y="48">spend</text><text x="562" y="48">calls</text><text x="600" y="48">login</text><text x="638" y="48">autopay</text>
   </g>
   <g fill="var(--surface-2)" stroke="var(--border)" stroke-width=".5">
-    <rect x="452" y="55" width="36" height="150"/><rect x="492" y="55" width="36" height="150"/><rect x="532" y="55" width="36" height="150"/><rect x="572" y="55" width="36" height="150"/><rect x="612" y="55" width="36" height="150"/><rect x="652" y="55" width="36" height="150"/>
+    <rect x="431" y="55" width="34" height="150"/><rect x="469" y="55" width="34" height="150"/><rect x="507" y="55" width="34" height="150"/><rect x="545" y="55" width="34" height="150"/><rect x="583" y="55" width="34" height="150"/><rect x="621" y="55" width="34" height="150"/>
   </g>
   <!-- missing cells: spend missing in a block of rows (basic plan), age sporadic, autopay sporadic -->
   <g fill="var(--s2)">
-    <rect x="532" y="55" width="36" height="46"/>
-    <rect x="452" y="70" width="36" height="3"/><rect x="452" y="118" width="36" height="3"/><rect x="452" y="160" width="36" height="3"/><rect x="452" y="190" width="36" height="3"/>
-    <rect x="652" y="90" width="36" height="3"/><rect x="652" y="140" width="36" height="3"/><rect x="652" y="175" width="36" height="3"/>
-    <rect x="532" y="130" width="36" height="3"/><rect x="532" y="185" width="36" height="3"/>
+    <rect x="507" y="55" width="34" height="46"/>
+    <rect x="431" y="70" width="34" height="3"/><rect x="431" y="118" width="34" height="3"/><rect x="431" y="160" width="34" height="3"/><rect x="431" y="190" width="34" height="3"/>
+    <rect x="621" y="90" width="34" height="3"/><rect x="621" y="140" width="34" height="3"/><rect x="621" y="175" width="34" height="3"/>
+    <rect x="507" y="130" width="34" height="3"/><rect x="507" y="185" width="34" height="3"/>
   </g>
-  <path d="M700,78 L740,78" class="arrow" marker-end="url(#arr-f8)" transform="rotate(180 720 78)"/>
-  <text x="745" y="74" class="lbl" font-size="10">spend is missing for</text>
-  <text x="745" y="87" class="lbl" font-size="10">30% of rows, all in</text>
-  <text x="745" y="100" class="lbl" font-size="10">one block: not random</text>
-  <text x="440" y="222" class="lbl" font-size="11">Orange = missing. A block means missingness depends on something</text>
-  <text x="440" y="237" class="lbl" font-size="11">(here: the basic plan has no spend record). Random specks are benign.</text>
+  <path d="M700,78 L665,78" class="arrow" marker-end="url(#arr-f8)"/>
+  <text x="675" y="66" class="lbl" font-size="10">spend missing for</text>
+  <text x="675" y="92" class="lbl" font-size="10">30% of rows, all in</text>
+  <text x="675" y="105" class="lbl" font-size="10">one block: not random</text>
+  <text x="431" y="222" class="lbl" font-size="11">Orange = missing. A block means missingness depends on</text>
+  <text x="431" y="237" class="lbl" font-size="11">something (here: basic plan has no spend record). Specks are benign.</text>
   <!-- class balance -->
-  <text x="440" y="262" class="lbl-strong" font-size="11">Class balance:</text>
-  <rect x="530" y="252" width="185" height="14" fill="var(--s1)"/><rect x="715" y="252" width="65" height="14" fill="var(--s2)"/>
-  <text x="622" y="263" text-anchor="middle" font-size="10" font-weight="700" fill="#fff">stayed 74%</text><text x="747" y="263" text-anchor="middle" font-size="10" font-weight="700" fill="#fff">26%</text>
-  <text x="440" y="286" class="lbl" font-size="11">"Always predict stayed" scores 74% accuracy. That is your baseline, not zero.</text>
+  <text x="431" y="262" class="lbl-strong" font-size="11">Class balance:</text>
+  <rect x="520" y="252" width="190" height="14" fill="var(--s1)"/><rect x="710" y="252" width="66" height="14" fill="var(--s2)"/>
+  <text x="615" y="263" text-anchor="middle" font-size="10" font-weight="700" fill="#fff">stayed 74%</text><text x="743" y="263" text-anchor="middle" font-size="10" font-weight="700" fill="#fff">26%</text>
+  <text x="431" y="286" class="lbl" font-size="11">"Always predict stayed" already scores 74%. That is your baseline, not 0.</text>
 </svg>
 <figcaption><strong>Figure 2.8 — Three EDA views that change decisions.</strong> The target-vs-feature bars confirm a strong, monotone relationship (a linear model will capture it). The missingness matrix shows <em>structured</em> missingness, which needs a "missing" indicator rather than a silent mean fill. The balance bar sets the accuracy baseline you must beat.</figcaption>
 </figure>
@@ -818,13 +827,15 @@ right = cross_val_score(make_pipeline(SelectKBest(f_classif, k=<span class="nu">
 rng = np.random.default_rng(<span class="nu">42</span>); n = <span class="nu">2000</span>
 df = pd.DataFrame({<span class="st">"customer_id"</span>: np.arange(<span class="nu">100001</span>, <span class="nu">100001</span>+n),
     <span class="st">"signup_date"</span>: pd.to_datetime(<span class="st">"2021-01-01"</span>) + pd.to_timedelta(rng.integers(<span class="nu">0</span>, <span class="nu">1400</span>, n), <span class="st">"D"</span>),
-    <span class="st">"plan"</span>: rng.choice([<span class="st">"basic"</span>,<span class="st">"plus"</span>,<span class="st">"premium"</span>], n, p=[<span class="nu">.5</span>,<span class="nu">.3</span>,<span class="nu">.2</span>]), <span class="st">"age"</span>: rng.integers(<span class="nu">18</span>, <span class="nu">75</span>, n),
-    <span class="st">"tenure_months"</span>: rng.integers(<span class="nu">1</span>, <span class="nu">60</span>, n), <span class="st">"monthly_spend"</span>: rng.gamma(<span class="nu">4</span>, <span class="nu">12</span>, n).round(<span class="nu">2</span>),
-    <span class="st">"support_calls"</span>: rng.poisson(<span class="nu">1.2</span>, n), <span class="st">"days_since_login"</span>: rng.integers(<span class="nu">0</span>, <span class="nu">90</span>, n), <span class="st">"autopay"</span>: rng.random(n) &lt; <span class="nu">0.6</span>})
-logit = -<span class="nu">2.6</span> + <span class="nu">0.035</span>*df.days_since_login + <span class="nu">0.5</span>*df.support_calls - <span class="nu">0.02</span>*df.tenure_months - <span class="nu">0.6</span>*df.autopay
+    <span class="st">"plan"</span>: rng.choice([<span class="st">"basic"</span>,<span class="st">"plus"</span>,<span class="st">"premium"</span>], n, p=[<span class="nu">.5</span>,<span class="nu">.3</span>,<span class="nu">.2</span>]),
+    <span class="st">"age"</span>: rng.integers(<span class="nu">18</span>, <span class="nu">75</span>, n), <span class="st">"tenure_months"</span>: rng.integers(<span class="nu">1</span>, <span class="nu">60</span>, n),
+    <span class="st">"monthly_spend"</span>: rng.gamma(<span class="nu">4</span>, <span class="nu">12</span>, n).round(<span class="nu">2</span>), <span class="st">"support_calls"</span>: rng.poisson(<span class="nu">1.2</span>, n),
+    <span class="st">"days_since_login"</span>: rng.integers(<span class="nu">0</span>, <span class="nu">90</span>, n), <span class="st">"autopay"</span>: rng.random(n) &lt; <span class="nu">0.6</span>})
+logit = (-<span class="nu">2.6</span> + <span class="nu">0.035</span>*df.days_since_login + <span class="nu">0.5</span>*df.support_calls
+         - <span class="nu">0.02</span>*df.tenure_months - <span class="nu">0.6</span>*df.autopay)
 df[<span class="st">"churned"</span>] = (rng.random(n) &lt; <span class="nu">1</span>/(<span class="nu">1</span>+np.exp(-logit))).astype(<span class="fn">int</span>)
 
-<span class="cm"># inject realistic dirt: a sentinel, real missing values, an inconsistent category, duplicate rows</span>
+<span class="cm"># inject realistic dirt: a sentinel, missing values, an inconsistent category, duplicates</span>
 dirty = df.copy()
 dirty.loc[rng.choice(n, <span class="nu">60</span>, replace=<span class="kw">False</span>), <span class="st">"age"</span>] = -<span class="nu">999</span>
 dirty.loc[rng.choice(n, <span class="nu">40</span>, replace=<span class="kw">False</span>), <span class="st">"monthly_spend"</span>] = np.nan
@@ -833,14 +844,17 @@ dirty = pd.concat([dirty, dirty.sample(<span class="nu">25</span>, random_state=
 
 <span class="kw">def</span> <span class="fn">eda_report</span>(d, target=<span class="kw">None</span>):
     <span class="fn">print</span>(<span class="st">f"shape: {d.shape}   duplicate rows: {d.duplicated().sum()}"</span>)
-    summ = pd.DataFrame({<span class="st">"dtype"</span>: d.dtypes.astype(<span class="fn">str</span>), <span class="st">"missing"</span>: d.isna().sum(), <span class="st">"n_unique"</span>: d.nunique(),
-                         <span class="st">"min"</span>: d.min(numeric_only=<span class="kw">True</span>), <span class="st">"max"</span>: d.max(numeric_only=<span class="kw">True</span>)})
+    summ = pd.DataFrame({<span class="st">"dtype"</span>: d.dtypes.astype(<span class="fn">str</span>), <span class="st">"missing"</span>: d.isna().sum(),
+                         <span class="st">"n_unique"</span>: d.nunique(), <span class="st">"min"</span>: d.min(numeric_only=<span class="kw">True</span>),
+                         <span class="st">"max"</span>: d.max(numeric_only=<span class="kw">True</span>)})
     <span class="fn">print</span>(summ.to_string())
-    <span class="kw">for</span> c <span class="kw">in</span> d.select_dtypes(exclude=<span class="st">"number"</span>).columns:          <span class="cm"># low-cardinality columns: show levels</span>
-        <span class="kw">if</span> d[c].nunique() &lt;= <span class="nu">12</span>: <span class="fn">print</span>(<span class="st">f"\n{c}: {d[c].value_counts(dropna=False).to_dict()}"</span>)
+    <span class="kw">for</span> c <span class="kw">in</span> d.select_dtypes(exclude=<span class="st">"number"</span>).columns:   <span class="cm"># low-cardinality columns: show levels</span>
+        <span class="kw">if</span> d[c].nunique() &lt;= <span class="nu">12</span>:
+            <span class="fn">print</span>(<span class="st">f"\n{c}: {d[c].value_counts(dropna=False).to_dict()}"</span>)
     <span class="kw">if</span> target <span class="kw">is not</span> <span class="kw">None</span>:
         <span class="fn">print</span>(<span class="st">f"\ntarget balance: {d[target].value_counts(normalize=True).round(3).to_dict()}"</span>)
-        <span class="fn">print</span>(<span class="st">"correlation with target:\n"</span>, d.corr(numeric_only=<span class="kw">True</span>)[target].drop(target).round(<span class="nu">2</span>).sort_values().to_string())
+        corr = d.corr(numeric_only=<span class="kw">True</span>)[target].drop(target).round(<span class="nu">2</span>).sort_values()
+        <span class="fn">print</span>(<span class="st">"correlation with target:\n"</span>, corr.to_string())
 
 eda_report(dirty, target=<span class="st">"churned"</span>)
 <span class="out"># shape: (2025, 10)   duplicate rows: 25</span>
@@ -901,8 +915,10 @@ eda_report(dirty, target=<span class="st">"churned"</span>)
 <pre class="code" data-lang="python"><code><span class="cm"># Cleaning the defects the EDA report found, without silently destroying information</span>
 <span class="kw">import</span> numpy <span class="kw">as</span> np, pandas <span class="kw">as</span> pd
 rng = np.random.default_rng(<span class="nu">42</span>); n = <span class="nu">2000</span>
-df = pd.DataFrame({<span class="st">"customer_id"</span>: np.arange(n), <span class="st">"age"</span>: rng.integers(<span class="nu">18</span>, <span class="nu">75</span>, n), <span class="st">"plan"</span>: rng.choice([<span class="st">"basic"</span>,<span class="st">"plus"</span>,<span class="st">"premium"</span>], n, p=[<span class="nu">.5</span>,<span class="nu">.3</span>,<span class="nu">.2</span>]),
-                   <span class="st">"monthly_spend"</span>: rng.gamma(<span class="nu">4</span>, <span class="nu">12</span>, n).round(<span class="nu">2</span>), <span class="st">"signup_ts"</span>: [<span class="st">"2024-03-08 14:02"</span>]*n})
+df = pd.DataFrame({<span class="st">"customer_id"</span>: np.arange(n), <span class="st">"age"</span>: rng.integers(<span class="nu">18</span>, <span class="nu">75</span>, n),
+                   <span class="st">"plan"</span>: rng.choice([<span class="st">"basic"</span>,<span class="st">"plus"</span>,<span class="st">"premium"</span>], n, p=[<span class="nu">.5</span>,<span class="nu">.3</span>,<span class="nu">.2</span>]),
+                   <span class="st">"monthly_spend"</span>: rng.gamma(<span class="nu">4</span>, <span class="nu">12</span>, n).round(<span class="nu">2</span>),
+                   <span class="st">"signup_ts"</span>: [<span class="st">"2024-03-08 14:02"</span>]*n})
 dirty = df.copy()
 dirty.loc[rng.choice(n, <span class="nu">60</span>, replace=<span class="kw">False</span>), <span class="st">"age"</span>] = -<span class="nu">999</span>
 dirty.loc[rng.choice(n, <span class="nu">30</span>, replace=<span class="kw">False</span>), <span class="st">"plan"</span>] = <span class="st">"Premium "</span>
@@ -910,10 +926,11 @@ dirty = pd.concat([dirty, dirty.sample(<span class="nu">25</span>, random_state=
 
 clean = (dirty
     .drop_duplicates()
-    .assign(age=<span class="kw">lambda</span> d: d.age.where(d.age.between(<span class="nu">0</span>, <span class="nu">120</span>)),        <span class="cm"># sentinel -&gt; NaN, explicitly</span>
-            age_missing=<span class="kw">lambda</span> d: d.age.isna().astype(<span class="fn">int</span>),             <span class="cm"># keep the fact that it was missing</span>
-            plan=<span class="kw">lambda</span> d: d.plan.str.strip().str.lower(),              <span class="cm"># normalise category spelling</span>
-            signup_ts=<span class="kw">lambda</span> d: pd.to_datetime(d.signup_ts).dt.tz_localize(<span class="st">"Europe/London"</span>).dt.tz_convert(<span class="st">"UTC"</span>))
+    .assign(age=<span class="kw">lambda</span> d: d.age.where(d.age.between(<span class="nu">0</span>, <span class="nu">120</span>)),   <span class="cm"># sentinel -&gt; NaN, explicitly</span>
+            age_missing=<span class="kw">lambda</span> d: d.age.isna().astype(<span class="fn">int</span>),        <span class="cm"># keep the fact it was missing</span>
+            plan=<span class="kw">lambda</span> d: d.plan.str.strip().str.lower(),         <span class="cm"># normalise category spelling</span>
+            signup_ts=<span class="kw">lambda</span> d: (pd.to_datetime(d.signup_ts)      <span class="cm"># local time -&gt; UTC</span>
+                                 .dt.tz_localize(<span class="st">"Europe/London"</span>).dt.tz_convert(<span class="st">"UTC"</span>)))
 )
 <span class="fn">print</span>(<span class="st">"rows:"</span>, <span class="fn">len</span>(dirty), <span class="st">"-&gt;"</span>, <span class="fn">len</span>(clean))
 <span class="fn">print</span>(<span class="st">"age NaN after sentinel fix:"</span>, clean.age.isna().sum(), <span class="st">"| flag sum:"</span>, clean.age_missing.sum())
@@ -973,8 +990,7 @@ clean = (dirty
   <text x="230" y="112" class="lbl-strong" font-size="11" fill="var(--s2)">validation accuracy</text>
   <!-- gap annotation -->
   <line x1="91" y1="56" x2="91" y2="213" stroke="var(--s7)" stroke-width="1.5" stroke-dasharray="3 2"/>
-  <text x="100" y="150" class="lbl" font-size="10" fill="var(--s7)">big gap = memorising</text>
-  <text x="100" y="163" class="lbl" font-size="10" fill="var(--s7)">(too little data)</text>
+  <text x="102" y="232" class="lbl" font-size="10" fill="var(--s7)">big gap = memorising (too little data)</text>
   <rect x="400" y="54" width="150" height="26" fill="var(--s7)" fill-opacity=".10" stroke="var(--s7)" stroke-dasharray="3 2"/>
   <text x="475" y="46" text-anchor="middle" class="lbl" font-size="10" fill="var(--s7)">plateau: more rows add little</text>
   <!-- side notes -->
@@ -1001,10 +1017,11 @@ clean = (dirty
 <span class="kw">from</span> sklearn.pipeline <span class="kw">import</span> make_pipeline
 <span class="kw">from</span> sklearn.preprocessing <span class="kw">import</span> StandardScaler
 
-X, y = load_breast_cancer(return_X_y=<span class="kw">True</span>)                  <span class="cm"># 569 rows, 30 features, ships with sklearn</span>
+X, y = load_breast_cancer(return_X_y=<span class="kw">True</span>)      <span class="cm"># 569 rows, 30 features, ships with sklearn</span>
 model = make_pipeline(StandardScaler(), LogisticRegression(max_iter=<span class="nu">2000</span>))
+cv = StratifiedKFold(<span class="nu">5</span>, shuffle=<span class="kw">True</span>, random_state=<span class="nu">0</span>)
 sizes, tr, va = learning_curve(model, X, y, train_sizes=np.linspace(<span class="nu">0.05</span>, <span class="nu">1.0</span>, <span class="nu">8</span>),
-                               cv=StratifiedKFold(<span class="nu">5</span>, shuffle=<span class="kw">True</span>, random_state=<span class="nu">0</span>), scoring=<span class="st">"accuracy"</span>)
+                               cv=cv, scoring=<span class="st">"accuracy"</span>)
 <span class="kw">for</span> s, t, v <span class="kw">in</span> <span class="fn">zip</span>(sizes, tr.mean(<span class="nu">1</span>), va.mean(<span class="nu">1</span>)):
     <span class="fn">print</span>(<span class="st">f"n_train={s:3d}  train={t:.3f}  val={v:.3f}"</span>)
 <span class="out"># n_train= 22  train=1.000  val=0.789</span>
@@ -1228,7 +1245,7 @@ sizes, tr, va = learning_curve(model, X, y, train_sizes=np.linspace(<span class=
     for (var v = 60; v <= 90; v += 5) s += '<line x1="' + ax(v) + '" y1="' + (y - 4) + '" x2="' + ax(v) + '" y2="' + (y + 4) + '" stroke="currentColor" stroke-opacity=".5"/><text x="' + ax(v) + '" y="' + (y + 18) + '" text-anchor="middle" font-size="11">' + v + '%</text>';
     var lo = Math.max(60, 75 - half), hi = Math.min(90, 75 + half);
     s += '<rect x="' + ax(lo) + '" y="' + (y - 12) + '" width="' + (ax(hi) - ax(lo)) + '" height="24" fill="var(--s3)" fill-opacity=".3" stroke="var(--s3)"/>';
-    s += '<line x1="' + ax(75) + '" y1="' + (y - 16) + '" x2="' + ax(75) + '" y2="' + (y + 16) + '" stroke="var(--s7)" stroke-width="2.5"/>';
+    s += '<line x1="' + ax(75) + '" y1="' + (y - 16) + '" x2="' + ax(75) + '" y2="' + (y + 8) + '" stroke="var(--s7)" stroke-width="2.5"/>';
     s += '<text x="' + ax(75) + '" y="' + (y - 20) + '" text-anchor="middle" font-size="11" fill="var(--s7)" font-weight="700">measured 75% ± ' + half.toFixed(1) + ' pts (95% CI, n<tspan font-size="9">test</tspan> = ' + nTe + ')</text>';
     s += '<text x="350" y="145" text-anchor="middle" font-size="12" opacity=".7">what a 75% test accuracy could really be</text>';
     svg.innerHTML = s;

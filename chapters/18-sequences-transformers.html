@@ -1,0 +1,1784 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>18 · Sequences, Attention &amp; Transformers — ML: Zero to Expert</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body data-chapter="18">
+<header class="topbar"></header>
+<div class="progress-track"><div></div></div>
+<div class="shell">
+<nav class="sidebar"></nav>
+<main class="content"><div class="container">
+
+<header class="ch-header">
+  <div class="kicker">Part III · Deep Learning · Chapter 18</div>
+  <h1>Sequences, Attention &amp; Transformers</h1>
+  <p class="lede">Text, logs, sensor streams and clickstreams are sequences: order carries meaning. This chapter walks from recurrent networks to the attention mechanism to the full Transformer block, with every formula worked by hand on three tokens, so that the architecture behind modern language models stops being a black box.</p>
+  <div class="meta"><span class="level advanced">Advanced</span> <span>⏱ 90 min read</span> <span>·</span> <span>Prereqs: Ch 15, 16</span></div>
+</header>
+
+<div class="objectives">
+  <h3>By the end of this chapter you will be able to</h3>
+  <ul>
+    <li>Explain why an RNN "remembers" and why that memory fades (vanishing gradients), and what LSTM gates fixed and did not fix.</li>
+    <li>Compute scaled dot-product attention by hand for three tokens and read an attention heatmap.</li>
+    <li>Draw the Transformer block from memory: attention → add &amp; norm → feed-forward → add &amp; norm, with residual connections and positional encodings.</li>
+    <li>Tell encoder-only, decoder-only and encoder–decoder models apart, and know which one a task needs.</li>
+    <li>Reason about the O(n²) cost of attention, context length, and the KV cache when sizing a workload.</li>
+    <li>Write a self-attention layer and a tiny causal language model in PyTorch and train it.</li>
+  </ul>
+</div>
+
+<div class="toc-inline"><strong>In this chapter</strong>
+<ol>
+  <li><a href="#s1">Sequences: when order is the signal</a></li>
+  <li><a href="#s2">Recurrent networks and the fading memory</a></li>
+  <li><a href="#s3">LSTM and GRU: gates as a notebook</a></li>
+  <li><a href="#s4">Sequence-to-sequence and the bottleneck</a></li>
+  <li><a href="#s5">Attention: a soft dictionary lookup</a></li>
+  <li><a href="#s6">Self-attention, multiple heads, and position</a></li>
+  <li><a href="#s7">The Transformer block</a></li>
+  <li><a href="#s8">Encoder, decoder, or both?</a></li>
+  <li><a href="#s9">Cost, context length, and why Transformers won</a></li>
+  <li><a href="#s10">Build one: a character-level language model</a></li>
+  <li><a href="#quiz">Quiz &amp; exercises</a></li>
+</ol></div>
+
+<!-- ============================================================ -->
+<h2 id="s1">1. Sequences: when order is the signal</h2>
+
+<p>Everything in Parts I and II treated a row as a bag of independent columns. Shuffle the columns of a customer record and nothing changes. Sequences are different: <strong>the order is part of the information</strong>. "Dog bites man" and "man bites dog" contain the same three words and mean opposite things. A sensor reading of 80 °C is normal after a slow ramp and alarming after a flat line at 20 °C. The same click on "cancel plan" means one thing after "pricing page" and another after "payment failed".</p>
+
+<p>At work, sequences show up in four costumes:</p>
+
+<div class="grid2">
+  <div class="card accent"><h4>Text</h4><p>Support tickets, contracts, product reviews, search queries, code. A sequence of <em>tokens</em> (words or sub-words, Chapter 19). Length varies wildly: 3 words to 300 pages.</p></div>
+  <div class="card accent"><h4>Time series</h4><p>Sales per day, CPU load per second, sensor telemetry. A sequence of numbers at (usually) regular intervals. Chapter 14 covered the classical tools; deep models add value when there are many related series or rich exogenous inputs.</p></div>
+  <div class="card accent"><h4>Audio and signals</h4><p>Speech, machine vibration, ECG. Very long sequences (16,000 samples per second of audio), usually chopped into frames first.</p></div>
+  <div class="card accent"><h4>Event streams</h4><p>Clickstreams, transaction histories, log lines, patient visits. Irregularly spaced, mixed types, and the <em>gaps</em> between events matter as much as the events.</p></div>
+</div>
+
+<p>The models in this chapter share one goal: turn a variable-length sequence x<sub>1</sub>, x<sub>2</sub>, …, x<sub>n</sub> into either a fixed-size representation (for classification: "is this ticket about billing?"), a prediction per position (tagging, anomaly flags), or another sequence (translation, summarization, forecasting the next 24 hours). The running example throughout is a support-ticket system: we want to classify tickets, and eventually to draft replies. Keep it in mind; every architecture will be judged by what it does to that problem.</p>
+
+<div class="callout eli9"><div class="title">Explain it like I'm 9</div>
+<p>Reading a comic strip panel by panel tells a story. Cutting the panels apart and looking at them in a pile does not. A sequence model is a reader that walks through the panels <em>in order</em> and keeps a running idea of what is going on. The whole chapter is about how to build a reader with a good memory.</p>
+</div>
+
+<div class="callout key"><div class="title">Key idea</div>
+<p>Two things separate sequence models from ordinary ones: they must handle <strong>variable length</strong> (a tabular model has a fixed number of columns) and they must be <strong>sensitive to order</strong>. Every architecture below is a different answer to "how do we share information across positions?" — a loop (RNN), or a lookup (attention).</p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s2">2. Recurrent networks and the fading memory</h2>
+
+<p>The oldest deep answer is the <strong>recurrent neural network (RNN)</strong>. Feed the sequence one element at a time; at each step, combine the current input x<sub>t</sub> with a <strong>hidden state</strong> h<sub>t−1</sub> carried over from the previous step, and produce a new hidden state h<sub>t</sub>. The hidden state is the model's memory: a fixed-size vector that summarizes everything seen so far.</p>
+
+<div class="formula">h<sub>t</sub> = tanh(W<sub>x</sub> x<sub>t</sub> + W<sub>h</sub> h<sub>t−1</sub> + b)   ,   ŷ<sub>t</sub> = W<sub>y</sub> h<sub>t</sub></div>
+
+<div class="callout math"><div class="title">The math (optional)</div>
+<p><strong>x<sub>t</sub></strong> is the input at step t (a word embedding, a sensor reading). <strong>h<sub>t−1</sub></strong> is the memory vector from the previous step; h<sub>0</sub> is usually all zeros. <strong>W<sub>x</sub></strong>, <strong>W<sub>h</sub></strong>, <strong>b</strong> are the parameters: they are <em>the same at every step</em> — that is the "recurrent" part and why the model can handle any length. <strong>tanh</strong> squashes the result into (−1, 1). <strong>ŷ<sub>t</sub></strong> is an optional per-step output (a tag for each word); for classification you usually read only the final h<sub>n</sub>.</p>
+</div>
+
+<figure class="fig">
+<svg viewBox="0 0 800 420" role="img" aria-label="Top: an RNN unrolled over four time steps, the same weights applied at every step, hidden state passed left to right. Bottom: gradient flowing right to left through the same chain, shrinking at each step (vanishing) or growing (exploding), with a plot of gradient magnitude versus steps back">
+  <defs><marker id="arr-f1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker>
+  <marker id="arr-f1r" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--s2)"/></marker></defs>
+  <text x="400" y="22" text-anchor="middle" class="lbl-strong" font-size="14">Forward: the loop, unrolled in time (same W at every step)</text>
+  <!-- unrolled cells -->
+  <g>
+    <rect x="70" y="80" width="90" height="50" class="box-accent"/><text x="115" y="110" text-anchor="middle" class="lbl-strong">RNN cell</text>
+    <rect x="240" y="80" width="90" height="50" class="box-accent"/><text x="285" y="110" text-anchor="middle" class="lbl-strong">RNN cell</text>
+    <rect x="410" y="80" width="90" height="50" class="box-accent"/><text x="455" y="110" text-anchor="middle" class="lbl-strong">RNN cell</text>
+    <rect x="580" y="80" width="90" height="50" class="box-accent"/><text x="625" y="110" text-anchor="middle" class="lbl-strong">RNN cell</text>
+    <!-- h arrows -->
+    <line x1="20" y1="105" x2="68" y2="105" class="arrow" marker-end="url(#arr-f1)"/><text x="40" y="98" text-anchor="middle" class="lbl" font-size="11">h₀ = 0</text>
+    <line x1="160" y1="105" x2="238" y2="105" class="arrow" marker-end="url(#arr-f1)"/><text x="199" y="98" text-anchor="middle" class="lbl" font-size="11">h₁</text>
+    <line x1="330" y1="105" x2="408" y2="105" class="arrow" marker-end="url(#arr-f1)"/><text x="369" y="98" text-anchor="middle" class="lbl" font-size="11">h₂</text>
+    <line x1="500" y1="105" x2="578" y2="105" class="arrow" marker-end="url(#arr-f1)"/><text x="539" y="98" text-anchor="middle" class="lbl" font-size="11">h₃</text>
+    <line x1="670" y1="105" x2="740" y2="105" class="arrow" marker-end="url(#arr-f1)"/><text x="705" y="98" text-anchor="middle" class="lbl" font-size="11">h₄</text>
+    <text x="760" y="109" class="lbl-strong" font-size="11">→ ŷ</text>
+    <!-- inputs -->
+    <line x1="115" y1="178" x2="115" y2="132" class="arrow" marker-end="url(#arr-f1)"/><text x="115" y="196" text-anchor="middle" class="lbl-strong">"my"</text>
+    <line x1="285" y1="178" x2="285" y2="132" class="arrow" marker-end="url(#arr-f1)"/><text x="285" y="196" text-anchor="middle" class="lbl-strong">"invoice"</text>
+    <line x1="455" y1="178" x2="455" y2="132" class="arrow" marker-end="url(#arr-f1)"/><text x="455" y="196" text-anchor="middle" class="lbl-strong">"is"</text>
+    <line x1="625" y1="178" x2="625" y2="132" class="arrow" marker-end="url(#arr-f1)"/><text x="625" y="196" text-anchor="middle" class="lbl-strong">"wrong"</text>
+    <text x="115" y="212" text-anchor="middle" class="lbl" font-size="11">x₁</text><text x="285" y="212" text-anchor="middle" class="lbl" font-size="11">x₂</text><text x="455" y="212" text-anchor="middle" class="lbl" font-size="11">x₃</text><text x="625" y="212" text-anchor="middle" class="lbl" font-size="11">x₄</text>
+    <!-- shared weights bracket -->
+    <path d="M70,66 L70,58 L670,58 L670,66" fill="none" stroke="var(--s7)" stroke-width="1.5"/>
+    <text x="370" y="48" text-anchor="middle" class="lbl" font-size="11" fill="var(--s7)" font-weight="700">one set of weights W, reused 4 times (weight sharing)</text>
+  </g>
+  <!-- divider -->
+  <line x1="20" y1="232" x2="780" y2="232" class="grid" stroke-dasharray="4 4"/>
+  <!-- backward -->
+  <text x="220" y="256" text-anchor="middle" class="lbl-strong" font-size="14">Backward: gradient retraces the chain</text>
+  <g>
+    <rect x="40" y="290" width="70" height="36" class="box"/><text x="75" y="313" text-anchor="middle" class="lbl" font-size="11">step 1</text>
+    <rect x="140" y="290" width="70" height="36" class="box"/><text x="175" y="313" text-anchor="middle" class="lbl" font-size="11">step 2</text>
+    <rect x="240" y="290" width="70" height="36" class="box"/><text x="275" y="313" text-anchor="middle" class="lbl" font-size="11">step 3</text>
+    <rect x="340" y="290" width="70" height="36" class="box"/><text x="375" y="313" text-anchor="middle" class="lbl" font-size="11">step 4</text>
+    <line x1="338" y1="308" x2="312" y2="308" stroke="var(--s2)" stroke-width="5" marker-end="url(#arr-f1r)"/>
+    <line x1="238" y1="308" x2="212" y2="308" stroke="var(--s2)" stroke-width="3" marker-end="url(#arr-f1r)"/>
+    <line x1="138" y1="308" x2="112" y2="308" stroke="var(--s2)" stroke-width="1.5" marker-end="url(#arr-f1r)"/>
+    <text x="375" y="282" text-anchor="middle" class="lbl" font-size="11" fill="var(--s2)" font-weight="700">loss</text>
+    <text x="220" y="350" text-anchor="middle" class="lbl" font-size="11">each hop multiplies by ∂h<tspan font-size="9" dy="3">t</tspan><tspan dy="-3">/∂h</tspan><tspan font-size="9" dy="3">t−1</tspan><tspan dy="-3"> ≈ W<tspan font-size="9" dy="3">h</tspan><tspan dy="-3">·tanh′</tspan></tspan></text>
+    <text x="220" y="368" text-anchor="middle" class="lbl" font-size="11">30 hops back ⇒ (factor)<tspan font-size="9" dy="-4">30</tspan><tspan dy="4">: 0.8³⁰ ≈ 0.001, 1.12³⁰ ≈ 30</tspan></text>
+    <text x="220" y="392" text-anchor="middle" class="lbl-strong" font-size="11" fill="var(--s2)">"wrong" cannot teach the cell what to do with "my"</text>
+  </g>
+  <!-- plot -->
+  <g>
+    <line x1="480" y1="390" x2="770" y2="390" class="axis"/><line x1="480" y1="390" x2="480" y2="262" class="axis"/>
+    <text x="625" y="410" text-anchor="middle" class="lbl" font-size="11">steps back in time</text>
+    <text x="466" y="330" text-anchor="middle" class="lbl" font-size="11" transform="rotate(-90 466 330)">|gradient|</text>
+    <text x="474" y="394" text-anchor="end" class="lbl" font-size="10">0</text><text x="474" y="268" text-anchor="end" class="lbl" font-size="10">1</text>
+    <text x="480" y="404" text-anchor="middle" class="lbl" font-size="10">0</text><text x="770" y="404" text-anchor="middle" class="lbl" font-size="10">30</text>
+    <line x1="480" y1="262" x2="770" y2="262" class="grid" stroke-dasharray="3 3"/>
+    <polyline points="480.0,262.0 489.7,287.6 499.3,308.1 509.0,324.5 518.7,337.6 528.3,348.1 538.0,356.5 547.7,363.2 557.3,368.6 567.0,372.9 576.7,376.3 586.3,379.1 596.0,381.3 605.7,383.0 615.3,384.4 625.0,385.5 634.7,386.4 644.3,387.1 654.0,387.7 663.7,388.2 673.3,388.5 683.0,388.8 692.7,389.1 702.3,389.3 712.0,389.4 721.7,389.5 731.3,389.6 741.0,389.7 750.7,389.8 760.3,389.8 770.0,389.9" fill="none" stroke="var(--s1)" stroke-width="2.2"/>
+    <polyline points="480.0,262.0 489.7,262.0 499.3,262.0 509.0,262.0" fill="none" stroke="var(--s2)" stroke-width="2.2"/>
+    <path d="M480,262 L470,262" fill="none"/>
+    <polyline points="480.0,390 480.0,262" fill="none" stroke="var(--s2)" stroke-width="2.2" stroke-dasharray="2 3"/>
+    <polyline points="480.0,262.0 489.7,265.9 499.3,269.7 509.0,273.3 518.7,276.9 528.3,280.3 538.0,283.7 547.7,286.9 557.3,290.1 567.0,293.1 576.7,296.1 586.3,299.0 596.0,301.8 605.7,304.5 615.3,307.1 625.0,309.7 634.7,312.2 644.3,314.6 654.0,317.0 663.7,319.2 673.3,321.4 683.0,323.6 692.7,325.7 702.3,327.7 712.0,329.7 721.7,331.6 731.3,333.4 741.0,335.2 750.7,337.0 760.3,338.7 770.0,340.3" fill="none" stroke="var(--s3)" stroke-width="2.2"/>
+    <text x="560" y="300" class="lbl" font-size="11" fill="var(--s1)" font-weight="700">vanishing (×0.8 per hop)</text>
+    <text x="520" y="276" class="lbl" font-size="11" fill="var(--s2)" font-weight="700">exploding (×1.12, off the chart)</text>
+    <text x="640" y="365" class="lbl" font-size="11" fill="var(--s3)" font-weight="700">LSTM-style (≈×0.97)</text>
+  </g>
+</svg>
+<figcaption><strong>Figure 18.1 — The chain that gives an RNN memory is the chain that starves its gradients.</strong> Top: the same cell is applied at every step and the hidden state h<sub>t</sub> is the only thing carried forward. Bottom: backpropagation through time multiplies by the same Jacobian at every hop, so the gradient reaching early steps shrinks geometrically (or blows up). Errors at "wrong" barely adjust how "my" was processed.</figcaption>
+</figure>
+
+<h3>Backpropagation through time</h3>
+<p>Training is ordinary backprop (Chapter 15) on the unrolled graph: the loss at the end flows backward through every step, and because the weights are shared, the gradient for W is the <em>sum</em> of contributions from every step. This is called <strong>backpropagation through time (BPTT)</strong>. Nothing new conceptually — but look at the path the gradient must travel. To reach step 1 from step 30 it passes through 29 multiplications by ∂h<sub>t</sub>/∂h<sub>t−1</sub>, a matrix roughly equal to W<sub>h</sub> scaled by the tanh derivative (which is at most 1). Multiply 29 factors slightly below 1 and you get ≈ 0: the <strong>vanishing gradient</strong>. Multiply 29 factors slightly above 1 and you get a huge number: the <strong>exploding gradient</strong>. Exploding is easy to treat (clip the gradient norm, Chapter 16). Vanishing is the real disease: the model literally cannot learn that something 30 tokens ago mattered, because no learning signal arrives there.</p>
+
+<div class="callout eli9"><div class="title">Explain it like I'm 9</div>
+<p>Play "telephone" with 30 kids in a line. The last kid hears something and has to tell the first kid what went wrong. The message has to go back through 29 whispers. By the time it reaches the front it is either mush (vanished) or a wild exaggeration (exploded). That is a plain RNN trying to learn from a mistake at the end of a long sentence.</p>
+</div>
+
+<div class="callout warn"><div class="title">Common mistake</div>
+<p>Believing "the hidden state can hold the whole history". It is a fixed-size vector, overwritten at every step by a tanh. In practice a vanilla RNN reliably remembers about 10–20 steps. If your tickets average 120 tokens, the model classifies them mostly on the last few sentences and a blur of the rest.</p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s3">3. LSTM and GRU: gates as a notebook</h2>
+
+<p>The <strong>Long Short-Term Memory</strong> cell (1997) and its lighter cousin the <strong>Gated Recurrent Unit</strong> (2014) fix the fading memory with one architectural idea: give the cell a separate memory lane, the <strong>cell state</strong> c<sub>t</sub>, that is updated by <em>addition</em> rather than by being squashed through a tanh every step, and let small learned <strong>gates</strong> (numbers between 0 and 1) decide what to erase, what to write, and what to read.</p>
+
+<div class="callout eli9"><div class="title">Explain it like I'm 9</div>
+<p>A plain RNN is a kid who has to keep the whole story in their head. An LSTM is a kid with a <strong>notebook</strong>. At each panel of the comic, the kid does three things: an <strong>eraser</strong> (forget gate) rubs out notes that no longer matter, a <strong>pencil</strong> (input gate) writes down the new important fact, and a <strong>reading window</strong> (output gate) picks which notes to read aloud right now. The notebook itself is not rewritten from scratch each time — only edited — so a fact written on page 1 can survive to page 100 if the eraser leaves it alone.</p>
+</div>
+
+<figure class="fig">
+<svg viewBox="0 0 800 340" role="img" aria-label="An LSTM cell: the cell state runs along the top as a conveyor belt; forget gate multiplies it, input gate adds a candidate, output gate reads it into the hidden state; a GRU is drawn as a compact two-gate variant">
+  <defs><marker id="arr-f2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+  <text x="300" y="22" text-anchor="middle" class="lbl-strong" font-size="14">LSTM cell: a notebook with erase, write and read gates</text>
+  <rect x="40" y="40" width="530" height="270" rx="10" class="fill-surface2" stroke="var(--border)"/>
+  <!-- cell state line -->
+  <line x1="20" y1="80" x2="590" y2="80" stroke="var(--s3)" stroke-width="4" marker-end="url(#arr-f2)"/>
+  <text x="30" y="70" class="lbl-strong" font-size="12" fill="var(--s3)">c<tspan font-size="9" dy="3">t−1</tspan></text>
+  <text x="560" y="70" class="lbl-strong" font-size="12" fill="var(--s3)">c<tspan font-size="9" dy="3">t</tspan></text>
+  <text x="300" y="66" text-anchor="middle" class="lbl" font-size="11" fill="var(--s3)" font-weight="700">cell state = the notebook (changed only by × and +)</text>
+  <!-- forget: multiply -->
+  <circle cx="190" cy="80" r="14" fill="var(--surface)" stroke="var(--s2)" stroke-width="2"/><text x="190" y="85" text-anchor="middle" class="lbl-strong" font-size="14">×</text>
+  <!-- add -->
+  <circle cx="370" cy="80" r="14" fill="var(--surface)" stroke="var(--s2)" stroke-width="2"/><text x="370" y="85" text-anchor="middle" class="lbl-strong" font-size="14">+</text>
+  <!-- gates row -->
+  <rect x="150" y="150" width="80" height="44" rx="6" fill="var(--s2)" fill-opacity=".18" stroke="var(--s2)" stroke-width="1.5"/><text x="190" y="169" text-anchor="middle" class="lbl-strong" font-size="11">forget f<tspan font-size="8" dy="3">t</tspan></text><text x="190" y="185" text-anchor="middle" class="lbl" font-size="10">σ → eraser</text>
+  <rect x="260" y="150" width="80" height="44" rx="6" fill="var(--s2)" fill-opacity=".18" stroke="var(--s2)" stroke-width="1.5"/><text x="300" y="169" text-anchor="middle" class="lbl-strong" font-size="11">input i<tspan font-size="8" dy="3">t</tspan></text><text x="300" y="185" text-anchor="middle" class="lbl" font-size="10">σ → pencil</text>
+  <rect x="350" y="150" width="90" height="44" rx="6" fill="var(--s1)" fill-opacity=".18" stroke="var(--s1)" stroke-width="1.5"/><text x="395" y="169" text-anchor="middle" class="lbl-strong" font-size="11">candidate c̃<tspan font-size="8" dy="3">t</tspan></text><text x="395" y="185" text-anchor="middle" class="lbl" font-size="10">tanh → new fact</text>
+  <rect x="460" y="150" width="80" height="44" rx="6" fill="var(--s2)" fill-opacity=".18" stroke="var(--s2)" stroke-width="1.5"/><text x="500" y="169" text-anchor="middle" class="lbl-strong" font-size="11">output o<tspan font-size="8" dy="3">t</tspan></text><text x="500" y="185" text-anchor="middle" class="lbl" font-size="10">σ → reading window</text>
+  <!-- arrows from gates -->
+  <line x1="190" y1="150" x2="190" y2="96" class="arrow" marker-end="url(#arr-f2)"/>
+  <line x1="300" y1="150" x2="300" y2="122" class="arrow"/><line x1="395" y1="150" x2="395" y2="122" class="arrow"/>
+  <circle cx="348" cy="122" r="11" fill="var(--surface)" stroke="var(--s2)" stroke-width="2"/><text x="348" y="126" text-anchor="middle" class="lbl-strong" font-size="12">×</text>
+  <line x1="300" y1="122" x2="337" y2="122" class="arrow"/><line x1="395" y1="122" x2="359" y2="122" class="arrow"/>
+  <line x1="348" y1="111" x2="362" y2="94" class="arrow" marker-end="url(#arr-f2)"/>
+  <!-- output path -->
+  <line x1="440" y1="80" x2="440" y2="230" class="arrow"/>
+  <text x="452" y="216" class="lbl" font-size="10">tanh(c<tspan font-size="8" dy="3">t</tspan>)</text>
+  <circle cx="500" cy="230" r="11" fill="var(--surface)" stroke="var(--s2)" stroke-width="2"/><text x="500" y="234" text-anchor="middle" class="lbl-strong" font-size="12">×</text>
+  <line x1="440" y1="230" x2="489" y2="230" class="arrow" marker-end="url(#arr-f2)"/>
+  <line x1="500" y1="194" x2="500" y2="219" class="arrow" marker-end="url(#arr-f2)"/>
+  <line x1="511" y1="230" x2="590" y2="230" class="arrow" marker-end="url(#arr-f2)"/>
+  <text x="560" y="222" class="lbl-strong" font-size="12" fill="var(--s1)">h<tspan font-size="9" dy="3">t</tspan></text>
+  <!-- inputs -->
+  <line x1="20" y1="270" x2="150" y2="270" class="arrow"/>
+  <line x1="150" y1="270" x2="500" y2="270" class="arrow"/>
+  <line x1="190" y1="270" x2="190" y2="196" class="arrow" marker-end="url(#arr-f2)"/>
+  <line x1="300" y1="270" x2="300" y2="196" class="arrow" marker-end="url(#arr-f2)"/>
+  <line x1="395" y1="270" x2="395" y2="196" class="arrow" marker-end="url(#arr-f2)"/>
+  <line x1="500" y1="270" x2="500" y2="196" class="arrow" marker-end="url(#arr-f2)"/>
+  <text x="30" y="262" class="lbl-strong" font-size="12">[h<tspan font-size="9" dy="3">t−1</tspan><tspan dy="-3">, x</tspan><tspan font-size="9" dy="3">t</tspan><tspan dy="-3">]</tspan></text>
+  <text x="300" y="296" text-anchor="middle" class="lbl" font-size="11">every gate looks at the previous output and the current input</text>
+  <!-- GRU side -->
+  <text x="690" y="22" text-anchor="middle" class="lbl-strong" font-size="14">GRU (lighter)</text>
+  <rect x="600" y="40" width="180" height="270" rx="10" class="fill-surface2" stroke="var(--border)"/>
+  <rect x="620" y="70" width="140" height="40" rx="6" fill="var(--s2)" fill-opacity=".18" stroke="var(--s2)" stroke-width="1.5"/><text x="690" y="88" text-anchor="middle" class="lbl-strong" font-size="11">update gate z<tspan font-size="8" dy="3">t</tspan></text><text x="690" y="102" text-anchor="middle" class="lbl" font-size="10">forget + input merged</text>
+  <rect x="620" y="125" width="140" height="40" rx="6" fill="var(--s2)" fill-opacity=".18" stroke="var(--s2)" stroke-width="1.5"/><text x="690" y="143" text-anchor="middle" class="lbl-strong" font-size="11">reset gate r<tspan font-size="8" dy="3">t</tspan></text><text x="690" y="157" text-anchor="middle" class="lbl" font-size="10">how much old h to use</text>
+  <text x="690" y="195" text-anchor="middle" class="lbl" font-size="11">no separate cell state:</text>
+  <text x="690" y="211" text-anchor="middle" class="lbl" font-size="11">h<tspan font-size="8" dy="3">t</tspan><tspan dy="-3"> = (1−z)·h</tspan><tspan font-size="8" dy="3">t−1</tspan><tspan dy="-3"> + z·h̃</tspan><tspan font-size="8" dy="3">t</tspan></text>
+  <text x="690" y="245" text-anchor="middle" class="lbl" font-size="11">~25% fewer parameters,</text>
+  <text x="690" y="261" text-anchor="middle" class="lbl" font-size="11">similar accuracy in most</text>
+  <text x="690" y="277" text-anchor="middle" class="lbl" font-size="11">business tasks; try it first.</text>
+</svg>
+<figcaption><strong>Figure 18.2 — Gates edit a notebook instead of rewriting a head.</strong> The cell state (green) runs straight through the cell, touched only by an elementwise multiply (forget) and an add (write). Because addition does not shrink gradients the way repeated tanh does, information and learning signal can travel hundreds of steps. The GRU merges the gates into two and drops the separate cell state.</figcaption>
+</figure>
+
+<div class="formula">f<sub>t</sub> = σ(W<sub>f</sub>[h<sub>t−1</sub>, x<sub>t</sub>])   i<sub>t</sub> = σ(W<sub>i</sub>[h<sub>t−1</sub>, x<sub>t</sub>])   o<sub>t</sub> = σ(W<sub>o</sub>[h<sub>t−1</sub>, x<sub>t</sub>])<br>
+c<sub>t</sub> = f<sub>t</sub> ⊙ c<sub>t−1</sub> + i<sub>t</sub> ⊙ tanh(W<sub>c</sub>[h<sub>t−1</sub>, x<sub>t</sub>])   ,   h<sub>t</sub> = o<sub>t</sub> ⊙ tanh(c<sub>t</sub>)</div>
+
+<div class="callout math"><div class="title">The math (optional)</div>
+<p><strong>σ</strong> is the sigmoid, so each gate is a vector of numbers in (0, 1): a soft on/off switch per memory slot. <strong>⊙</strong> is elementwise multiplication. <strong>[h<sub>t−1</sub>, x<sub>t</sub>]</strong> is the previous output and current input glued into one vector; every gate has its own weight matrix W. The line for <strong>c<sub>t</sub></strong> is the whole trick: keep a fraction f<sub>t</sub> of the old notebook, add a fraction i<sub>t</sub> of the new candidate. If f<sub>t</sub> ≈ 1 and i<sub>t</sub> ≈ 0 for a slot, that slot is copied unchanged — and its gradient passes through with factor ≈ 1 rather than being squashed.</p>
+</div>
+
+<h3>What gates fixed, and what they did not</h3>
+<p>LSTMs and GRUs were the workhorses of sequence modelling for two decades: speech recognition, machine translation, the first good chatbots, and countless demand-forecasting systems. They fix the vanishing gradient <em>well enough</em>: dependencies over 100–500 steps become learnable. Two problems remain, and they are the reason you are about to meet the Transformer.</p>
+
+<div class="grid2">
+  <div class="card bad"><h4>Still sequential = slow</h4><p>h<sub>t</sub> depends on h<sub>t−1</sub>, so step t cannot start until step t−1 finishes. A GPU with 10,000 cores waits on a chain of 500 tiny operations. Training on a billion tokens is painfully slow, and that ceiling is what capped the size of models for years.</p></div>
+  <div class="card bad"><h4>Long-range is still hard</h4><p>Information must still <em>survive</em> every intermediate step to reach the end. A fact from token 5 reaches token 800 only if 795 forget gates all chose to keep it. Gates make this possible; they do not make it easy. Precise long-range retrieval ("which of the 12 invoice numbers mentioned above is the wrong one?") remains unreliable.</p></div>
+</div>
+
+<div class="callout pro"><div class="title">At work</div>
+<p>Do not write off recurrent models. For <strong>small-data, on-device, or strictly streaming</strong> problems — a GRU over the last 50 sensor readings on a factory PLC, a next-event predictor over clickstreams with a few million sessions — a one-layer GRU (<code>nn.GRU</code>, hidden 64–256, dropout 0.2) trains in minutes, needs no positional encoding, and has constant memory per step. Reach for a Transformer when the sequences are text-like, long, and you can use a pretrained model (Chapter 19).</p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s4">4. Sequence-to-sequence and the bottleneck</h2>
+
+<p>Many valuable tasks map one sequence to another: translate a ticket from German to English, summarize a 40-line log into one sentence, turn a question into a SQL query. The classic design (2014) is the <strong>encoder–decoder</strong>: one RNN (the encoder) reads the input and compresses it into its final hidden state; a second RNN (the decoder) starts from that state and emits the output one token at a time, feeding each emitted token back in as the next input.</p>
+
+<figure class="fig">
+<svg viewBox="0 0 800 270" role="img" aria-label="Encoder RNN reads four input tokens into a single fixed-size vector; decoder RNN generates output tokens from that vector; the single vector is highlighted as the bottleneck">
+  <defs><marker id="arr-f3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+  <text x="180" y="22" text-anchor="middle" class="lbl-strong" font-size="14">Encoder (reads)</text>
+  <text x="620" y="22" text-anchor="middle" class="lbl-strong" font-size="14">Decoder (writes)</text>
+  <g>
+    <rect x="30" y="70" width="60" height="40" class="box"/><rect x="110" y="70" width="60" height="40" class="box"/><rect x="190" y="70" width="60" height="40" class="box"/><rect x="270" y="70" width="60" height="40" class="box"/>
+    <line x1="90" y1="90" x2="108" y2="90" class="arrow" marker-end="url(#arr-f3)"/><line x1="170" y1="90" x2="188" y2="90" class="arrow" marker-end="url(#arr-f3)"/><line x1="250" y1="90" x2="268" y2="90" class="arrow" marker-end="url(#arr-f3)"/>
+    <line x1="60" y1="150" x2="60" y2="112" class="arrow" marker-end="url(#arr-f3)"/><line x1="140" y1="150" x2="140" y2="112" class="arrow" marker-end="url(#arr-f3)"/><line x1="220" y1="150" x2="220" y2="112" class="arrow" marker-end="url(#arr-f3)"/><line x1="300" y1="150" x2="300" y2="112" class="arrow" marker-end="url(#arr-f3)"/>
+    <text x="60" y="168" text-anchor="middle" class="lbl-strong" font-size="11">Rechnung</text><text x="140" y="168" text-anchor="middle" class="lbl-strong" font-size="11">ist</text><text x="220" y="168" text-anchor="middle" class="lbl-strong" font-size="11">falsch</text><text x="300" y="168" text-anchor="middle" class="lbl-strong" font-size="11">&lt;eos&gt;</text>
+  </g>
+  <!-- bottleneck vector -->
+  <line x1="330" y1="90" x2="380" y2="90" class="arrow" marker-end="url(#arr-f3)"/>
+  <rect x="384" y="50" width="34" height="80" rx="5" fill="var(--s2)" fill-opacity=".25" stroke="var(--s2)" stroke-width="2.5"/>
+  <g fill="var(--s2)"><rect x="391" y="58" width="20" height="10" fill-opacity=".9"/><rect x="391" y="72" width="20" height="10" fill-opacity=".4"/><rect x="391" y="86" width="20" height="10" fill-opacity=".7"/><rect x="391" y="100" width="20" height="10" fill-opacity=".2"/><rect x="391" y="114" width="20" height="10" fill-opacity=".6"/></g>
+  <text x="401" y="150" text-anchor="middle" class="lbl-strong" font-size="11" fill="var(--s2)">one vector</text>
+  <text x="401" y="166" text-anchor="middle" class="lbl-strong" font-size="11" fill="var(--s2)">(e.g. 512 numbers)</text>
+  <text x="401" y="182" text-anchor="middle" class="lbl" font-size="11">must hold the</text>
+  <text x="401" y="196" text-anchor="middle" class="lbl" font-size="11">entire input</text>
+  <line x1="418" y1="90" x2="468" y2="90" class="arrow" marker-end="url(#arr-f3)"/>
+  <g>
+    <rect x="470" y="70" width="60" height="40" class="box"/><rect x="550" y="70" width="60" height="40" class="box"/><rect x="630" y="70" width="60" height="40" class="box"/><rect x="710" y="70" width="60" height="40" class="box"/>
+    <line x1="530" y1="90" x2="548" y2="90" class="arrow" marker-end="url(#arr-f3)"/><line x1="610" y1="90" x2="628" y2="90" class="arrow" marker-end="url(#arr-f3)"/><line x1="690" y1="90" x2="708" y2="90" class="arrow" marker-end="url(#arr-f3)"/>
+    <line x1="500" y1="68" x2="500" y2="40" class="arrow" marker-end="url(#arr-f3)"/><line x1="580" y1="68" x2="580" y2="40" class="arrow" marker-end="url(#arr-f3)"/><line x1="660" y1="68" x2="660" y2="40" class="arrow" marker-end="url(#arr-f3)"/><line x1="740" y1="68" x2="740" y2="40" class="arrow" marker-end="url(#arr-f3)"/>
+    <text x="500" y="34" text-anchor="middle" class="lbl-strong" font-size="11" fill="var(--s1)">invoice</text><text x="580" y="34" text-anchor="middle" class="lbl-strong" font-size="11" fill="var(--s1)">is</text><text x="660" y="34" text-anchor="middle" class="lbl-strong" font-size="11" fill="var(--s1)">wrong</text><text x="740" y="34" text-anchor="middle" class="lbl-strong" font-size="11" fill="var(--s1)">&lt;eos&gt;</text>
+    <!-- feedback of outputs -->
+    <path d="M500,40 C520,20 560,20 580,68" fill="none" stroke="var(--ink-3)" stroke-dasharray="3 3" marker-end="url(#arr-f3)"/>
+    <path d="M580,40 C600,20 640,20 660,68" fill="none" stroke="var(--ink-3)" stroke-dasharray="3 3" marker-end="url(#arr-f3)"/>
+    <path d="M660,40 C680,20 720,20 740,68" fill="none" stroke="var(--ink-3)" stroke-dasharray="3 3" marker-end="url(#arr-f3)"/>
+    <text x="620" y="140" text-anchor="middle" class="lbl" font-size="11">each output is fed back as the next input (autoregressive)</text>
+    <line x1="500" y1="150" x2="500" y2="112" class="arrow" marker-end="url(#arr-f3)"/><text x="500" y="168" text-anchor="middle" class="lbl-strong" font-size="11">&lt;start&gt;</text>
+  </g>
+  <text x="400" y="240" text-anchor="middle" class="lbl-strong" font-size="12">Translation quality of this design falls off a cliff beyond ~30 input words: the bottleneck is full.</text>
+</svg>
+<figcaption><strong>Figure 18.3 — The encoder–decoder bottleneck.</strong> The whole input must be squeezed into one fixed-size vector before the decoder sees any of it. Short inputs fit; long ones are lossy-compressed and the decoder has no way to "look back" at a specific word.</figcaption>
+</figure>
+
+<p>The single-vector handoff is the bottleneck. Ask the decoder to translate a 60-word sentence and it is working from a summary that could not possibly retain which adjective went with which noun. The fix, proposed in 2014 and the seed of everything that followed, is obvious once said: <strong>let the decoder look back at all the encoder states, and let it learn which ones to look at for each output word.</strong> That mechanism is attention.</p>
+
+<!-- ============================================================ -->
+<h2 id="s5">5. Attention: a soft dictionary lookup</h2>
+
+<p>You know Python dictionaries: <code>d["invoice"]</code> looks up a key and returns exactly one value. Attention is a dictionary that returns a <em>blend</em> of all values, weighted by how well the query matches each key. Three ingredients, all vectors:</p>
+
+<ul>
+  <li><strong>Query q</strong> — what I am looking for. ("I am the word <em>it</em>; what noun do I refer to?")</li>
+  <li><strong>Keys k<sub>j</sub></strong> — one per token, advertising what each token offers. ("I am a noun, singular, an animal.")</li>
+  <li><strong>Values v<sub>j</sub></strong> — one per token, the content actually handed over if the key matches.</li>
+</ul>
+
+<p>Compare the query to every key with a dot product (a similarity score, Chapter 3), turn the scores into weights that sum to 1 with a softmax (Chapter 6), and return the weighted sum of the values. That is the entire mechanism.</p>
+
+<div class="formula">Attention(Q, K, V) = softmax( Q Kᵀ / √d<sub>k</sub> ) V</div>
+
+<div class="callout math"><div class="title">The math (optional)</div>
+<p><strong>Q</strong> is an (n<sub>q</sub> × d<sub>k</sub>) matrix: one query vector per row. <strong>K</strong> is (n<sub>k</sub> × d<sub>k</sub>): one key per row. <strong>Q Kᵀ</strong> is therefore (n<sub>q</sub> × n<sub>k</sub>): entry (i, j) is the dot product of query i with key j — the raw "does this key match" score. <strong>√d<sub>k</sub></strong> is the scaling: dot products of d<sub>k</sub>-dimensional random vectors have variance ∝ d<sub>k</sub>, so without the division the scores grow with width, the softmax saturates toward a one-hot, and gradients vanish (Chapter 16 again). Dividing by √d<sub>k</sub> keeps scores at unit scale. <strong>softmax</strong> is applied <em>row-wise</em>, so each query's weights over the keys sum to 1. <strong>V</strong> is (n<sub>k</sub> × d<sub>v</sub>): one value per row. The product is (n<sub>q</sub> × d<sub>v</sub>): for each query, a weighted average of value vectors. Nothing is looked up exactly; everything is blended. That is why it is differentiable and trainable.</p>
+</div>
+
+<h3>Worked by hand: three tokens</h3>
+<p>Take the three tokens <em>the</em>, <em>cat</em>, <em>sat</em>, with tiny 2-dimensional queries, keys and values (in a real model these come from multiplying each token's embedding by learned matrices W<sub>Q</sub>, W<sub>K</sub>, W<sub>V</sub>; here we just write them down). Follow the arithmetic in Figure 18.4, then run it in code below.</p>
+
+<figure class="fig">
+<svg viewBox="0 0 820 330" role="img" aria-label="Worked attention example: Q, K, V matrices for three tokens; score matrix Q K transpose over root 2; softmax weights per row; output as the weighted sum of value rows, with the third query worked out numerically">
+  <defs><marker id="arr-f4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+  <!-- Q K V -->
+  <text x="110" y="24" text-anchor="middle" class="lbl-strong" font-size="13">1. Inputs (d<tspan font-size="9" dy="3">k</tspan><tspan dy="-3"> = 2)</tspan></text>
+  <g class="lbl" font-size="11">
+    <text x="24" y="52" class="lbl-strong">Q</text><text x="24" y="70">the</text><text x="24" y="86">cat</text><text x="24" y="102">sat</text>
+    <rect x="52" y="58" width="60" height="50" fill="var(--s1)" fill-opacity=".12" stroke="var(--s1)"/>
+    <text x="82" y="70" text-anchor="middle">1  0</text><text x="82" y="86" text-anchor="middle">0  1</text><text x="82" y="102" text-anchor="middle">1  1</text>
+    <text x="24" y="136" class="lbl-strong">K</text><text x="24" y="154">the</text><text x="24" y="170">cat</text><text x="24" y="186">sat</text>
+    <rect x="52" y="142" width="60" height="50" fill="var(--s2)" fill-opacity=".12" stroke="var(--s2)"/>
+    <text x="82" y="154" text-anchor="middle">1  0</text><text x="82" y="170" text-anchor="middle">0  1</text><text x="82" y="186" text-anchor="middle">1  1</text>
+    <text x="24" y="220" class="lbl-strong">V</text><text x="24" y="238">the</text><text x="24" y="254">cat</text><text x="24" y="270">sat</text>
+    <rect x="52" y="226" width="60" height="50" fill="var(--s3)" fill-opacity=".12" stroke="var(--s3)"/>
+    <text x="82" y="238" text-anchor="middle">1  2</text><text x="82" y="254" text-anchor="middle">3  4</text><text x="82" y="270" text-anchor="middle">5  6</text>
+  </g>
+  <line x1="130" y1="120" x2="170" y2="120" class="arrow" marker-end="url(#arr-f4)"/>
+  <!-- scores -->
+  <text x="290" y="24" text-anchor="middle" class="lbl-strong" font-size="13">2. Scores = Q Kᵀ / √2</text>
+  <g class="lbl" font-size="11">
+    <text x="240" y="52" text-anchor="middle" font-size="10">the</text><text x="290" y="52" text-anchor="middle" font-size="10">cat</text><text x="340" y="52" text-anchor="middle" font-size="10">sat</text>
+    <text x="196" y="76" text-anchor="end">the</text><text x="196" y="106" text-anchor="end">cat</text><text x="196" y="136" text-anchor="end">sat</text>
+    <g>
+      <rect x="215" y="60" width="50" height="26" fill="var(--s1)" fill-opacity=".45"/><rect x="265" y="60" width="50" height="26" fill="var(--s1)" fill-opacity=".08"/><rect x="315" y="60" width="50" height="26" fill="var(--s1)" fill-opacity=".45"/>
+      <rect x="215" y="90" width="50" height="26" fill="var(--s1)" fill-opacity=".08"/><rect x="265" y="90" width="50" height="26" fill="var(--s1)" fill-opacity=".45"/><rect x="315" y="90" width="50" height="26" fill="var(--s1)" fill-opacity=".45"/>
+      <rect x="215" y="120" width="50" height="26" fill="var(--s1)" fill-opacity=".45"/><rect x="265" y="120" width="50" height="26" fill="var(--s1)" fill-opacity=".45"/><rect x="315" y="120" width="50" height="26" fill="var(--s1)" fill-opacity=".85"/>
+    </g>
+    <text x="240" y="77" text-anchor="middle">0.71</text><text x="290" y="77" text-anchor="middle">0</text><text x="340" y="77" text-anchor="middle">0.71</text>
+    <text x="240" y="107" text-anchor="middle">0</text><text x="290" y="107" text-anchor="middle">0.71</text><text x="340" y="107" text-anchor="middle">0.71</text>
+    <text x="240" y="137" text-anchor="middle">0.71</text><text x="290" y="137" text-anchor="middle">0.71</text><text x="340" y="137" text-anchor="middle" fill="#fff" font-weight="700">1.41</text>
+    <text x="290" y="166" text-anchor="middle" font-size="10">e.g. sat·sat = (1·1 + 1·1)/√2 = 1.41</text>
+  </g>
+  <line x1="380" y1="100" x2="420" y2="100" class="arrow" marker-end="url(#arr-f4)"/>
+  <text x="400" y="90" text-anchor="middle" class="lbl" font-size="10">softmax</text>
+  <text x="400" y="118" text-anchor="middle" class="lbl" font-size="10">per row</text>
+  <!-- weights -->
+  <text x="540" y="24" text-anchor="middle" class="lbl-strong" font-size="13">3. Weights (rows sum to 1)</text>
+  <g class="lbl" font-size="11">
+    <text x="490" y="52" text-anchor="middle" font-size="10">the</text><text x="540" y="52" text-anchor="middle" font-size="10">cat</text><text x="590" y="52" text-anchor="middle" font-size="10">sat</text>
+    <text x="446" y="76" text-anchor="end">the</text><text x="446" y="106" text-anchor="end">cat</text><text x="446" y="136" text-anchor="end">sat</text>
+    <g>
+      <rect x="465" y="60" width="50" height="26" fill="var(--s2)" fill-opacity=".5"/><rect x="515" y="60" width="50" height="26" fill="var(--s2)" fill-opacity=".2"/><rect x="565" y="60" width="50" height="26" fill="var(--s2)" fill-opacity=".5"/>
+      <rect x="465" y="90" width="50" height="26" fill="var(--s2)" fill-opacity=".2"/><rect x="515" y="90" width="50" height="26" fill="var(--s2)" fill-opacity=".5"/><rect x="565" y="90" width="50" height="26" fill="var(--s2)" fill-opacity=".5"/>
+      <rect x="465" y="120" width="50" height="26" fill="var(--s2)" fill-opacity=".3"/><rect x="515" y="120" width="50" height="26" fill="var(--s2)" fill-opacity=".3"/><rect x="565" y="120" width="50" height="26" fill="var(--s2)" fill-opacity=".7"/>
+    </g>
+    <text x="490" y="77" text-anchor="middle">0.40</text><text x="540" y="77" text-anchor="middle">0.20</text><text x="590" y="77" text-anchor="middle">0.40</text>
+    <text x="490" y="107" text-anchor="middle">0.20</text><text x="540" y="107" text-anchor="middle">0.40</text><text x="590" y="107" text-anchor="middle">0.40</text>
+    <text x="490" y="137" text-anchor="middle">0.25</text><text x="540" y="137" text-anchor="middle">0.25</text><text x="590" y="137" text-anchor="middle">0.50</text>
+    <rect x="465" y="120" width="150" height="26" fill="none" stroke="var(--s7)" stroke-width="2"/>
+    <text x="540" y="166" text-anchor="middle" font-size="10">row "sat": e<tspan font-size="8" dy="-4">0.71</tspan><tspan dy="4">, e</tspan><tspan font-size="8" dy="-4">0.71</tspan><tspan dy="4">, e</tspan><tspan font-size="8" dy="-4">1.41</tspan><tspan dy="4"> ÷ their sum</tspan></text>
+  </g>
+  <!-- output -->
+  <text x="720" y="24" text-anchor="middle" class="lbl-strong" font-size="13">4. Output = weights · V</text>
+  <g class="lbl" font-size="11">
+    <text x="660" y="76" text-anchor="end">the</text><text x="660" y="106" text-anchor="end">cat</text><text x="660" y="136" text-anchor="end">sat</text>
+    <rect x="672" y="60" width="90" height="86" fill="var(--s3)" fill-opacity=".12" stroke="var(--s3)"/>
+    <text x="717" y="77" text-anchor="middle">3.00  4.00</text><text x="717" y="107" text-anchor="middle">3.41  4.41</text><text x="717" y="137" text-anchor="middle" font-weight="700">3.51  4.51</text>
+    <rect x="672" y="120" width="90" height="26" fill="none" stroke="var(--s7)" stroke-width="2"/>
+  </g>
+  <!-- worked row -->
+  <rect x="440" y="196" width="360" height="118" rx="8" fill="var(--accent-soft)" stroke="var(--accent)" stroke-width="1.5"/>
+  <text x="620" y="218" text-anchor="middle" class="lbl-strong" font-size="12" fill="var(--s7)">Row "sat", worked out</text>
+  <text x="620" y="242" text-anchor="middle" class="lbl" font-size="11">0.25·[1, 2] + 0.25·[3, 4] + 0.50·[5, 6]</text>
+  <text x="620" y="262" text-anchor="middle" class="lbl" font-size="11">= [0.25, 0.50] + [0.75, 1.00] + [2.50, 3.00]</text>
+  <text x="620" y="282" text-anchor="middle" class="lbl-strong" font-size="11">= [3.50, 4.50]   (≈ 3.51, 4.51 with unrounded weights)</text>
+  <text x="620" y="302" text-anchor="middle" class="lbl" font-size="10">"sat" ends up half its own value, a quarter each of the others</text>
+  <!-- note left bottom -->
+  <text x="24" y="304" class="lbl" font-size="11">Q and K here are identical, so each token matches itself best;</text>
+  <text x="24" y="320" class="lbl" font-size="11">"sat" = [1,1] also half-matches both others. Real Q, K are learned.</text>
+</svg>
+<figcaption><strong>Figure 18.4 — Attention for three tokens, every number shown.</strong> Scores are dot products scaled by √d<sub>k</sub>; softmax turns each row into weights summing to 1; the output for each query is the weighted average of the value rows. No lookup is exact — every output is a blend — which is what makes the operation differentiable.</figcaption>
+</figure>
+
+<pre class="code" data-lang="python"><code><span class="cm"># Scaled dot-product attention by hand on 3 tokens (matches Figure 18.4)</span>
+<span class="kw">import</span> torch, math
+torch.set_printoptions(precision=<span class="nu">3</span>, sci_mode=<span class="kw">False</span>)
+
+<span class="cm"># 3 tokens ("the", "cat", "sat"), each already projected to 2-dim q, k, v</span>
+Q = torch.tensor([[<span class="nu">1.0</span>, <span class="nu">0.0</span>],
+                  [<span class="nu">0.0</span>, <span class="nu">1.0</span>],
+                  [<span class="nu">1.0</span>, <span class="nu">1.0</span>]])
+K = torch.tensor([[<span class="nu">1.0</span>, <span class="nu">0.0</span>],
+                  [<span class="nu">0.0</span>, <span class="nu">1.0</span>],
+                  [<span class="nu">1.0</span>, <span class="nu">1.0</span>]])
+V = torch.tensor([[<span class="nu">1.0</span>, <span class="nu">2.0</span>],
+                  [<span class="nu">3.0</span>, <span class="nu">4.0</span>],
+                  [<span class="nu">5.0</span>, <span class="nu">6.0</span>]])
+
+<span class="kw">def</span> <span class="fn">attention</span>(Q, K, V):
+    d_k = Q.shape[-<span class="nu">1</span>]
+    scores  = Q @ K.T / math.sqrt(d_k)       <span class="cm"># (n_q, n_k): similarity of each query to each key</span>
+    weights = torch.softmax(scores, dim=-<span class="nu">1</span>)  <span class="cm"># each row sums to 1</span>
+    <span class="kw">return</span> weights @ V, weights, scores      <span class="cm"># weighted sum of values</span>
+
+out, w, s = attention(Q, K, V)
+<span class="fn">print</span>(<span class="st">"scores (Q K^T / sqrt(d)):\n"</span>, s)
+<span class="fn">print</span>(<span class="st">"attention weights (softmax per row):\n"</span>, w)
+<span class="fn">print</span>(<span class="st">"row sums:"</span>, w.sum(dim=<span class="nu">1</span>))
+<span class="fn">print</span>(<span class="st">"output (weights @ V):\n"</span>, out)
+<span class="out"># scores (Q K^T / sqrt(d)):</span>
+<span class="out">#  tensor([[0.707, 0.000, 0.707],</span>
+<span class="out">#         [0.000, 0.707, 0.707],</span>
+<span class="out">#         [0.707, 0.707, 1.414]])</span>
+<span class="out"># attention weights (softmax per row):</span>
+<span class="out">#  tensor([[0.401, 0.198, 0.401],</span>
+<span class="out">#         [0.198, 0.401, 0.401],</span>
+<span class="out">#         [0.248, 0.248, 0.503]])</span>
+<span class="out"># row sums: tensor([1., 1., 1.])</span>
+<span class="out"># output (weights @ V):</span>
+<span class="out">#  tensor([[3.000, 4.000],</span>
+<span class="out">#         [3.407, 4.407],</span>
+<span class="out">#         [3.510, 4.510]])</span></code></pre>
+
+<div class="callout eli9"><div class="title">Explain it like I'm 9</div>
+<p>You are in a library and you ask, "anything about cats?" (your <strong>query</strong>). Every book has a label on its spine (its <strong>key</strong>). Instead of picking one book, the librarian photocopies pages from <em>every</em> book, but copies a lot from the books whose spine says "CATS" and just a corner from the ones about tractors. The pile you get back (the <strong>values</strong>, mixed by how well the spines matched) is attention.</p>
+</div>
+
+<div class="callout key"><div class="title">Key idea</div>
+<p>Attention replaces "carry information through a chain of steps" with "fetch information directly from wherever it is". Token 800 can read token 5 in one hop, with a weight the model learns. That single change removes the bottleneck of Figure 18.3, the fading memory of Figure 18.1, and — because every query is computed independently — the sequential dependency that made RNNs slow.</p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s6">6. Self-attention, multiple heads, and position</h2>
+
+<h3>Self-attention: the sequence attends to itself</h3>
+<p>In the 2014 translation models, queries came from the decoder and keys/values from the encoder. The 2017 paper <em>Attention Is All You Need</em> asked: what if the queries, keys and values all come from the <em>same</em> sequence? Each token computes q<sub>i</sub> = W<sub>Q</sub>x<sub>i</sub>, k<sub>i</sub> = W<sub>K</sub>x<sub>i</sub>, v<sub>i</sub> = W<sub>V</sub>x<sub>i</sub> from its own embedding, then attends to every token including itself. The output for token i is a new vector that mixes in whatever the model decided was relevant context. Do this once and "it" can absorb "animal"; stack it a few times and every token carries a rich summary of its sentence.</p>
+
+<figure class="fig">
+<svg viewBox="0 0 680 430" role="img" aria-label="A 10 by 10 heatmap of self-attention weights for the sentence 'The animal didn't cross the street because it was tired'; the row for 'it' puts most of its weight on 'animal'">
+<text x="280.0" y="22" text-anchor="middle" class="lbl-strong" font-size="14">Self-attention weights (rows = query token, columns = key token)</text>
+<text x="127.0" y="62" text-anchor="end" class="lbl" font-size="11" transform="rotate(-45 127.0 62)">The</text>
+<text x="161.0" y="62" text-anchor="end" class="lbl" font-size="11" transform="rotate(-45 161.0 62)">animal</text>
+<text x="195.0" y="62" text-anchor="end" class="lbl" font-size="11" transform="rotate(-45 195.0 62)">didn't</text>
+<text x="229.0" y="62" text-anchor="end" class="lbl" font-size="11" transform="rotate(-45 229.0 62)">cross</text>
+<text x="263.0" y="62" text-anchor="end" class="lbl" font-size="11" transform="rotate(-45 263.0 62)">the</text>
+<text x="297.0" y="62" text-anchor="end" class="lbl" font-size="11" transform="rotate(-45 297.0 62)">street</text>
+<text x="331.0" y="62" text-anchor="end" class="lbl" font-size="11" transform="rotate(-45 331.0 62)">because</text>
+<text x="365.0" y="62" text-anchor="end" class="lbl" font-size="11" transform="rotate(-45 365.0 62)">it</text>
+<text x="399.0" y="62" text-anchor="end" class="lbl" font-size="11" transform="rotate(-45 399.0 62)">was</text>
+<text x="433.0" y="62" text-anchor="end" class="lbl" font-size="11" transform="rotate(-45 433.0 62)">tired</text>
+<text x="102" y="91.0" text-anchor="end" class="lbl" font-size="11">The</text>
+<rect x="110" y="70" width="34" height="34" fill="var(--s1)" fill-opacity="0.7" stroke="var(--surface)" stroke-width="1"/>
+<text x="127.0" y="91.0" text-anchor="middle" font-size="10" fill="#fff" font-weight="700">0.46</text>
+<rect x="144" y="70" width="34" height="34" fill="var(--s1)" fill-opacity="0.27" stroke="var(--surface)" stroke-width="1"/>
+<rect x="178" y="70" width="34" height="34" fill="var(--s1)" fill-opacity="0.13" stroke="var(--surface)" stroke-width="1"/>
+<rect x="212" y="70" width="34" height="34" fill="var(--s1)" fill-opacity="0.13" stroke="var(--surface)" stroke-width="1"/>
+<rect x="246" y="70" width="34" height="34" fill="var(--s1)" fill-opacity="0.13" stroke="var(--surface)" stroke-width="1"/>
+<rect x="280" y="70" width="34" height="34" fill="var(--s1)" fill-opacity="0.13" stroke="var(--surface)" stroke-width="1"/>
+<rect x="314" y="70" width="34" height="34" fill="var(--s1)" fill-opacity="0.13" stroke="var(--surface)" stroke-width="1"/>
+<rect x="348" y="70" width="34" height="34" fill="var(--s1)" fill-opacity="0.13" stroke="var(--surface)" stroke-width="1"/>
+<rect x="382" y="70" width="34" height="34" fill="var(--s1)" fill-opacity="0.13" stroke="var(--surface)" stroke-width="1"/>
+<rect x="416" y="70" width="34" height="34" fill="var(--s1)" fill-opacity="0.13" stroke="var(--surface)" stroke-width="1"/>
+<text x="102" y="125.0" text-anchor="end" class="lbl" font-size="11">animal</text>
+<rect x="110" y="104" width="34" height="34" fill="var(--s1)" fill-opacity="0.54" stroke="var(--surface)" stroke-width="1"/>
+<text x="127.0" y="125.0" text-anchor="middle" font-size="10" fill="#fff" font-weight="700">0.34</text>
+<rect x="144" y="104" width="34" height="34" fill="var(--s1)" fill-opacity="0.51" stroke="var(--surface)" stroke-width="1"/>
+<text x="161.0" y="125.0" text-anchor="middle" font-size="10" fill="#fff" font-weight="700">0.32</text>
+<rect x="178" y="104" width="34" height="34" fill="var(--s1)" fill-opacity="0.2" stroke="var(--surface)" stroke-width="1"/>
+<rect x="212" y="104" width="34" height="34" fill="var(--s1)" fill-opacity="0.11" stroke="var(--surface)" stroke-width="1"/>
+<rect x="246" y="104" width="34" height="34" fill="var(--s1)" fill-opacity="0.11" stroke="var(--surface)" stroke-width="1"/>
+<rect x="280" y="104" width="34" height="34" fill="var(--s1)" fill-opacity="0.11" stroke="var(--surface)" stroke-width="1"/>
+<rect x="314" y="104" width="34" height="34" fill="var(--s1)" fill-opacity="0.11" stroke="var(--surface)" stroke-width="1"/>
+<rect x="348" y="104" width="34" height="34" fill="var(--s1)" fill-opacity="0.11" stroke="var(--surface)" stroke-width="1"/>
+<rect x="382" y="104" width="34" height="34" fill="var(--s1)" fill-opacity="0.11" stroke="var(--surface)" stroke-width="1"/>
+<rect x="416" y="104" width="34" height="34" fill="var(--s1)" fill-opacity="0.11" stroke="var(--surface)" stroke-width="1"/>
+<text x="102" y="159.0" text-anchor="end" class="lbl" font-size="11">didn't</text>
+<rect x="110" y="138" width="34" height="34" fill="var(--s1)" fill-opacity="0.12" stroke="var(--surface)" stroke-width="1"/>
+<rect x="144" y="138" width="34" height="34" fill="var(--s1)" fill-opacity="0.35" stroke="var(--surface)" stroke-width="1"/>
+<text x="161.0" y="159.0" text-anchor="middle" font-size="10" fill="#fff" font-weight="700">0.21</text>
+<rect x="178" y="138" width="34" height="34" fill="var(--s1)" fill-opacity="0.6" stroke="var(--surface)" stroke-width="1"/>
+<text x="195.0" y="159.0" text-anchor="middle" font-size="10" fill="#fff" font-weight="700">0.38</text>
+<rect x="212" y="138" width="34" height="34" fill="var(--s1)" fill-opacity="0.23" stroke="var(--surface)" stroke-width="1"/>
+<rect x="246" y="138" width="34" height="34" fill="var(--s1)" fill-opacity="0.12" stroke="var(--surface)" stroke-width="1"/>
+<rect x="280" y="138" width="34" height="34" fill="var(--s1)" fill-opacity="0.12" stroke="var(--surface)" stroke-width="1"/>
+<rect x="314" y="138" width="34" height="34" fill="var(--s1)" fill-opacity="0.12" stroke="var(--surface)" stroke-width="1"/>
+<rect x="348" y="138" width="34" height="34" fill="var(--s1)" fill-opacity="0.12" stroke="var(--surface)" stroke-width="1"/>
+<rect x="382" y="138" width="34" height="34" fill="var(--s1)" fill-opacity="0.12" stroke="var(--surface)" stroke-width="1"/>
+<rect x="416" y="138" width="34" height="34" fill="var(--s1)" fill-opacity="0.12" stroke="var(--surface)" stroke-width="1"/>
+<text x="102" y="193.0" text-anchor="end" class="lbl" font-size="11">cross</text>
+<rect x="110" y="172" width="34" height="34" fill="var(--s1)" fill-opacity="0.1" stroke="var(--surface)" stroke-width="1"/>
+<rect x="144" y="172" width="34" height="34" fill="var(--s1)" fill-opacity="0.33" stroke="var(--surface)" stroke-width="1"/>
+<rect x="178" y="172" width="34" height="34" fill="var(--s1)" fill-opacity="0.24" stroke="var(--surface)" stroke-width="1"/>
+<rect x="212" y="172" width="34" height="34" fill="var(--s1)" fill-opacity="0.39" stroke="var(--surface)" stroke-width="1"/>
+<text x="229.0" y="193.0" text-anchor="middle" font-size="10" fill="#fff" font-weight="700">0.24</text>
+<rect x="246" y="172" width="34" height="34" fill="var(--s1)" fill-opacity="0.17" stroke="var(--surface)" stroke-width="1"/>
+<rect x="280" y="172" width="34" height="34" fill="var(--s1)" fill-opacity="0.39" stroke="var(--surface)" stroke-width="1"/>
+<text x="297.0" y="193.0" text-anchor="middle" font-size="10" fill="#fff" font-weight="700">0.24</text>
+<rect x="314" y="172" width="34" height="34" fill="var(--s1)" fill-opacity="0.1" stroke="var(--surface)" stroke-width="1"/>
+<rect x="348" y="172" width="34" height="34" fill="var(--s1)" fill-opacity="0.1" stroke="var(--surface)" stroke-width="1"/>
+<rect x="382" y="172" width="34" height="34" fill="var(--s1)" fill-opacity="0.1" stroke="var(--surface)" stroke-width="1"/>
+<rect x="416" y="172" width="34" height="34" fill="var(--s1)" fill-opacity="0.1" stroke="var(--surface)" stroke-width="1"/>
+<text x="102" y="227.0" text-anchor="end" class="lbl" font-size="11">the</text>
+<rect x="110" y="206" width="34" height="34" fill="var(--s1)" fill-opacity="0.12" stroke="var(--surface)" stroke-width="1"/>
+<rect x="144" y="206" width="34" height="34" fill="var(--s1)" fill-opacity="0.12" stroke="var(--surface)" stroke-width="1"/>
+<rect x="178" y="206" width="34" height="34" fill="var(--s1)" fill-opacity="0.12" stroke="var(--surface)" stroke-width="1"/>
+<rect x="212" y="206" width="34" height="34" fill="var(--s1)" fill-opacity="0.35" stroke="var(--surface)" stroke-width="1"/>
+<text x="229.0" y="227.0" text-anchor="middle" font-size="10" fill="#fff" font-weight="700">0.21</text>
+<rect x="246" y="206" width="34" height="34" fill="var(--s1)" fill-opacity="0.6" stroke="var(--surface)" stroke-width="1"/>
+<text x="263.0" y="227.0" text-anchor="middle" font-size="10" fill="#fff" font-weight="700">0.38</text>
+<rect x="280" y="206" width="34" height="34" fill="var(--s1)" fill-opacity="0.23" stroke="var(--surface)" stroke-width="1"/>
+<rect x="314" y="206" width="34" height="34" fill="var(--s1)" fill-opacity="0.12" stroke="var(--surface)" stroke-width="1"/>
+<rect x="348" y="206" width="34" height="34" fill="var(--s1)" fill-opacity="0.12" stroke="var(--surface)" stroke-width="1"/>
+<rect x="382" y="206" width="34" height="34" fill="var(--s1)" fill-opacity="0.12" stroke="var(--surface)" stroke-width="1"/>
+<rect x="416" y="206" width="34" height="34" fill="var(--s1)" fill-opacity="0.12" stroke="var(--surface)" stroke-width="1"/>
+<text x="102" y="261.0" text-anchor="end" class="lbl" font-size="11">street</text>
+<rect x="110" y="240" width="34" height="34" fill="var(--s1)" fill-opacity="0.11" stroke="var(--surface)" stroke-width="1"/>
+<rect x="144" y="240" width="34" height="34" fill="var(--s1)" fill-opacity="0.11" stroke="var(--surface)" stroke-width="1"/>
+<rect x="178" y="240" width="34" height="34" fill="var(--s1)" fill-opacity="0.11" stroke="var(--surface)" stroke-width="1"/>
+<rect x="212" y="240" width="34" height="34" fill="var(--s1)" fill-opacity="0.11" stroke="var(--surface)" stroke-width="1"/>
+<rect x="246" y="240" width="34" height="34" fill="var(--s1)" fill-opacity="0.59" stroke="var(--surface)" stroke-width="1"/>
+<text x="263.0" y="261.0" text-anchor="middle" font-size="10" fill="#fff" font-weight="700">0.38</text>
+<rect x="280" y="240" width="34" height="34" fill="var(--s1)" fill-opacity="0.48" stroke="var(--surface)" stroke-width="1"/>
+<text x="297.0" y="261.0" text-anchor="middle" font-size="10" fill="#fff" font-weight="700">0.30</text>
+<rect x="314" y="240" width="34" height="34" fill="var(--s1)" fill-opacity="0.2" stroke="var(--surface)" stroke-width="1"/>
+<rect x="348" y="240" width="34" height="34" fill="var(--s1)" fill-opacity="0.11" stroke="var(--surface)" stroke-width="1"/>
+<rect x="382" y="240" width="34" height="34" fill="var(--s1)" fill-opacity="0.11" stroke="var(--surface)" stroke-width="1"/>
+<rect x="416" y="240" width="34" height="34" fill="var(--s1)" fill-opacity="0.11" stroke="var(--surface)" stroke-width="1"/>
+<text x="102" y="295.0" text-anchor="end" class="lbl" font-size="11">because</text>
+<rect x="110" y="274" width="34" height="34" fill="var(--s1)" fill-opacity="0.11" stroke="var(--surface)" stroke-width="1"/>
+<rect x="144" y="274" width="34" height="34" fill="var(--s1)" fill-opacity="0.11" stroke="var(--surface)" stroke-width="1"/>
+<rect x="178" y="274" width="34" height="34" fill="var(--s1)" fill-opacity="0.11" stroke="var(--surface)" stroke-width="1"/>
+<rect x="212" y="274" width="34" height="34" fill="var(--s1)" fill-opacity="0.35" stroke="var(--surface)" stroke-width="1"/>
+<text x="229.0" y="295.0" text-anchor="middle" font-size="10" fill="#fff" font-weight="700">0.20</text>
+<rect x="246" y="274" width="34" height="34" fill="var(--s1)" fill-opacity="0.11" stroke="var(--surface)" stroke-width="1"/>
+<rect x="280" y="274" width="34" height="34" fill="var(--s1)" fill-opacity="0.3" stroke="var(--surface)" stroke-width="1"/>
+<rect x="314" y="274" width="34" height="34" fill="var(--s1)" fill-opacity="0.51" stroke="var(--surface)" stroke-width="1"/>
+<text x="331.0" y="295.0" text-anchor="middle" font-size="10" fill="#fff" font-weight="700">0.32</text>
+<rect x="348" y="274" width="34" height="34" fill="var(--s1)" fill-opacity="0.2" stroke="var(--surface)" stroke-width="1"/>
+<rect x="382" y="274" width="34" height="34" fill="var(--s1)" fill-opacity="0.11" stroke="var(--surface)" stroke-width="1"/>
+<rect x="416" y="274" width="34" height="34" fill="var(--s1)" fill-opacity="0.11" stroke="var(--surface)" stroke-width="1"/>
+<text x="102" y="329.0" text-anchor="end" class="lbl" font-size="11" font-weight="700" fill="var(--s2)">it</text>
+<rect x="110" y="308" width="34" height="34" fill="var(--s1)" fill-opacity="0.09" stroke="var(--surface)" stroke-width="1"/>
+<rect x="144" y="308" width="34" height="34" fill="var(--s1)" fill-opacity="0.64" stroke="var(--surface)" stroke-width="1"/>
+<text x="161.0" y="329.0" text-anchor="middle" font-size="10" fill="#fff" font-weight="700">0.41</text>
+<rect x="178" y="308" width="34" height="34" fill="var(--s1)" fill-opacity="0.09" stroke="var(--surface)" stroke-width="1"/>
+<rect x="212" y="308" width="34" height="34" fill="var(--s1)" fill-opacity="0.09" stroke="var(--surface)" stroke-width="1"/>
+<rect x="246" y="308" width="34" height="34" fill="var(--s1)" fill-opacity="0.09" stroke="var(--surface)" stroke-width="1"/>
+<rect x="280" y="308" width="34" height="34" fill="var(--s1)" fill-opacity="0.09" stroke="var(--surface)" stroke-width="1"/>
+<rect x="314" y="308" width="34" height="34" fill="var(--s1)" fill-opacity="0.21" stroke="var(--surface)" stroke-width="1"/>
+<rect x="348" y="308" width="34" height="34" fill="var(--s1)" fill-opacity="0.34" stroke="var(--surface)" stroke-width="1"/>
+<rect x="382" y="308" width="34" height="34" fill="var(--s1)" fill-opacity="0.15" stroke="var(--surface)" stroke-width="1"/>
+<rect x="416" y="308" width="34" height="34" fill="var(--s1)" fill-opacity="0.21" stroke="var(--surface)" stroke-width="1"/>
+<text x="102" y="363.0" text-anchor="end" class="lbl" font-size="11">was</text>
+<rect x="110" y="342" width="34" height="34" fill="var(--s1)" fill-opacity="0.11" stroke="var(--surface)" stroke-width="1"/>
+<rect x="144" y="342" width="34" height="34" fill="var(--s1)" fill-opacity="0.11" stroke="var(--surface)" stroke-width="1"/>
+<rect x="178" y="342" width="34" height="34" fill="var(--s1)" fill-opacity="0.11" stroke="var(--surface)" stroke-width="1"/>
+<rect x="212" y="342" width="34" height="34" fill="var(--s1)" fill-opacity="0.11" stroke="var(--surface)" stroke-width="1"/>
+<rect x="246" y="342" width="34" height="34" fill="var(--s1)" fill-opacity="0.11" stroke="var(--surface)" stroke-width="1"/>
+<rect x="280" y="342" width="34" height="34" fill="var(--s1)" fill-opacity="0.11" stroke="var(--surface)" stroke-width="1"/>
+<rect x="314" y="342" width="34" height="34" fill="var(--s1)" fill-opacity="0.11" stroke="var(--surface)" stroke-width="1"/>
+<rect x="348" y="342" width="34" height="34" fill="var(--s1)" fill-opacity="0.59" stroke="var(--surface)" stroke-width="1"/>
+<text x="365.0" y="363.0" text-anchor="middle" font-size="10" fill="#fff" font-weight="700">0.38</text>
+<rect x="382" y="342" width="34" height="34" fill="var(--s1)" fill-opacity="0.48" stroke="var(--surface)" stroke-width="1"/>
+<text x="399.0" y="363.0" text-anchor="middle" font-size="10" fill="#fff" font-weight="700">0.30</text>
+<rect x="416" y="342" width="34" height="34" fill="var(--s1)" fill-opacity="0.2" stroke="var(--surface)" stroke-width="1"/>
+<text x="102" y="397.0" text-anchor="end" class="lbl" font-size="11">tired</text>
+<rect x="110" y="376" width="34" height="34" fill="var(--s1)" fill-opacity="0.1" stroke="var(--surface)" stroke-width="1"/>
+<rect x="144" y="376" width="34" height="34" fill="var(--s1)" fill-opacity="0.34" stroke="var(--surface)" stroke-width="1"/>
+<rect x="178" y="376" width="34" height="34" fill="var(--s1)" fill-opacity="0.1" stroke="var(--surface)" stroke-width="1"/>
+<rect x="212" y="376" width="34" height="34" fill="var(--s1)" fill-opacity="0.1" stroke="var(--surface)" stroke-width="1"/>
+<rect x="246" y="376" width="34" height="34" fill="var(--s1)" fill-opacity="0.1" stroke="var(--surface)" stroke-width="1"/>
+<rect x="280" y="376" width="34" height="34" fill="var(--s1)" fill-opacity="0.1" stroke="var(--surface)" stroke-width="1"/>
+<rect x="314" y="376" width="34" height="34" fill="var(--s1)" fill-opacity="0.1" stroke="var(--surface)" stroke-width="1"/>
+<rect x="348" y="376" width="34" height="34" fill="var(--s1)" fill-opacity="0.45" stroke="var(--surface)" stroke-width="1"/>
+<text x="365.0" y="397.0" text-anchor="middle" font-size="10" fill="#fff" font-weight="700">0.28</text>
+<rect x="382" y="376" width="34" height="34" fill="var(--s1)" fill-opacity="0.24" stroke="var(--surface)" stroke-width="1"/>
+<rect x="416" y="376" width="34" height="34" fill="var(--s1)" fill-opacity="0.4" stroke="var(--surface)" stroke-width="1"/>
+<text x="433.0" y="397.0" text-anchor="middle" font-size="10" fill="#fff" font-weight="700">0.24</text>
+<rect x="110" y="308" width="340" height="34" fill="none" stroke="var(--s2)" stroke-width="2.5"/>
+<text x="480" y="90" class="lbl-strong" font-size="12">Row "it":</text>
+<text x="480" y="110" class="lbl" font-size="11">0.41 of its attention goes</text>
+<text x="480" y="126" class="lbl" font-size="11">to "animal" — the model</text>
+<text x="480" y="142" class="lbl" font-size="11">resolved the pronoun.</text>
+<text x="480" y="174" class="lbl" font-size="11">Change "tired" to "wide"</text>
+<text x="480" y="190" class="lbl" font-size="11">and a trained model moves</text>
+<text x="480" y="206" class="lbl" font-size="11">that mass to "street".</text>
+<text x="480" y="240" class="lbl" font-size="11">Darker = higher weight.</text>
+<text x="480" y="256" class="lbl" font-size="11">Every row sums to 1.</text></svg>
+<figcaption><strong>Figure 18.5 — What a trained self-attention head does with a real sentence.</strong> Each row is a query token, each column a key; darker cells carry more weight. The row for "it" concentrates on "animal": the head has learned coreference from raw text alone. Other heads in the same layer specialize in neighbours, syntax, or punctuation. (Weights are illustrative of published visualizations, not from a specific model.)</figcaption>
+</figure>
+
+<p>Select a query token below and watch where its attention goes. The weights are hand-specified to be plausible for a small trained head; the point is to internalize the geometry — bars are the softmax row, lines are the same numbers drawn as connections.</p>
+
+<div class="widget" id="w-attn">
+  <div class="w-title">Interactive: attention explorer</div>
+  <div class="controls">
+    <span>Query token:</span> <span class="kbd-row" id="attn-btns"></span>
+    <span>Top key: <span class="readout" id="attn-top">–</span></span>
+  </div>
+  <svg viewBox="0 0 760 250" id="attn-svg" role="img" aria-label="Attention weights from the selected query token to every token, drawn as bars and connecting lines"></svg>
+  <div class="note">Notice: "they" leans on "cats" (pronoun resolution), "hungry" looks back at "they" and "cats" (who is hungry?), and function words like "are" mostly attend to their neighbours. Every row sums to 1, so more weight on one token means less on the others.</div>
+</div>
+
+<pre class="code" data-lang="python"><code><span class="cm"># A single-head self-attention layer as an nn.Module</span>
+<span class="kw">import</span> torch, torch.nn <span class="kw">as</span> nn, math
+torch.manual_seed(<span class="nu">0</span>)
+
+<span class="kw">class</span> <span class="fn">SelfAttentionHead</span>(nn.Module):
+    <span class="kw">def</span> <span class="fn">__init__</span>(self, d_model, d_head):
+        <span class="fn">super</span>().__init__()
+        self.Wq = nn.Linear(d_model, d_head, bias=<span class="kw">False</span>)   <span class="cm"># query projection</span>
+        self.Wk = nn.Linear(d_model, d_head, bias=<span class="kw">False</span>)   <span class="cm"># key projection</span>
+        self.Wv = nn.Linear(d_model, d_head, bias=<span class="kw">False</span>)   <span class="cm"># value projection</span>
+        self.d_head = d_head
+
+    <span class="kw">def</span> <span class="fn">forward</span>(self, x, mask=<span class="kw">None</span>):                       <span class="cm"># x: (batch, seq, d_model)</span>
+        Q, K, V = self.Wq(x), self.Wk(x), self.Wv(x)
+        scores = Q @ K.transpose(-<span class="nu">2</span>, -<span class="nu">1</span>) / math.sqrt(self.d_head)   <span class="cm"># (batch, seq, seq)</span>
+        <span class="kw">if</span> mask <span class="kw">is not</span> <span class="kw">None</span>:
+            scores = scores.masked_fill(mask == <span class="nu">0</span>, <span class="fn">float</span>(<span class="st">"-inf"</span>))
+        w = torch.softmax(scores, dim=-<span class="nu">1</span>)
+        <span class="kw">return</span> w @ V, w
+
+x = torch.randn(<span class="nu">2</span>, <span class="nu">5</span>, <span class="nu">16</span>)             <span class="cm"># batch of 2 sequences, 5 tokens, 16-dim embeddings</span>
+head = SelfAttentionHead(d_model=<span class="nu">16</span>, d_head=<span class="nu">8</span>)
+out, w = head(x)
+<span class="fn">print</span>(<span class="st">"input :"</span>, <span class="fn">tuple</span>(x.shape))
+<span class="fn">print</span>(<span class="st">"output:"</span>, <span class="fn">tuple</span>(out.shape))     <span class="cm"># same length, new width d_head</span>
+<span class="fn">print</span>(<span class="st">"weights:"</span>, <span class="fn">tuple</span>(w.shape), <span class="st">"| each row sums to"</span>, w[<span class="nu">0</span>].sum(dim=-<span class="nu">1</span>).round(decimals=<span class="nu">3</span>).tolist())
+<span class="fn">print</span>(<span class="st">"trainable parameters:"</span>, <span class="fn">sum</span>(p.numel() <span class="kw">for</span> p <span class="kw">in</span> head.parameters()))
+<span class="out"># input : (2, 5, 16)</span>
+<span class="out"># output: (2, 5, 8)</span>
+<span class="out"># weights: (2, 5, 5) | each row sums to [1.0, 1.0, 1.0, 1.0, 1.0]</span>
+<span class="out"># trainable parameters: 384</span></code></pre>
+
+<h3>Multi-head attention: several lookups at once</h3>
+<p>One attention pattern per layer is not enough: "it" needs to find its noun, but also its verb, and the clause it sits in. <strong>Multi-head attention</strong> runs h independent attention heads in parallel, each with its own small W<sub>Q</sub>, W<sub>K</sub>, W<sub>V</sub> (of width d<sub>model</sub>/h), concatenates their outputs, and mixes them with one more linear layer W<sub>O</sub>. It costs the same as one big head and lets each head specialize. Eight to sixteen heads per layer is typical for mid-sized models; frontier models use 32–128.</p>
+
+<figure class="fig">
+<svg viewBox="0 0 800 300" role="img" aria-label="Multi-head attention: the input is projected into h separate query, key and value sets; each head computes attention independently and produces a small output; outputs are concatenated and mixed by an output projection">
+  <defs><marker id="arr-f6" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+  <rect x="20" y="120" width="110" height="60" class="box"/><text x="75" y="145" text-anchor="middle" class="lbl-strong">Input X</text><text x="75" y="163" text-anchor="middle" class="lbl" font-size="11">(n × d<tspan font-size="8" dy="3">model</tspan>)</text>
+  <!-- heads -->
+  <g>
+    <rect x="200" y="30" width="200" height="56" rx="6" fill="var(--s1)" fill-opacity=".14" stroke="var(--s1)" stroke-width="1.5"/>
+    <text x="300" y="52" text-anchor="middle" class="lbl-strong" font-size="12">Head 1: W<tspan font-size="8" dy="3">Q1</tspan><tspan dy="-3">, W</tspan><tspan font-size="8" dy="3">K1</tspan><tspan dy="-3">, W</tspan><tspan font-size="8" dy="3">V1</tspan></text>
+    <text x="300" y="72" text-anchor="middle" class="lbl" font-size="11">learns e.g. "which noun does it refer to"</text>
+    <rect x="200" y="100" width="200" height="56" rx="6" fill="var(--s2)" fill-opacity=".14" stroke="var(--s2)" stroke-width="1.5"/>
+    <text x="300" y="122" text-anchor="middle" class="lbl-strong" font-size="12">Head 2: W<tspan font-size="8" dy="3">Q2</tspan><tspan dy="-3">, W</tspan><tspan font-size="8" dy="3">K2</tspan><tspan dy="-3">, W</tspan><tspan font-size="8" dy="3">V2</tspan></text>
+    <text x="300" y="142" text-anchor="middle" class="lbl" font-size="11">learns e.g. "previous word"</text>
+    <rect x="200" y="170" width="200" height="56" rx="6" fill="var(--s3)" fill-opacity=".14" stroke="var(--s3)" stroke-width="1.5"/>
+    <text x="300" y="192" text-anchor="middle" class="lbl-strong" font-size="12">Head 3: W<tspan font-size="8" dy="3">Q3</tspan><tspan dy="-3">, W</tspan><tspan font-size="8" dy="3">K3</tspan><tspan dy="-3">, W</tspan><tspan font-size="8" dy="3">V3</tspan></text>
+    <text x="300" y="212" text-anchor="middle" class="lbl" font-size="11">learns e.g. "the verb of this clause"</text>
+    <text x="300" y="252" text-anchor="middle" class="lbl" font-size="12">… h heads, each of width d<tspan font-size="8" dy="3">model</tspan><tspan dy="-3">/h</tspan></text>
+  </g>
+  <line x1="130" y1="150" x2="198" y2="58" class="arrow" marker-end="url(#arr-f6)"/>
+  <line x1="130" y1="150" x2="198" y2="128" class="arrow" marker-end="url(#arr-f6)"/>
+  <line x1="130" y1="150" x2="198" y2="198" class="arrow" marker-end="url(#arr-f6)"/>
+  <!-- concat -->
+  <line x1="400" y1="58" x2="468" y2="128" class="arrow" marker-end="url(#arr-f6)"/>
+  <line x1="400" y1="128" x2="468" y2="140" class="arrow" marker-end="url(#arr-f6)"/>
+  <line x1="400" y1="198" x2="468" y2="152" class="arrow" marker-end="url(#arr-f6)"/>
+  <rect x="470" y="110" width="40" height="80" rx="4" fill="var(--surface-2)" stroke="var(--ink-3)"/>
+  <rect x="474" y="114" width="32" height="22" fill="var(--s1)" fill-opacity=".5"/><rect x="474" y="139" width="32" height="22" fill="var(--s2)" fill-opacity=".5"/><rect x="474" y="164" width="32" height="22" fill="var(--s3)" fill-opacity=".5"/>
+  <text x="490" y="208" text-anchor="middle" class="lbl" font-size="11">concat</text>
+  <line x1="510" y1="150" x2="560" y2="150" class="arrow" marker-end="url(#arr-f6)"/>
+  <rect x="562" y="120" width="100" height="60" class="box-accent"/><text x="612" y="145" text-anchor="middle" class="lbl-strong">W<tspan font-size="8" dy="3">O</tspan></text><text x="612" y="165" text-anchor="middle" class="lbl" font-size="11">mix heads</text>
+  <line x1="662" y1="150" x2="712" y2="150" class="arrow" marker-end="url(#arr-f6)"/>
+  <rect x="714" y="120" width="70" height="60" class="box"/><text x="749" y="145" text-anchor="middle" class="lbl-strong">Output</text><text x="749" y="163" text-anchor="middle" class="lbl" font-size="11">(n × d<tspan font-size="8" dy="3">model</tspan>)</text>
+  <text x="400" y="288" text-anchor="middle" class="lbl" font-size="11">Total compute ≈ one full-width head; what you gain is h different attention patterns per layer.</text>
+</svg>
+<figcaption><strong>Figure 18.6 — Multi-head attention is h small attentions run side by side.</strong> Each head has its own projections and so its own notion of "relevant"; the concatenated result is mixed by W<sub>O</sub>. Interpretability work regularly finds heads that track syntax, coreference, or position.</figcaption>
+</figure>
+
+<h3>Positional encodings: attention is blind to order</h3>
+<p>Here is a fact that surprises everyone: the attention formula <strong>does not know where tokens are</strong>. Shuffle the rows of X and the outputs shuffle identically — the operation is permutation-equivariant. "Dog bites man" and "man bites dog" would produce the same set of vectors. Since order was the whole point of sequence modelling, we must inject position explicitly. Three families of solution:</p>
+
+<ol class="steps">
+  <li><strong>Sinusoidal (fixed).</strong> The original recipe: add to each token embedding a vector of sines and cosines whose frequencies decrease across dimensions (Figure 18.7). No parameters; extrapolates in principle to unseen lengths; nearby positions get similar vectors.</li>
+  <li><strong>Learned.</strong> An <code>nn.Embedding(max_len, d_model)</code> looked up by position and added to the token embedding. Simple, used by BERT and GPT-2; cannot represent positions beyond <code>max_len</code>.</li>
+  <li><strong>Rotary (RoPE) and relative schemes.</strong> Instead of adding a vector to the input, rotate the query and key vectors by an angle proportional to position, so the dot product q·k depends only on the <em>distance</em> between tokens. Used by Llama, Mistral, and most modern open models because it generalizes better to long contexts. The details are beyond this chapter; the idea to remember is "position enters through the attention scores, not the embedding".</li>
+</ol>
+
+<div class="formula">PE(pos, 2i) = sin( pos / 10000<sup>2i/d</sup> )   ,   PE(pos, 2i+1) = cos( pos / 10000<sup>2i/d</sup> )</div>
+
+<div class="callout math"><div class="title">The math (optional)</div>
+<p><strong>pos</strong> is the token's index (0, 1, 2, …). <strong>i</strong> indexes pairs of dimensions, from 0 to d/2 − 1. <strong>10000<sup>2i/d</sup></strong> is the wavelength: dimension pair 0 has wavelength 2π (changes every token), the last pair has wavelength 10000·2π (barely changes over a document). Each pair (sin, cos) at the same frequency is a point on a circle, so moving k positions ahead is a fixed rotation of that point — the model can learn "k tokens back" as a linear operation. That property is what RoPE later made explicit.</p>
+</div>
+
+<figure class="fig">
+<svg viewBox="0 0 740 540" role="img" aria-label="Sinusoidal positional encoding: three dimensions plotted as waves of decreasing frequency over positions 0 to 50, and the full 32 by 16 matrix drawn as a colored strip">
+<text x="340.0" y="22" text-anchor="middle" class="lbl-strong" font-size="14">Sinusoidal positional encoding: each dimension is a wave of a different frequency</text>
+<line x1="60" y1="100.0" x2="620" y2="100.0" class="grid"/>
+<line x1="60" y1="40" x2="60" y2="160" class="axis"/><line x1="60" y1="160" x2="620" y2="160" class="axis"/>
+<text x="60" y="176" text-anchor="middle" class="lbl" font-size="11">0</text>
+<text x="172" y="176" text-anchor="middle" class="lbl" font-size="11">10</text>
+<text x="284" y="176" text-anchor="middle" class="lbl" font-size="11">20</text>
+<text x="396" y="176" text-anchor="middle" class="lbl" font-size="11">30</text>
+<text x="508" y="176" text-anchor="middle" class="lbl" font-size="11">40</text>
+<text x="620" y="176" text-anchor="middle" class="lbl" font-size="11">50</text>
+<text x="340.0" y="192" text-anchor="middle" class="lbl">position in the sequence</text>
+<text x="52" y="44" text-anchor="end" class="lbl" font-size="11">+1</text><text x="52" y="164" text-anchor="end" class="lbl" font-size="11">−1</text>
+<polyline points="60.0,100.0 62.8,85.1 65.6,71.1 68.4,58.9 71.3,49.3 74.1,42.9 76.9,40.1 79.7,41.1 82.5,45.7 85.3,53.7 88.1,64.7 91.0,77.9 93.8,92.4 96.6,107.5 99.4,122.0 102.2,135.2 105.0,146.2 107.8,154.3 110.7,158.9 113.5,159.9 116.3,157.1 119.1,150.7 121.9,141.1 124.7,129.0 127.5,115.0 130.4,100.1 133.2,85.2 136.0,71.2 138.8,59.0 141.6,49.4 144.4,43.0 147.2,40.1 150.1,41.0 152.9,45.7 155.7,53.7 158.5,64.6 161.3,77.8 164.1,92.3 166.9,107.4 169.7,121.9 172.6,135.1 175.4,146.1 178.2,154.2 181.0,158.9 183.8,159.9 186.6,157.1 189.4,150.8 192.3,141.2 195.1,129.1 197.9,115.1 200.7,100.2 203.5,85.3 206.3,71.3 209.1,59.1 212.0,49.5 214.8,43.0 217.6,40.1 220.4,41.0 223.2,45.6 226.0,53.6 228.8,64.5 231.7,77.7 234.5,92.2 237.3,107.3 240.1,121.8 242.9,135.0 245.7,146.1 248.5,154.2 251.4,158.9 254.2,159.9 257.0,157.2 259.8,150.8 262.6,141.3 265.4,129.2 268.2,115.2 271.1,100.3 273.9,85.4 276.7,71.4 279.5,59.2 282.3,49.5 285.1,43.0 287.9,40.1 290.8,41.0 293.6,45.6 296.4,53.5 299.2,64.4 302.0,77.6 304.8,92.1 307.6,107.1 310.5,121.7 313.3,135.0 316.1,146.0 318.9,154.1 321.7,158.9 324.5,159.9 327.3,157.2 330.2,150.9 333.0,141.4 335.8,129.3 338.6,115.3 341.4,100.4 344.2,85.5 347.0,71.5 349.8,59.2 352.7,49.6 355.5,43.1 358.3,40.1 361.1,41.0 363.9,45.5 366.7,53.5 369.5,64.4 372.4,77.5 375.2,92.0 378.0,107.0 380.8,121.6 383.6,134.9 386.4,145.9 389.2,154.1 392.1,158.8 394.9,159.9 397.7,157.2 400.5,150.9 403.3,141.5 406.1,129.4 408.9,115.4 411.8,100.5 414.6,85.6 417.4,71.6 420.2,59.3 423.0,49.6 425.8,43.1 428.6,40.2 431.5,41.0 434.3,45.5 437.1,53.4 439.9,64.3 442.7,77.4 445.5,91.9 448.3,106.9 451.2,121.5 454.0,134.8 456.8,145.8 459.6,154.0 462.4,158.8 465.2,159.9 468.0,157.3 470.9,151.0 473.7,141.5 476.5,129.5 479.3,115.5 482.1,100.6 484.9,85.7 487.7,71.7 490.6,59.4 493.4,49.7 496.2,43.1 499.0,40.2 501.8,40.9 504.6,45.4 507.4,53.3 510.3,64.2 513.1,77.3 515.9,91.8 518.7,106.8 521.5,121.4 524.3,134.7 527.1,145.8 529.9,154.0 532.8,158.8 535.6,159.9 538.4,157.3 541.2,151.0 544.0,141.6 546.8,129.6 549.6,115.6 552.5,100.7 555.3,85.8 558.1,71.8 560.9,59.5 563.7,49.8 566.5,43.2 569.3,40.2 572.2,40.9 575.0,45.4 577.8,53.3 580.6,64.1 583.4,77.2 586.2,91.7 589.0,106.7 591.9,121.3 594.7,134.6 597.5,145.7 600.3,153.9 603.1,158.8 605.9,159.9 608.7,157.3 611.6,151.1 614.4,141.7 617.2,129.6 620.0,115.7" fill="none" stroke="var(--s1)" stroke-width="2"/>
+<polyline points="60.0,100.0 62.8,98.5 65.6,97.0 68.4,95.5 71.3,94.0 74.1,92.5 76.9,91.0 79.7,89.5 82.5,88.0 85.3,86.5 88.1,85.1 91.0,83.6 93.8,82.2 96.6,80.7 99.4,79.3 102.2,77.9 105.0,76.5 107.8,75.1 110.7,73.8 113.5,72.4 116.3,71.1 119.1,69.8 121.9,68.5 124.7,67.2 127.5,66.0 130.4,64.7 133.2,63.5 136.0,62.3 138.8,61.2 141.6,60.0 144.4,58.9 147.2,57.9 150.1,56.8 152.9,55.8 155.7,54.8 158.5,53.8 161.3,52.8 164.1,51.9 166.9,51.0 169.7,50.2 172.6,49.3 175.4,48.6 178.2,47.8 181.0,47.1 183.8,46.4 186.6,45.7 189.4,45.1 192.3,44.5 195.1,43.9 197.9,43.4 200.7,42.9 203.5,42.5 206.3,42.1 209.1,41.7 212.0,41.4 214.8,41.1 217.6,40.8 220.4,40.6 223.2,40.4 226.0,40.2 228.8,40.1 231.7,40.0 234.5,40.0 237.3,40.0 240.1,40.0 242.9,40.1 245.7,40.2 248.5,40.4 251.4,40.6 254.2,40.8 257.0,41.1 259.8,41.4 262.6,41.7 265.4,42.1 268.2,42.5 271.1,42.9 273.9,43.4 276.7,43.9 279.5,44.5 282.3,45.1 285.1,45.7 287.9,46.4 290.8,47.0 293.6,47.8 296.4,48.5 299.2,49.3 302.0,50.1 304.8,51.0 307.6,51.9 310.5,52.8 313.3,53.7 316.1,54.7 318.9,55.7 321.7,56.8 324.5,57.8 327.3,58.9 330.2,60.0 333.0,61.1 335.8,62.3 338.6,63.5 341.4,64.7 344.2,65.9 347.0,67.2 349.8,68.5 352.7,69.7 355.5,71.1 358.3,72.4 361.1,73.7 363.9,75.1 366.7,76.5 369.5,77.9 372.4,79.3 375.2,80.7 378.0,82.1 380.8,83.6 383.6,85.0 386.4,86.5 389.2,88.0 392.1,89.4 394.9,90.9 397.7,92.4 400.5,93.9 403.3,95.4 406.1,96.9 408.9,98.4 411.8,99.9 414.6,101.5 417.4,103.0 420.2,104.5 423.0,106.0 425.8,107.5 428.6,109.0 431.5,110.4 434.3,111.9 437.1,113.4 439.9,114.9 442.7,116.3 445.5,117.8 448.3,119.2 451.2,120.6 454.0,122.0 456.8,123.4 459.6,124.8 462.4,126.2 465.2,127.5 468.0,128.9 470.9,130.2 473.7,131.5 476.5,132.7 479.3,134.0 482.1,135.2 484.9,136.4 487.7,137.6 490.6,138.8 493.4,139.9 496.2,141.0 499.0,142.1 501.8,143.2 504.6,144.2 507.4,145.2 510.3,146.2 513.1,147.1 515.9,148.1 518.7,148.9 521.5,149.8 524.3,150.6 527.1,151.4 529.9,152.2 532.8,152.9 535.6,153.6 538.4,154.3 541.2,154.9 544.0,155.5 546.8,156.0 549.6,156.6 552.5,157.0 555.3,157.5 558.1,157.9 560.9,158.3 563.7,158.6 566.5,158.9 569.3,159.2 572.2,159.4 575.0,159.6 577.8,159.8 580.6,159.9 583.4,160.0 586.2,160.0 589.0,160.0 591.9,160.0 594.7,159.9 597.5,159.8 600.3,159.6 603.1,159.4 605.9,159.2 608.7,159.0 611.6,158.7 614.4,158.3 617.2,157.9 620.0,157.5" fill="none" stroke="var(--s2)" stroke-width="2"/>
+<polyline points="60.0,100.0 62.8,99.8 65.6,99.7 68.4,99.5 71.3,99.4 74.1,99.2 76.9,99.1 79.7,98.9 82.5,98.8 85.3,98.6 88.1,98.5 91.0,98.3 93.8,98.2 96.6,98.0 99.4,97.9 102.2,97.7 105.0,97.6 107.8,97.4 110.7,97.3 113.5,97.1 116.3,97.0 119.1,96.8 121.9,96.7 124.7,96.5 127.5,96.4 130.4,96.2 133.2,96.1 136.0,95.9 138.8,95.8 141.6,95.6 144.4,95.5 147.2,95.3 150.1,95.2 152.9,95.0 155.7,94.9 158.5,94.7 161.3,94.6 164.1,94.4 166.9,94.3 169.7,94.1 172.6,94.0 175.4,93.8 178.2,93.7 181.0,93.5 183.8,93.4 186.6,93.2 189.4,93.1 192.3,92.9 195.1,92.8 197.9,92.6 200.7,92.5 203.5,92.3 206.3,92.2 209.1,92.0 212.0,91.9 214.8,91.7 217.6,91.6 220.4,91.4 223.2,91.3 226.0,91.1 228.8,91.0 231.7,90.8 234.5,90.7 237.3,90.5 240.1,90.4 242.9,90.2 245.7,90.1 248.5,89.9 251.4,89.8 254.2,89.7 257.0,89.5 259.8,89.4 262.6,89.2 265.4,89.1 268.2,88.9 271.1,88.8 273.9,88.6 276.7,88.5 279.5,88.3 282.3,88.2 285.1,88.0 287.9,87.9 290.8,87.7 293.6,87.6 296.4,87.4 299.2,87.3 302.0,87.1 304.8,87.0 307.6,86.8 310.5,86.7 313.3,86.5 316.1,86.4 318.9,86.3 321.7,86.1 324.5,86.0 327.3,85.8 330.2,85.7 333.0,85.5 335.8,85.4 338.6,85.2 341.4,85.1 344.2,84.9 347.0,84.8 349.8,84.6 352.7,84.5 355.5,84.4 358.3,84.2 361.1,84.1 363.9,83.9 366.7,83.8 369.5,83.6 372.4,83.5 375.2,83.3 378.0,83.2 380.8,83.0 383.6,82.9 386.4,82.8 389.2,82.6 392.1,82.5 394.9,82.3 397.7,82.2 400.5,82.0 403.3,81.9 406.1,81.8 408.9,81.6 411.8,81.5 414.6,81.3 417.4,81.2 420.2,81.0 423.0,80.9 425.8,80.7 428.6,80.6 431.5,80.5 434.3,80.3 437.1,80.2 439.9,80.0 442.7,79.9 445.5,79.8 448.3,79.6 451.2,79.5 454.0,79.3 456.8,79.2 459.6,79.0 462.4,78.9 465.2,78.8 468.0,78.6 470.9,78.5 473.7,78.3 476.5,78.2 479.3,78.1 482.1,77.9 484.9,77.8 487.7,77.6 490.6,77.5 493.4,77.4 496.2,77.2 499.0,77.1 501.8,76.9 504.6,76.8 507.4,76.7 510.3,76.5 513.1,76.4 515.9,76.2 518.7,76.1 521.5,76.0 524.3,75.8 527.1,75.7 529.9,75.6 532.8,75.4 535.6,75.3 538.4,75.1 541.2,75.0 544.0,74.9 546.8,74.7 549.6,74.6 552.5,74.5 555.3,74.3 558.1,74.2 560.9,74.1 563.7,73.9 566.5,73.8 569.3,73.6 572.2,73.5 575.0,73.4 577.8,73.2 580.6,73.1 583.4,73.0 586.2,72.8 589.0,72.7 591.9,72.6 594.7,72.4 597.5,72.3 600.3,72.2 603.1,72.0 605.9,71.9 608.7,71.8 611.6,71.6 614.4,71.5 617.2,71.4 620.0,71.2" fill="none" stroke="var(--s3)" stroke-width="2"/>
+<text x="628" y="52" class="lbl" font-size="11" fill="var(--s1)" font-weight="700">dim 0 (fast)</text>
+<text x="628" y="70" class="lbl" font-size="11" fill="var(--s2)" font-weight="700">dim 4</text>
+<text x="628" y="88" class="lbl" font-size="11" fill="var(--s3)" font-weight="700">dim 8 (slow)</text>
+<text x="60" y="210" class="lbl-strong">The full matrix: rows = positions 0…31, columns = 16 dimensions (blue = +1, orange = −1)</text>
+<rect x="60" y="220" width="17" height="9" fill="var(--s1)" fill-opacity="0.00"/>
+<rect x="77" y="220" width="17" height="9" fill="var(--s1)" fill-opacity="1.00"/>
+<rect x="94" y="220" width="17" height="9" fill="var(--s1)" fill-opacity="0.00"/>
+<rect x="111" y="220" width="17" height="9" fill="var(--s1)" fill-opacity="1.00"/>
+<rect x="128" y="220" width="17" height="9" fill="var(--s1)" fill-opacity="0.00"/>
+<rect x="145" y="220" width="17" height="9" fill="var(--s1)" fill-opacity="1.00"/>
+<rect x="162" y="220" width="17" height="9" fill="var(--s1)" fill-opacity="0.00"/>
+<rect x="179" y="220" width="17" height="9" fill="var(--s1)" fill-opacity="1.00"/>
+<rect x="196" y="220" width="17" height="9" fill="var(--s1)" fill-opacity="0.00"/>
+<rect x="213" y="220" width="17" height="9" fill="var(--s1)" fill-opacity="1.00"/>
+<rect x="230" y="220" width="17" height="9" fill="var(--s1)" fill-opacity="0.00"/>
+<rect x="247" y="220" width="17" height="9" fill="var(--s1)" fill-opacity="1.00"/>
+<rect x="264" y="220" width="17" height="9" fill="var(--s1)" fill-opacity="0.00"/>
+<rect x="281" y="220" width="17" height="9" fill="var(--s1)" fill-opacity="1.00"/>
+<rect x="298" y="220" width="17" height="9" fill="var(--s1)" fill-opacity="0.00"/>
+<rect x="315" y="220" width="17" height="9" fill="var(--s1)" fill-opacity="1.00"/>
+<rect x="60" y="229" width="17" height="9" fill="var(--s1)" fill-opacity="0.84"/>
+<rect x="77" y="229" width="17" height="9" fill="var(--s1)" fill-opacity="0.54"/>
+<rect x="94" y="229" width="17" height="9" fill="var(--s1)" fill-opacity="0.31"/>
+<rect x="111" y="229" width="17" height="9" fill="var(--s1)" fill-opacity="0.95"/>
+<rect x="128" y="229" width="17" height="9" fill="var(--s1)" fill-opacity="0.10"/>
+<rect x="145" y="229" width="17" height="9" fill="var(--s1)" fill-opacity="1.00"/>
+<rect x="162" y="229" width="17" height="9" fill="var(--s1)" fill-opacity="0.03"/>
+<rect x="179" y="229" width="17" height="9" fill="var(--s1)" fill-opacity="1.00"/>
+<rect x="196" y="229" width="17" height="9" fill="var(--s1)" fill-opacity="0.01"/>
+<rect x="213" y="229" width="17" height="9" fill="var(--s1)" fill-opacity="1.00"/>
+<rect x="230" y="229" width="17" height="9" fill="var(--s1)" fill-opacity="0.00"/>
+<rect x="247" y="229" width="17" height="9" fill="var(--s1)" fill-opacity="1.00"/>
+<rect x="264" y="229" width="17" height="9" fill="var(--s1)" fill-opacity="0.00"/>
+<rect x="281" y="229" width="17" height="9" fill="var(--s1)" fill-opacity="1.00"/>
+<rect x="298" y="229" width="17" height="9" fill="var(--s1)" fill-opacity="0.00"/>
+<rect x="315" y="229" width="17" height="9" fill="var(--s1)" fill-opacity="1.00"/>
+<rect x="60" y="238" width="17" height="9" fill="var(--s1)" fill-opacity="0.91"/>
+<rect x="77" y="238" width="17" height="9" fill="var(--s2)" fill-opacity="0.42"/>
+<rect x="94" y="238" width="17" height="9" fill="var(--s1)" fill-opacity="0.59"/>
+<rect x="111" y="238" width="17" height="9" fill="var(--s1)" fill-opacity="0.81"/>
+<rect x="128" y="238" width="17" height="9" fill="var(--s1)" fill-opacity="0.20"/>
+<rect x="145" y="238" width="17" height="9" fill="var(--s1)" fill-opacity="0.98"/>
+<rect x="162" y="238" width="17" height="9" fill="var(--s1)" fill-opacity="0.06"/>
+<rect x="179" y="238" width="17" height="9" fill="var(--s1)" fill-opacity="1.00"/>
+<rect x="196" y="238" width="17" height="9" fill="var(--s1)" fill-opacity="0.02"/>
+<rect x="213" y="238" width="17" height="9" fill="var(--s1)" fill-opacity="1.00"/>
+<rect x="230" y="238" width="17" height="9" fill="var(--s1)" fill-opacity="0.01"/>
+<rect x="247" y="238" width="17" height="9" fill="var(--s1)" fill-opacity="1.00"/>
+<rect x="264" y="238" width="17" height="9" fill="var(--s1)" fill-opacity="0.00"/>
+<rect x="281" y="238" width="17" height="9" fill="var(--s1)" fill-opacity="1.00"/>
+<rect x="298" y="238" width="17" height="9" fill="var(--s1)" fill-opacity="0.00"/>
+<rect x="315" y="238" width="17" height="9" fill="var(--s1)" fill-opacity="1.00"/>
+<rect x="60" y="247" width="17" height="9" fill="var(--s1)" fill-opacity="0.14"/>
+<rect x="77" y="247" width="17" height="9" fill="var(--s2)" fill-opacity="0.99"/>
+<rect x="94" y="247" width="17" height="9" fill="var(--s1)" fill-opacity="0.81"/>
+<rect x="111" y="247" width="17" height="9" fill="var(--s1)" fill-opacity="0.58"/>
+<rect x="128" y="247" width="17" height="9" fill="var(--s1)" fill-opacity="0.30"/>
+<rect x="145" y="247" width="17" height="9" fill="var(--s1)" fill-opacity="0.96"/>
+<rect x="162" y="247" width="17" height="9" fill="var(--s1)" fill-opacity="0.09"/>
+<rect x="179" y="247" width="17" height="9" fill="var(--s1)" fill-opacity="1.00"/>
+<rect x="196" y="247" width="17" height="9" fill="var(--s1)" fill-opacity="0.03"/>
+<rect x="213" y="247" width="17" height="9" fill="var(--s1)" fill-opacity="1.00"/>
+<rect x="230" y="247" width="17" height="9" fill="var(--s1)" fill-opacity="0.01"/>
+<rect x="247" y="247" width="17" height="9" fill="var(--s1)" fill-opacity="1.00"/>
+<rect x="264" y="247" width="17" height="9" fill="var(--s1)" fill-opacity="0.00"/>
+<rect x="281" y="247" width="17" height="9" fill="var(--s1)" fill-opacity="1.00"/>
+<rect x="298" y="247" width="17" height="9" fill="var(--s1)" fill-opacity="0.00"/>
+<rect x="315" y="247" width="17" height="9" fill="var(--s1)" fill-opacity="1.00"/>
+<rect x="60" y="256" width="17" height="9" fill="var(--s2)" fill-opacity="0.76"/>
+<rect x="77" y="256" width="17" height="9" fill="var(--s2)" fill-opacity="0.65"/>
+<rect x="94" y="256" width="17" height="9" fill="var(--s1)" fill-opacity="0.95"/>
+<rect x="111" y="256" width="17" height="9" fill="var(--s1)" fill-opacity="0.30"/>
+<rect x="128" y="256" width="17" height="9" fill="var(--s1)" fill-opacity="0.39"/>
+<rect x="145" y="256" width="17" height="9" fill="var(--s1)" fill-opacity="0.92"/>
+<rect x="162" y="256" width="17" height="9" fill="var(--s1)" fill-opacity="0.13"/>
+<rect x="179" y="256" width="17" height="9" fill="var(--s1)" fill-opacity="0.99"/>
+<rect x="196" y="256" width="17" height="9" fill="var(--s1)" fill-opacity="0.04"/>
+<rect x="213" y="256" width="17" height="9" fill="var(--s1)" fill-opacity="1.00"/>
+<rect x="230" y="256" width="17" height="9" fill="var(--s1)" fill-opacity="0.01"/>
+<rect x="247" y="256" width="17" height="9" fill="var(--s1)" fill-opacity="1.00"/>
+<rect x="264" y="256" width="17" height="9" fill="var(--s1)" fill-opacity="0.00"/>
+<rect x="281" y="256" width="17" height="9" fill="var(--s1)" fill-opacity="1.00"/>
+<rect x="298" y="256" width="17" height="9" fill="var(--s1)" fill-opacity="0.00"/>
+<rect x="315" y="256" width="17" height="9" fill="var(--s1)" fill-opacity="1.00"/>
+<rect x="60" y="265" width="17" height="9" fill="var(--s2)" fill-opacity="0.96"/>
+<rect x="77" y="265" width="17" height="9" fill="var(--s1)" fill-opacity="0.28"/>
+<rect x="94" y="265" width="17" height="9" fill="var(--s1)" fill-opacity="1.00"/>
+<rect x="111" y="265" width="17" height="9" fill="var(--s2)" fill-opacity="0.01"/>
+<rect x="128" y="265" width="17" height="9" fill="var(--s1)" fill-opacity="0.48"/>
+<rect x="145" y="265" width="17" height="9" fill="var(--s1)" fill-opacity="0.88"/>
+<rect x="162" y="265" width="17" height="9" fill="var(--s1)" fill-opacity="0.16"/>
+<rect x="179" y="265" width="17" height="9" fill="var(--s1)" fill-opacity="0.99"/>
+<rect x="196" y="265" width="17" height="9" fill="var(--s1)" fill-opacity="0.05"/>
+<rect x="213" y="265" width="17" height="9" fill="var(--s1)" fill-opacity="1.00"/>
+<rect x="230" y="265" width="17" height="9" fill="var(--s1)" fill-opacity="0.02"/>
+<rect x="247" y="265" width="17" height="9" fill="var(--s1)" fill-opacity="1.00"/>
+<rect x="264" y="265" width="17" height="9" fill="var(--s1)" fill-opacity="0.00"/>
+<rect x="281" y="265" width="17" height="9" fill="var(--s1)" fill-opacity="1.00"/>
+<rect x="298" y="265" width="17" height="9" fill="var(--s1)" fill-opacity="0.00"/>
+<rect x="315" y="265" width="17" height="9" fill="var(--s1)" fill-opacity="1.00"/>
+<rect x="60" y="274" width="17" height="9" fill="var(--s2)" fill-opacity="0.28"/>
+<rect x="77" y="274" width="17" height="9" fill="var(--s1)" fill-opacity="0.96"/>
+<rect x="94" y="274" width="17" height="9" fill="var(--s1)" fill-opacity="0.95"/>
+<rect x="111" y="274" width="17" height="9" fill="var(--s2)" fill-opacity="0.32"/>
+<rect x="128" y="274" width="17" height="9" fill="var(--s1)" fill-opacity="0.56"/>
+<rect x="145" y="274" width="17" height="9" fill="var(--s1)" fill-opacity="0.83"/>
+<rect x="162" y="274" width="17" height="9" fill="var(--s1)" fill-opacity="0.19"/>
+<rect x="179" y="274" width="17" height="9" fill="var(--s1)" fill-opacity="0.98"/>
+<rect x="196" y="274" width="17" height="9" fill="var(--s1)" fill-opacity="0.06"/>
+<rect x="213" y="274" width="17" height="9" fill="var(--s1)" fill-opacity="1.00"/>
+<rect x="230" y="274" width="17" height="9" fill="var(--s1)" fill-opacity="0.02"/>
+<rect x="247" y="274" width="17" height="9" fill="var(--s1)" fill-opacity="1.00"/>
+<rect x="264" y="274" width="17" height="9" fill="var(--s1)" fill-opacity="0.01"/>
+<rect x="281" y="274" width="17" height="9" fill="var(--s1)" fill-opacity="1.00"/>
+<rect x="298" y="274" width="17" height="9" fill="var(--s1)" fill-opacity="0.00"/>
+<rect x="315" y="274" width="17" height="9" fill="var(--s1)" fill-opacity="1.00"/>
+<rect x="60" y="283" width="17" height="9" fill="var(--s1)" fill-opacity="0.66"/>
+<rect x="77" y="283" width="17" height="9" fill="var(--s1)" fill-opacity="0.75"/>
+<rect x="94" y="283" width="17" height="9" fill="var(--s1)" fill-opacity="0.80"/>
+<rect x="111" y="283" width="17" height="9" fill="var(--s2)" fill-opacity="0.60"/>
+<rect x="128" y="283" width="17" height="9" fill="var(--s1)" fill-opacity="0.64"/>
+<rect x="145" y="283" width="17" height="9" fill="var(--s1)" fill-opacity="0.76"/>
+<rect x="162" y="283" width="17" height="9" fill="var(--s1)" fill-opacity="0.22"/>
+<rect x="179" y="283" width="17" height="9" fill="var(--s1)" fill-opacity="0.98"/>
+<rect x="196" y="283" width="17" height="9" fill="var(--s1)" fill-opacity="0.07"/>
+<rect x="213" y="283" width="17" height="9" fill="var(--s1)" fill-opacity="1.00"/>
+<rect x="230" y="283" width="17" height="9" fill="var(--s1)" fill-opacity="0.02"/>
+<rect x="247" y="283" width="17" height="9" fill="var(--s1)" fill-opacity="1.00"/>
+<rect x="264" y="283" width="17" height="9" fill="var(--s1)" fill-opacity="0.01"/>
+<rect x="281" y="283" width="17" height="9" fill="var(--s1)" fill-opacity="1.00"/>
+<rect x="298" y="283" width="17" height="9" fill="var(--s1)" fill-opacity="0.00"/>
+<rect x="315" y="283" width="17" height="9" fill="var(--s1)" fill-opacity="1.00"/>
+<rect x="60" y="292" width="17" height="9" fill="var(--s1)" fill-opacity="0.99"/>
+<rect x="77" y="292" width="17" height="9" fill="var(--s2)" fill-opacity="0.15"/>
+<rect x="94" y="292" width="17" height="9" fill="var(--s1)" fill-opacity="0.57"/>
+<rect x="111" y="292" width="17" height="9" fill="var(--s2)" fill-opacity="0.82"/>
+<rect x="128" y="292" width="17" height="9" fill="var(--s1)" fill-opacity="0.72"/>
+<rect x="145" y="292" width="17" height="9" fill="var(--s1)" fill-opacity="0.70"/>
+<rect x="162" y="292" width="17" height="9" fill="var(--s1)" fill-opacity="0.25"/>
+<rect x="179" y="292" width="17" height="9" fill="var(--s1)" fill-opacity="0.97"/>
+<rect x="196" y="292" width="17" height="9" fill="var(--s1)" fill-opacity="0.08"/>
+<rect x="213" y="292" width="17" height="9" fill="var(--s1)" fill-opacity="1.00"/>
+<rect x="230" y="292" width="17" height="9" fill="var(--s1)" fill-opacity="0.03"/>
+<rect x="247" y="292" width="17" height="9" fill="var(--s1)" fill-opacity="1.00"/>
+<rect x="264" y="292" width="17" height="9" fill="var(--s1)" fill-opacity="0.01"/>
+<rect x="281" y="292" width="17" height="9" fill="var(--s1)" fill-opacity="1.00"/>
+<rect x="298" y="292" width="17" height="9" fill="var(--s1)" fill-opacity="0.00"/>
+<rect x="315" y="292" width="17" height="9" fill="var(--s1)" fill-opacity="1.00"/>
+<rect x="60" y="301" width="17" height="9" fill="var(--s1)" fill-opacity="0.41"/>
+<rect x="77" y="301" width="17" height="9" fill="var(--s2)" fill-opacity="0.91"/>
+<rect x="94" y="301" width="17" height="9" fill="var(--s1)" fill-opacity="0.29"/>
+<rect x="111" y="301" width="17" height="9" fill="var(--s2)" fill-opacity="0.96"/>
+<rect x="128" y="301" width="17" height="9" fill="var(--s1)" fill-opacity="0.78"/>
+<rect x="145" y="301" width="17" height="9" fill="var(--s1)" fill-opacity="0.62"/>
+<rect x="162" y="301" width="17" height="9" fill="var(--s1)" fill-opacity="0.28"/>
+<rect x="179" y="301" width="17" height="9" fill="var(--s1)" fill-opacity="0.96"/>
+<rect x="196" y="301" width="17" height="9" fill="var(--s1)" fill-opacity="0.09"/>
+<rect x="213" y="301" width="17" height="9" fill="var(--s1)" fill-opacity="1.00"/>
+<rect x="230" y="301" width="17" height="9" fill="var(--s1)" fill-opacity="0.03"/>
+<rect x="247" y="301" width="17" height="9" fill="var(--s1)" fill-opacity="1.00"/>
+<rect x="264" y="301" width="17" height="9" fill="var(--s1)" fill-opacity="0.01"/>
+<rect x="281" y="301" width="17" height="9" fill="var(--s1)" fill-opacity="1.00"/>
+<rect x="298" y="301" width="17" height="9" fill="var(--s1)" fill-opacity="0.00"/>
+<rect x="315" y="301" width="17" height="9" fill="var(--s1)" fill-opacity="1.00"/>
+<rect x="60" y="310" width="17" height="9" fill="var(--s2)" fill-opacity="0.54"/>
+<rect x="77" y="310" width="17" height="9" fill="var(--s2)" fill-opacity="0.84"/>
+<rect x="94" y="310" width="17" height="9" fill="var(--s2)" fill-opacity="0.02"/>
+<rect x="111" y="310" width="17" height="9" fill="var(--s2)" fill-opacity="1.00"/>
+<rect x="128" y="310" width="17" height="9" fill="var(--s1)" fill-opacity="0.84"/>
+<rect x="145" y="310" width="17" height="9" fill="var(--s1)" fill-opacity="0.54"/>
+<rect x="162" y="310" width="17" height="9" fill="var(--s1)" fill-opacity="0.31"/>
+<rect x="179" y="310" width="17" height="9" fill="var(--s1)" fill-opacity="0.95"/>
+<rect x="196" y="310" width="17" height="9" fill="var(--s1)" fill-opacity="0.10"/>
+<rect x="213" y="310" width="17" height="9" fill="var(--s1)" fill-opacity="1.00"/>
+<rect x="230" y="310" width="17" height="9" fill="var(--s1)" fill-opacity="0.03"/>
+<rect x="247" y="310" width="17" height="9" fill="var(--s1)" fill-opacity="1.00"/>
+<rect x="264" y="310" width="17" height="9" fill="var(--s1)" fill-opacity="0.01"/>
+<rect x="281" y="310" width="17" height="9" fill="var(--s1)" fill-opacity="1.00"/>
+<rect x="298" y="310" width="17" height="9" fill="var(--s1)" fill-opacity="0.00"/>
+<rect x="315" y="310" width="17" height="9" fill="var(--s1)" fill-opacity="1.00"/>
+<rect x="60" y="319" width="17" height="9" fill="var(--s2)" fill-opacity="1.00"/>
+<rect x="77" y="319" width="17" height="9" fill="var(--s1)" fill-opacity="0.00"/>
+<rect x="94" y="319" width="17" height="9" fill="var(--s2)" fill-opacity="0.33"/>
+<rect x="111" y="319" width="17" height="9" fill="var(--s2)" fill-opacity="0.94"/>
+<rect x="128" y="319" width="17" height="9" fill="var(--s1)" fill-opacity="0.89"/>
+<rect x="145" y="319" width="17" height="9" fill="var(--s1)" fill-opacity="0.45"/>
+<rect x="162" y="319" width="17" height="9" fill="var(--s1)" fill-opacity="0.34"/>
+<rect x="179" y="319" width="17" height="9" fill="var(--s1)" fill-opacity="0.94"/>
+<rect x="196" y="319" width="17" height="9" fill="var(--s1)" fill-opacity="0.11"/>
+<rect x="213" y="319" width="17" height="9" fill="var(--s1)" fill-opacity="0.99"/>
+<rect x="230" y="319" width="17" height="9" fill="var(--s1)" fill-opacity="0.03"/>
+<rect x="247" y="319" width="17" height="9" fill="var(--s1)" fill-opacity="1.00"/>
+<rect x="264" y="319" width="17" height="9" fill="var(--s1)" fill-opacity="0.01"/>
+<rect x="281" y="319" width="17" height="9" fill="var(--s1)" fill-opacity="1.00"/>
+<rect x="298" y="319" width="17" height="9" fill="var(--s1)" fill-opacity="0.00"/>
+<rect x="315" y="319" width="17" height="9" fill="var(--s1)" fill-opacity="1.00"/>
+<rect x="60" y="328" width="17" height="9" fill="var(--s2)" fill-opacity="0.54"/>
+<rect x="77" y="328" width="17" height="9" fill="var(--s1)" fill-opacity="0.84"/>
+<rect x="94" y="328" width="17" height="9" fill="var(--s2)" fill-opacity="0.61"/>
+<rect x="111" y="328" width="17" height="9" fill="var(--s2)" fill-opacity="0.79"/>
+<rect x="128" y="328" width="17" height="9" fill="var(--s1)" fill-opacity="0.93"/>
+<rect x="145" y="328" width="17" height="9" fill="var(--s1)" fill-opacity="0.36"/>
+<rect x="162" y="328" width="17" height="9" fill="var(--s1)" fill-opacity="0.37"/>
+<rect x="179" y="328" width="17" height="9" fill="var(--s1)" fill-opacity="0.93"/>
+<rect x="196" y="328" width="17" height="9" fill="var(--s1)" fill-opacity="0.12"/>
+<rect x="213" y="328" width="17" height="9" fill="var(--s1)" fill-opacity="0.99"/>
+<rect x="230" y="328" width="17" height="9" fill="var(--s1)" fill-opacity="0.04"/>
+<rect x="247" y="328" width="17" height="9" fill="var(--s1)" fill-opacity="1.00"/>
+<rect x="264" y="328" width="17" height="9" fill="var(--s1)" fill-opacity="0.01"/>
+<rect x="281" y="328" width="17" height="9" fill="var(--s1)" fill-opacity="1.00"/>
+<rect x="298" y="328" width="17" height="9" fill="var(--s1)" fill-opacity="0.00"/>
+<rect x="315" y="328" width="17" height="9" fill="var(--s1)" fill-opacity="1.00"/>
+<rect x="60" y="337" width="17" height="9" fill="var(--s1)" fill-opacity="0.42"/>
+<rect x="77" y="337" width="17" height="9" fill="var(--s1)" fill-opacity="0.91"/>
+<rect x="94" y="337" width="17" height="9" fill="var(--s2)" fill-opacity="0.82"/>
+<rect x="111" y="337" width="17" height="9" fill="var(--s2)" fill-opacity="0.57"/>
+<rect x="128" y="337" width="17" height="9" fill="var(--s1)" fill-opacity="0.96"/>
+<rect x="145" y="337" width="17" height="9" fill="var(--s1)" fill-opacity="0.27"/>
+<rect x="162" y="337" width="17" height="9" fill="var(--s1)" fill-opacity="0.40"/>
+<rect x="179" y="337" width="17" height="9" fill="var(--s1)" fill-opacity="0.92"/>
+<rect x="196" y="337" width="17" height="9" fill="var(--s1)" fill-opacity="0.13"/>
+<rect x="213" y="337" width="17" height="9" fill="var(--s1)" fill-opacity="0.99"/>
+<rect x="230" y="337" width="17" height="9" fill="var(--s1)" fill-opacity="0.04"/>
+<rect x="247" y="337" width="17" height="9" fill="var(--s1)" fill-opacity="1.00"/>
+<rect x="264" y="337" width="17" height="9" fill="var(--s1)" fill-opacity="0.01"/>
+<rect x="281" y="337" width="17" height="9" fill="var(--s1)" fill-opacity="1.00"/>
+<rect x="298" y="337" width="17" height="9" fill="var(--s1)" fill-opacity="0.00"/>
+<rect x="315" y="337" width="17" height="9" fill="var(--s1)" fill-opacity="1.00"/>
+<rect x="60" y="346" width="17" height="9" fill="var(--s1)" fill-opacity="0.99"/>
+<rect x="77" y="346" width="17" height="9" fill="var(--s1)" fill-opacity="0.14"/>
+<rect x="94" y="346" width="17" height="9" fill="var(--s2)" fill-opacity="0.96"/>
+<rect x="111" y="346" width="17" height="9" fill="var(--s2)" fill-opacity="0.28"/>
+<rect x="128" y="346" width="17" height="9" fill="var(--s1)" fill-opacity="0.99"/>
+<rect x="145" y="346" width="17" height="9" fill="var(--s1)" fill-opacity="0.17"/>
+<rect x="162" y="346" width="17" height="9" fill="var(--s1)" fill-opacity="0.43"/>
+<rect x="179" y="346" width="17" height="9" fill="var(--s1)" fill-opacity="0.90"/>
+<rect x="196" y="346" width="17" height="9" fill="var(--s1)" fill-opacity="0.14"/>
+<rect x="213" y="346" width="17" height="9" fill="var(--s1)" fill-opacity="0.99"/>
+<rect x="230" y="346" width="17" height="9" fill="var(--s1)" fill-opacity="0.04"/>
+<rect x="247" y="346" width="17" height="9" fill="var(--s1)" fill-opacity="1.00"/>
+<rect x="264" y="346" width="17" height="9" fill="var(--s1)" fill-opacity="0.01"/>
+<rect x="281" y="346" width="17" height="9" fill="var(--s1)" fill-opacity="1.00"/>
+<rect x="298" y="346" width="17" height="9" fill="var(--s1)" fill-opacity="0.00"/>
+<rect x="315" y="346" width="17" height="9" fill="var(--s1)" fill-opacity="1.00"/>
+<rect x="60" y="355" width="17" height="9" fill="var(--s1)" fill-opacity="0.65"/>
+<rect x="77" y="355" width="17" height="9" fill="var(--s2)" fill-opacity="0.76"/>
+<rect x="94" y="355" width="17" height="9" fill="var(--s2)" fill-opacity="1.00"/>
+<rect x="111" y="355" width="17" height="9" fill="var(--s1)" fill-opacity="0.03"/>
+<rect x="128" y="355" width="17" height="9" fill="var(--s1)" fill-opacity="1.00"/>
+<rect x="145" y="355" width="17" height="9" fill="var(--s1)" fill-opacity="0.07"/>
+<rect x="162" y="355" width="17" height="9" fill="var(--s1)" fill-opacity="0.46"/>
+<rect x="179" y="355" width="17" height="9" fill="var(--s1)" fill-opacity="0.89"/>
+<rect x="196" y="355" width="17" height="9" fill="var(--s1)" fill-opacity="0.15"/>
+<rect x="213" y="355" width="17" height="9" fill="var(--s1)" fill-opacity="0.99"/>
+<rect x="230" y="355" width="17" height="9" fill="var(--s1)" fill-opacity="0.05"/>
+<rect x="247" y="355" width="17" height="9" fill="var(--s1)" fill-opacity="1.00"/>
+<rect x="264" y="355" width="17" height="9" fill="var(--s1)" fill-opacity="0.01"/>
+<rect x="281" y="355" width="17" height="9" fill="var(--s1)" fill-opacity="1.00"/>
+<rect x="298" y="355" width="17" height="9" fill="var(--s1)" fill-opacity="0.00"/>
+<rect x="315" y="355" width="17" height="9" fill="var(--s1)" fill-opacity="1.00"/>
+<rect x="60" y="364" width="17" height="9" fill="var(--s2)" fill-opacity="0.29"/>
+<rect x="77" y="364" width="17" height="9" fill="var(--s2)" fill-opacity="0.96"/>
+<rect x="94" y="364" width="17" height="9" fill="var(--s2)" fill-opacity="0.94"/>
+<rect x="111" y="364" width="17" height="9" fill="var(--s1)" fill-opacity="0.34"/>
+<rect x="128" y="364" width="17" height="9" fill="var(--s1)" fill-opacity="1.00"/>
+<rect x="145" y="364" width="17" height="9" fill="var(--s2)" fill-opacity="0.03"/>
+<rect x="162" y="364" width="17" height="9" fill="var(--s1)" fill-opacity="0.48"/>
+<rect x="179" y="364" width="17" height="9" fill="var(--s1)" fill-opacity="0.87"/>
+<rect x="196" y="364" width="17" height="9" fill="var(--s1)" fill-opacity="0.16"/>
+<rect x="213" y="364" width="17" height="9" fill="var(--s1)" fill-opacity="0.99"/>
+<rect x="230" y="364" width="17" height="9" fill="var(--s1)" fill-opacity="0.05"/>
+<rect x="247" y="364" width="17" height="9" fill="var(--s1)" fill-opacity="1.00"/>
+<rect x="264" y="364" width="17" height="9" fill="var(--s1)" fill-opacity="0.02"/>
+<rect x="281" y="364" width="17" height="9" fill="var(--s1)" fill-opacity="1.00"/>
+<rect x="298" y="364" width="17" height="9" fill="var(--s1)" fill-opacity="0.01"/>
+<rect x="315" y="364" width="17" height="9" fill="var(--s1)" fill-opacity="1.00"/>
+<rect x="60" y="373" width="17" height="9" fill="var(--s2)" fill-opacity="0.96"/>
+<rect x="77" y="373" width="17" height="9" fill="var(--s2)" fill-opacity="0.28"/>
+<rect x="94" y="373" width="17" height="9" fill="var(--s2)" fill-opacity="0.79"/>
+<rect x="111" y="373" width="17" height="9" fill="var(--s1)" fill-opacity="0.62"/>
+<rect x="128" y="373" width="17" height="9" fill="var(--s1)" fill-opacity="0.99"/>
+<rect x="145" y="373" width="17" height="9" fill="var(--s2)" fill-opacity="0.13"/>
+<rect x="162" y="373" width="17" height="9" fill="var(--s1)" fill-opacity="0.51"/>
+<rect x="179" y="373" width="17" height="9" fill="var(--s1)" fill-opacity="0.86"/>
+<rect x="196" y="373" width="17" height="9" fill="var(--s1)" fill-opacity="0.17"/>
+<rect x="213" y="373" width="17" height="9" fill="var(--s1)" fill-opacity="0.99"/>
+<rect x="230" y="373" width="17" height="9" fill="var(--s1)" fill-opacity="0.05"/>
+<rect x="247" y="373" width="17" height="9" fill="var(--s1)" fill-opacity="1.00"/>
+<rect x="264" y="373" width="17" height="9" fill="var(--s1)" fill-opacity="0.02"/>
+<rect x="281" y="373" width="17" height="9" fill="var(--s1)" fill-opacity="1.00"/>
+<rect x="298" y="373" width="17" height="9" fill="var(--s1)" fill-opacity="0.01"/>
+<rect x="315" y="373" width="17" height="9" fill="var(--s1)" fill-opacity="1.00"/>
+<rect x="60" y="382" width="17" height="9" fill="var(--s2)" fill-opacity="0.75"/>
+<rect x="77" y="382" width="17" height="9" fill="var(--s1)" fill-opacity="0.66"/>
+<rect x="94" y="382" width="17" height="9" fill="var(--s2)" fill-opacity="0.56"/>
+<rect x="111" y="382" width="17" height="9" fill="var(--s1)" fill-opacity="0.83"/>
+<rect x="128" y="382" width="17" height="9" fill="var(--s1)" fill-opacity="0.97"/>
+<rect x="145" y="382" width="17" height="9" fill="var(--s2)" fill-opacity="0.23"/>
+<rect x="162" y="382" width="17" height="9" fill="var(--s1)" fill-opacity="0.54"/>
+<rect x="179" y="382" width="17" height="9" fill="var(--s1)" fill-opacity="0.84"/>
+<rect x="196" y="382" width="17" height="9" fill="var(--s1)" fill-opacity="0.18"/>
+<rect x="213" y="382" width="17" height="9" fill="var(--s1)" fill-opacity="0.98"/>
+<rect x="230" y="382" width="17" height="9" fill="var(--s1)" fill-opacity="0.06"/>
+<rect x="247" y="382" width="17" height="9" fill="var(--s1)" fill-opacity="1.00"/>
+<rect x="264" y="382" width="17" height="9" fill="var(--s1)" fill-opacity="0.02"/>
+<rect x="281" y="382" width="17" height="9" fill="var(--s1)" fill-opacity="1.00"/>
+<rect x="298" y="382" width="17" height="9" fill="var(--s1)" fill-opacity="0.01"/>
+<rect x="315" y="382" width="17" height="9" fill="var(--s1)" fill-opacity="1.00"/>
+<rect x="60" y="391" width="17" height="9" fill="var(--s1)" fill-opacity="0.15"/>
+<rect x="77" y="391" width="17" height="9" fill="var(--s1)" fill-opacity="0.99"/>
+<rect x="94" y="391" width="17" height="9" fill="var(--s2)" fill-opacity="0.27"/>
+<rect x="111" y="391" width="17" height="9" fill="var(--s1)" fill-opacity="0.96"/>
+<rect x="128" y="391" width="17" height="9" fill="var(--s1)" fill-opacity="0.95"/>
+<rect x="145" y="391" width="17" height="9" fill="var(--s2)" fill-opacity="0.32"/>
+<rect x="162" y="391" width="17" height="9" fill="var(--s1)" fill-opacity="0.57"/>
+<rect x="179" y="391" width="17" height="9" fill="var(--s1)" fill-opacity="0.82"/>
+<rect x="196" y="391" width="17" height="9" fill="var(--s1)" fill-opacity="0.19"/>
+<rect x="213" y="391" width="17" height="9" fill="var(--s1)" fill-opacity="0.98"/>
+<rect x="230" y="391" width="17" height="9" fill="var(--s1)" fill-opacity="0.06"/>
+<rect x="247" y="391" width="17" height="9" fill="var(--s1)" fill-opacity="1.00"/>
+<rect x="264" y="391" width="17" height="9" fill="var(--s1)" fill-opacity="0.02"/>
+<rect x="281" y="391" width="17" height="9" fill="var(--s1)" fill-opacity="1.00"/>
+<rect x="298" y="391" width="17" height="9" fill="var(--s1)" fill-opacity="0.01"/>
+<rect x="315" y="391" width="17" height="9" fill="var(--s1)" fill-opacity="1.00"/>
+<rect x="60" y="400" width="17" height="9" fill="var(--s1)" fill-opacity="0.91"/>
+<rect x="77" y="400" width="17" height="9" fill="var(--s1)" fill-opacity="0.41"/>
+<rect x="94" y="400" width="17" height="9" fill="var(--s1)" fill-opacity="0.04"/>
+<rect x="111" y="400" width="17" height="9" fill="var(--s1)" fill-opacity="1.00"/>
+<rect x="128" y="400" width="17" height="9" fill="var(--s1)" fill-opacity="0.91"/>
+<rect x="145" y="400" width="17" height="9" fill="var(--s2)" fill-opacity="0.42"/>
+<rect x="162" y="400" width="17" height="9" fill="var(--s1)" fill-opacity="0.59"/>
+<rect x="179" y="400" width="17" height="9" fill="var(--s1)" fill-opacity="0.81"/>
+<rect x="196" y="400" width="17" height="9" fill="var(--s1)" fill-opacity="0.20"/>
+<rect x="213" y="400" width="17" height="9" fill="var(--s1)" fill-opacity="0.98"/>
+<rect x="230" y="400" width="17" height="9" fill="var(--s1)" fill-opacity="0.06"/>
+<rect x="247" y="400" width="17" height="9" fill="var(--s1)" fill-opacity="1.00"/>
+<rect x="264" y="400" width="17" height="9" fill="var(--s1)" fill-opacity="0.02"/>
+<rect x="281" y="400" width="17" height="9" fill="var(--s1)" fill-opacity="1.00"/>
+<rect x="298" y="400" width="17" height="9" fill="var(--s1)" fill-opacity="0.01"/>
+<rect x="315" y="400" width="17" height="9" fill="var(--s1)" fill-opacity="1.00"/>
+<rect x="60" y="409" width="17" height="9" fill="var(--s1)" fill-opacity="0.84"/>
+<rect x="77" y="409" width="17" height="9" fill="var(--s2)" fill-opacity="0.55"/>
+<rect x="94" y="409" width="17" height="9" fill="var(--s1)" fill-opacity="0.35"/>
+<rect x="111" y="409" width="17" height="9" fill="var(--s1)" fill-opacity="0.94"/>
+<rect x="128" y="409" width="17" height="9" fill="var(--s1)" fill-opacity="0.86"/>
+<rect x="145" y="409" width="17" height="9" fill="var(--s2)" fill-opacity="0.50"/>
+<rect x="162" y="409" width="17" height="9" fill="var(--s1)" fill-opacity="0.62"/>
+<rect x="179" y="409" width="17" height="9" fill="var(--s1)" fill-opacity="0.79"/>
+<rect x="196" y="409" width="17" height="9" fill="var(--s1)" fill-opacity="0.21"/>
+<rect x="213" y="409" width="17" height="9" fill="var(--s1)" fill-opacity="0.98"/>
+<rect x="230" y="409" width="17" height="9" fill="var(--s1)" fill-opacity="0.07"/>
+<rect x="247" y="409" width="17" height="9" fill="var(--s1)" fill-opacity="1.00"/>
+<rect x="264" y="409" width="17" height="9" fill="var(--s1)" fill-opacity="0.02"/>
+<rect x="281" y="409" width="17" height="9" fill="var(--s1)" fill-opacity="1.00"/>
+<rect x="298" y="409" width="17" height="9" fill="var(--s1)" fill-opacity="0.01"/>
+<rect x="315" y="409" width="17" height="9" fill="var(--s1)" fill-opacity="1.00"/>
+<rect x="60" y="418" width="17" height="9" fill="var(--s2)" fill-opacity="0.01"/>
+<rect x="77" y="418" width="17" height="9" fill="var(--s2)" fill-opacity="1.00"/>
+<rect x="94" y="418" width="17" height="9" fill="var(--s1)" fill-opacity="0.62"/>
+<rect x="111" y="418" width="17" height="9" fill="var(--s1)" fill-opacity="0.78"/>
+<rect x="128" y="418" width="17" height="9" fill="var(--s1)" fill-opacity="0.81"/>
+<rect x="145" y="418" width="17" height="9" fill="var(--s2)" fill-opacity="0.59"/>
+<rect x="162" y="418" width="17" height="9" fill="var(--s1)" fill-opacity="0.64"/>
+<rect x="179" y="418" width="17" height="9" fill="var(--s1)" fill-opacity="0.77"/>
+<rect x="196" y="418" width="17" height="9" fill="var(--s1)" fill-opacity="0.22"/>
+<rect x="213" y="418" width="17" height="9" fill="var(--s1)" fill-opacity="0.98"/>
+<rect x="230" y="418" width="17" height="9" fill="var(--s1)" fill-opacity="0.07"/>
+<rect x="247" y="418" width="17" height="9" fill="var(--s1)" fill-opacity="1.00"/>
+<rect x="264" y="418" width="17" height="9" fill="var(--s1)" fill-opacity="0.02"/>
+<rect x="281" y="418" width="17" height="9" fill="var(--s1)" fill-opacity="1.00"/>
+<rect x="298" y="418" width="17" height="9" fill="var(--s1)" fill-opacity="0.01"/>
+<rect x="315" y="418" width="17" height="9" fill="var(--s1)" fill-opacity="1.00"/>
+<rect x="60" y="427" width="17" height="9" fill="var(--s2)" fill-opacity="0.85"/>
+<rect x="77" y="427" width="17" height="9" fill="var(--s2)" fill-opacity="0.53"/>
+<rect x="94" y="427" width="17" height="9" fill="var(--s1)" fill-opacity="0.84"/>
+<rect x="111" y="427" width="17" height="9" fill="var(--s1)" fill-opacity="0.55"/>
+<rect x="128" y="427" width="17" height="9" fill="var(--s1)" fill-opacity="0.75"/>
+<rect x="145" y="427" width="17" height="9" fill="var(--s2)" fill-opacity="0.67"/>
+<rect x="162" y="427" width="17" height="9" fill="var(--s1)" fill-opacity="0.66"/>
+<rect x="179" y="427" width="17" height="9" fill="var(--s1)" fill-opacity="0.75"/>
+<rect x="196" y="427" width="17" height="9" fill="var(--s1)" fill-opacity="0.23"/>
+<rect x="213" y="427" width="17" height="9" fill="var(--s1)" fill-opacity="0.97"/>
+<rect x="230" y="427" width="17" height="9" fill="var(--s1)" fill-opacity="0.07"/>
+<rect x="247" y="427" width="17" height="9" fill="var(--s1)" fill-opacity="1.00"/>
+<rect x="264" y="427" width="17" height="9" fill="var(--s1)" fill-opacity="0.02"/>
+<rect x="281" y="427" width="17" height="9" fill="var(--s1)" fill-opacity="1.00"/>
+<rect x="298" y="427" width="17" height="9" fill="var(--s1)" fill-opacity="0.01"/>
+<rect x="315" y="427" width="17" height="9" fill="var(--s1)" fill-opacity="1.00"/>
+<rect x="60" y="436" width="17" height="9" fill="var(--s2)" fill-opacity="0.91"/>
+<rect x="77" y="436" width="17" height="9" fill="var(--s1)" fill-opacity="0.42"/>
+<rect x="94" y="436" width="17" height="9" fill="var(--s1)" fill-opacity="0.97"/>
+<rect x="111" y="436" width="17" height="9" fill="var(--s1)" fill-opacity="0.26"/>
+<rect x="128" y="436" width="17" height="9" fill="var(--s1)" fill-opacity="0.68"/>
+<rect x="145" y="436" width="17" height="9" fill="var(--s2)" fill-opacity="0.74"/>
+<rect x="162" y="436" width="17" height="9" fill="var(--s1)" fill-opacity="0.69"/>
+<rect x="179" y="436" width="17" height="9" fill="var(--s1)" fill-opacity="0.73"/>
+<rect x="196" y="436" width="17" height="9" fill="var(--s1)" fill-opacity="0.24"/>
+<rect x="213" y="436" width="17" height="9" fill="var(--s1)" fill-opacity="0.97"/>
+<rect x="230" y="436" width="17" height="9" fill="var(--s1)" fill-opacity="0.08"/>
+<rect x="247" y="436" width="17" height="9" fill="var(--s1)" fill-opacity="1.00"/>
+<rect x="264" y="436" width="17" height="9" fill="var(--s1)" fill-opacity="0.02"/>
+<rect x="281" y="436" width="17" height="9" fill="var(--s1)" fill-opacity="1.00"/>
+<rect x="298" y="436" width="17" height="9" fill="var(--s1)" fill-opacity="0.01"/>
+<rect x="315" y="436" width="17" height="9" fill="var(--s1)" fill-opacity="1.00"/>
+<rect x="60" y="445" width="17" height="9" fill="var(--s2)" fill-opacity="0.13"/>
+<rect x="77" y="445" width="17" height="9" fill="var(--s1)" fill-opacity="0.99"/>
+<rect x="94" y="445" width="17" height="9" fill="var(--s1)" fill-opacity="1.00"/>
+<rect x="111" y="445" width="17" height="9" fill="var(--s2)" fill-opacity="0.05"/>
+<rect x="128" y="445" width="17" height="9" fill="var(--s1)" fill-opacity="0.60"/>
+<rect x="145" y="445" width="17" height="9" fill="var(--s2)" fill-opacity="0.80"/>
+<rect x="162" y="445" width="17" height="9" fill="var(--s1)" fill-opacity="0.71"/>
+<rect x="179" y="445" width="17" height="9" fill="var(--s1)" fill-opacity="0.70"/>
+<rect x="196" y="445" width="17" height="9" fill="var(--s1)" fill-opacity="0.25"/>
+<rect x="213" y="445" width="17" height="9" fill="var(--s1)" fill-opacity="0.97"/>
+<rect x="230" y="445" width="17" height="9" fill="var(--s1)" fill-opacity="0.08"/>
+<rect x="247" y="445" width="17" height="9" fill="var(--s1)" fill-opacity="1.00"/>
+<rect x="264" y="445" width="17" height="9" fill="var(--s1)" fill-opacity="0.02"/>
+<rect x="281" y="445" width="17" height="9" fill="var(--s1)" fill-opacity="1.00"/>
+<rect x="298" y="445" width="17" height="9" fill="var(--s1)" fill-opacity="0.01"/>
+<rect x="315" y="445" width="17" height="9" fill="var(--s1)" fill-opacity="1.00"/>
+<rect x="60" y="454" width="17" height="9" fill="var(--s1)" fill-opacity="0.76"/>
+<rect x="77" y="454" width="17" height="9" fill="var(--s1)" fill-opacity="0.65"/>
+<rect x="94" y="454" width="17" height="9" fill="var(--s1)" fill-opacity="0.93"/>
+<rect x="111" y="454" width="17" height="9" fill="var(--s2)" fill-opacity="0.36"/>
+<rect x="128" y="454" width="17" height="9" fill="var(--s1)" fill-opacity="0.52"/>
+<rect x="145" y="454" width="17" height="9" fill="var(--s2)" fill-opacity="0.86"/>
+<rect x="162" y="454" width="17" height="9" fill="var(--s1)" fill-opacity="0.73"/>
+<rect x="179" y="454" width="17" height="9" fill="var(--s1)" fill-opacity="0.68"/>
+<rect x="196" y="454" width="17" height="9" fill="var(--s1)" fill-opacity="0.26"/>
+<rect x="213" y="454" width="17" height="9" fill="var(--s1)" fill-opacity="0.97"/>
+<rect x="230" y="454" width="17" height="9" fill="var(--s1)" fill-opacity="0.08"/>
+<rect x="247" y="454" width="17" height="9" fill="var(--s1)" fill-opacity="1.00"/>
+<rect x="264" y="454" width="17" height="9" fill="var(--s1)" fill-opacity="0.03"/>
+<rect x="281" y="454" width="17" height="9" fill="var(--s1)" fill-opacity="1.00"/>
+<rect x="298" y="454" width="17" height="9" fill="var(--s1)" fill-opacity="0.01"/>
+<rect x="315" y="454" width="17" height="9" fill="var(--s1)" fill-opacity="1.00"/>
+<rect x="60" y="463" width="17" height="9" fill="var(--s1)" fill-opacity="0.96"/>
+<rect x="77" y="463" width="17" height="9" fill="var(--s2)" fill-opacity="0.29"/>
+<rect x="94" y="463" width="17" height="9" fill="var(--s1)" fill-opacity="0.77"/>
+<rect x="111" y="463" width="17" height="9" fill="var(--s2)" fill-opacity="0.63"/>
+<rect x="128" y="463" width="17" height="9" fill="var(--s1)" fill-opacity="0.43"/>
+<rect x="145" y="463" width="17" height="9" fill="var(--s2)" fill-opacity="0.90"/>
+<rect x="162" y="463" width="17" height="9" fill="var(--s1)" fill-opacity="0.75"/>
+<rect x="179" y="463" width="17" height="9" fill="var(--s1)" fill-opacity="0.66"/>
+<rect x="196" y="463" width="17" height="9" fill="var(--s1)" fill-opacity="0.27"/>
+<rect x="213" y="463" width="17" height="9" fill="var(--s1)" fill-opacity="0.96"/>
+<rect x="230" y="463" width="17" height="9" fill="var(--s1)" fill-opacity="0.09"/>
+<rect x="247" y="463" width="17" height="9" fill="var(--s1)" fill-opacity="1.00"/>
+<rect x="264" y="463" width="17" height="9" fill="var(--s1)" fill-opacity="0.03"/>
+<rect x="281" y="463" width="17" height="9" fill="var(--s1)" fill-opacity="1.00"/>
+<rect x="298" y="463" width="17" height="9" fill="var(--s1)" fill-opacity="0.01"/>
+<rect x="315" y="463" width="17" height="9" fill="var(--s1)" fill-opacity="1.00"/>
+<rect x="60" y="472" width="17" height="9" fill="var(--s1)" fill-opacity="0.27"/>
+<rect x="77" y="472" width="17" height="9" fill="var(--s2)" fill-opacity="0.96"/>
+<rect x="94" y="472" width="17" height="9" fill="var(--s1)" fill-opacity="0.54"/>
+<rect x="111" y="472" width="17" height="9" fill="var(--s2)" fill-opacity="0.84"/>
+<rect x="128" y="472" width="17" height="9" fill="var(--s1)" fill-opacity="0.33"/>
+<rect x="145" y="472" width="17" height="9" fill="var(--s2)" fill-opacity="0.94"/>
+<rect x="162" y="472" width="17" height="9" fill="var(--s1)" fill-opacity="0.77"/>
+<rect x="179" y="472" width="17" height="9" fill="var(--s1)" fill-opacity="0.63"/>
+<rect x="196" y="472" width="17" height="9" fill="var(--s1)" fill-opacity="0.28"/>
+<rect x="213" y="472" width="17" height="9" fill="var(--s1)" fill-opacity="0.96"/>
+<rect x="230" y="472" width="17" height="9" fill="var(--s1)" fill-opacity="0.09"/>
+<rect x="247" y="472" width="17" height="9" fill="var(--s1)" fill-opacity="1.00"/>
+<rect x="264" y="472" width="17" height="9" fill="var(--s1)" fill-opacity="0.03"/>
+<rect x="281" y="472" width="17" height="9" fill="var(--s1)" fill-opacity="1.00"/>
+<rect x="298" y="472" width="17" height="9" fill="var(--s1)" fill-opacity="0.01"/>
+<rect x="315" y="472" width="17" height="9" fill="var(--s1)" fill-opacity="1.00"/>
+<rect x="60" y="481" width="17" height="9" fill="var(--s2)" fill-opacity="0.66"/>
+<rect x="77" y="481" width="17" height="9" fill="var(--s2)" fill-opacity="0.75"/>
+<rect x="94" y="481" width="17" height="9" fill="var(--s1)" fill-opacity="0.25"/>
+<rect x="111" y="481" width="17" height="9" fill="var(--s2)" fill-opacity="0.97"/>
+<rect x="128" y="481" width="17" height="9" fill="var(--s1)" fill-opacity="0.24"/>
+<rect x="145" y="481" width="17" height="9" fill="var(--s2)" fill-opacity="0.97"/>
+<rect x="162" y="481" width="17" height="9" fill="var(--s1)" fill-opacity="0.79"/>
+<rect x="179" y="481" width="17" height="9" fill="var(--s1)" fill-opacity="0.61"/>
+<rect x="196" y="481" width="17" height="9" fill="var(--s1)" fill-opacity="0.29"/>
+<rect x="213" y="481" width="17" height="9" fill="var(--s1)" fill-opacity="0.96"/>
+<rect x="230" y="481" width="17" height="9" fill="var(--s1)" fill-opacity="0.09"/>
+<rect x="247" y="481" width="17" height="9" fill="var(--s1)" fill-opacity="1.00"/>
+<rect x="264" y="481" width="17" height="9" fill="var(--s1)" fill-opacity="0.03"/>
+<rect x="281" y="481" width="17" height="9" fill="var(--s1)" fill-opacity="1.00"/>
+<rect x="298" y="481" width="17" height="9" fill="var(--s1)" fill-opacity="0.01"/>
+<rect x="315" y="481" width="17" height="9" fill="var(--s1)" fill-opacity="1.00"/>
+<rect x="60" y="490" width="17" height="9" fill="var(--s2)" fill-opacity="0.99"/>
+<rect x="77" y="490" width="17" height="9" fill="var(--s1)" fill-opacity="0.15"/>
+<rect x="94" y="490" width="17" height="9" fill="var(--s2)" fill-opacity="0.06"/>
+<rect x="111" y="490" width="17" height="9" fill="var(--s2)" fill-opacity="1.00"/>
+<rect x="128" y="490" width="17" height="9" fill="var(--s1)" fill-opacity="0.14"/>
+<rect x="145" y="490" width="17" height="9" fill="var(--s2)" fill-opacity="0.99"/>
+<rect x="162" y="490" width="17" height="9" fill="var(--s1)" fill-opacity="0.81"/>
+<rect x="179" y="490" width="17" height="9" fill="var(--s1)" fill-opacity="0.58"/>
+<rect x="196" y="490" width="17" height="9" fill="var(--s1)" fill-opacity="0.30"/>
+<rect x="213" y="490" width="17" height="9" fill="var(--s1)" fill-opacity="0.96"/>
+<rect x="230" y="490" width="17" height="9" fill="var(--s1)" fill-opacity="0.09"/>
+<rect x="247" y="490" width="17" height="9" fill="var(--s1)" fill-opacity="1.00"/>
+<rect x="264" y="490" width="17" height="9" fill="var(--s1)" fill-opacity="0.03"/>
+<rect x="281" y="490" width="17" height="9" fill="var(--s1)" fill-opacity="1.00"/>
+<rect x="298" y="490" width="17" height="9" fill="var(--s1)" fill-opacity="0.01"/>
+<rect x="315" y="490" width="17" height="9" fill="var(--s1)" fill-opacity="1.00"/>
+<rect x="60" y="499" width="17" height="9" fill="var(--s2)" fill-opacity="0.40"/>
+<rect x="77" y="499" width="17" height="9" fill="var(--s1)" fill-opacity="0.91"/>
+<rect x="94" y="499" width="17" height="9" fill="var(--s2)" fill-opacity="0.37"/>
+<rect x="111" y="499" width="17" height="9" fill="var(--s2)" fill-opacity="0.93"/>
+<rect x="128" y="499" width="17" height="9" fill="var(--s1)" fill-opacity="0.04"/>
+<rect x="145" y="499" width="17" height="9" fill="var(--s2)" fill-opacity="1.00"/>
+<rect x="162" y="499" width="17" height="9" fill="var(--s1)" fill-opacity="0.83"/>
+<rect x="179" y="499" width="17" height="9" fill="var(--s1)" fill-opacity="0.56"/>
+<rect x="196" y="499" width="17" height="9" fill="var(--s1)" fill-opacity="0.31"/>
+<rect x="213" y="499" width="17" height="9" fill="var(--s1)" fill-opacity="0.95"/>
+<rect x="230" y="499" width="17" height="9" fill="var(--s1)" fill-opacity="0.10"/>
+<rect x="247" y="499" width="17" height="9" fill="var(--s1)" fill-opacity="1.00"/>
+<rect x="264" y="499" width="17" height="9" fill="var(--s1)" fill-opacity="0.03"/>
+<rect x="281" y="499" width="17" height="9" fill="var(--s1)" fill-opacity="1.00"/>
+<rect x="298" y="499" width="17" height="9" fill="var(--s1)" fill-opacity="0.01"/>
+<rect x="315" y="499" width="17" height="9" fill="var(--s1)" fill-opacity="1.00"/>
+<text x="54" y="228" text-anchor="end" class="lbl" font-size="10">0</text>
+<text x="54" y="300" text-anchor="end" class="lbl" font-size="10">8</text>
+<text x="54" y="372" text-anchor="end" class="lbl" font-size="10">16</text>
+<text x="54" y="444" text-anchor="end" class="lbl" font-size="10">24</text>
+<text x="54" y="507" text-anchor="end" class="lbl" font-size="10">31</text>
+<text x="342" y="234" class="lbl" font-size="11">Read a row = the vector added</text>
+<text x="342" y="250" class="lbl" font-size="11">to the token at that position.</text>
+<text x="342" y="274" class="lbl" font-size="11">Left columns flip fast (fine</text>
+<text x="342" y="290" class="lbl" font-size="11">position), right columns slowly</text>
+<text x="342" y="306" class="lbl" font-size="11">(coarse position) — like the</text>
+<text x="342" y="322" class="lbl" font-size="11">bits of a binary counter.</text>
+<text x="342" y="346" class="lbl" font-size="11">Nearby positions get similar</text>
+<text x="342" y="362" class="lbl" font-size="11">rows; PE(p+k) is a fixed linear</text>
+<text x="342" y="378" class="lbl" font-size="11">function of PE(p).</text>
+<text x="196.0" y="524" text-anchor="middle" class="lbl" font-size="11">dimension 0 → 15</text></svg>
+<figcaption><strong>Figure 18.7 — Position as a pattern of waves.</strong> Fast dimensions distinguish neighbours; slow dimensions distinguish paragraphs. Any two positions get a unique row, adjacent positions get similar rows, and a fixed offset is a fixed rotation in every (sin, cos) pair. The vector is simply <em>added</em> to the token embedding before the first block.</figcaption>
+</figure>
+
+<div class="widget" id="w-pe">
+  <div class="w-title">Interactive: positional-encoding visualizer</div>
+  <div class="controls">
+    <label>Position <input type="range" id="pe-pos" min="0" max="100" value="0" data-out="pe-pos-out"> <output id="pe-pos-out"></output></label>
+    <span>Cosine similarity to position 0: <span class="readout" id="pe-sim">–</span></span>
+    <span>to position 50: <span class="readout" id="pe-sim50">–</span></span>
+  </div>
+  <svg viewBox="0 0 760 150" id="pe-svg" role="img" aria-label="The 32-dimensional sinusoidal positional vector for the chosen position drawn as a strip of colored cells"></svg>
+  <div class="note">Blue = positive, orange = negative, intensity = magnitude. Slide slowly: the leftmost cells flip every step, the rightmost barely move. Similarity to position 0 falls quickly then wobbles — nearby positions look alike, far ones do not, and no two positions share a vector.</div>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s7">7. The Transformer block</h2>
+
+<p>A Transformer is a stack of identical <strong>blocks</strong>. Each block does two things to every token: (1) let it gather context from other tokens with multi-head self-attention, and (2) let it think about what it gathered with a small feed-forward network applied to each position independently. Around each of those two sub-layers sit a <strong>residual connection</strong> (add the input back to the output, Chapter 17) and a <strong>layer normalization</strong> (Chapter 16), which together are what make it possible to stack 12, 48, or 100 blocks without the gradient pathologies of Section 2.</p>
+
+<figure class="fig">
+<svg viewBox="0 0 800 360" role="img" aria-label="One Transformer block: input embeddings plus positional encoding go through multi-head self-attention, an add and layer-norm with a residual skip, a position-wise feed-forward network, and another add and layer-norm; the block is repeated N times">
+  <defs><marker id="arr-f8" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+  <!-- main flow left to right -->
+  <rect x="20" y="130" width="100" height="70" class="box"/><text x="70" y="158" text-anchor="middle" class="lbl-strong">tokens</text><text x="70" y="176" text-anchor="middle" class="lbl" font-size="11">embed + PE</text><text x="70" y="190" text-anchor="middle" class="lbl" font-size="10">(n × d)</text>
+  <line x1="120" y1="165" x2="178" y2="165" class="arrow" marker-end="url(#arr-f8)"/>
+  <rect x="180" y="120" width="140" height="90" rx="8" fill="var(--s1)" fill-opacity=".14" stroke="var(--s1)" stroke-width="2"/>
+  <text x="250" y="152" text-anchor="middle" class="lbl-strong">Multi-head</text><text x="250" y="170" text-anchor="middle" class="lbl-strong">self-attention</text><text x="250" y="192" text-anchor="middle" class="lbl" font-size="11">tokens talk to each other</text>
+  <line x1="320" y1="165" x2="368" y2="165" class="arrow" marker-end="url(#arr-f8)"/>
+  <circle cx="386" cy="165" r="16" fill="var(--surface)" stroke="var(--s7)" stroke-width="2"/><text x="386" y="170" text-anchor="middle" class="lbl-strong" font-size="15">+</text>
+  <rect x="418" y="140" width="70" height="50" class="box"/><text x="453" y="162" text-anchor="middle" class="lbl-strong" font-size="11">Layer</text><text x="453" y="177" text-anchor="middle" class="lbl-strong" font-size="11">Norm</text>
+  <line x1="402" y1="165" x2="416" y2="165" class="arrow" marker-end="url(#arr-f8)"/>
+  <line x1="488" y1="165" x2="536" y2="165" class="arrow" marker-end="url(#arr-f8)"/>
+  <rect x="538" y="120" width="130" height="90" rx="8" fill="var(--s2)" fill-opacity=".14" stroke="var(--s2)" stroke-width="2"/>
+  <text x="603" y="152" text-anchor="middle" class="lbl-strong">Feed-forward</text><text x="603" y="170" text-anchor="middle" class="lbl" font-size="11">Linear(d→4d) · GELU</text><text x="603" y="186" text-anchor="middle" class="lbl" font-size="11">· Linear(4d→d)</text><text x="603" y="202" text-anchor="middle" class="lbl" font-size="10">same MLP at every position</text>
+  <line x1="668" y1="165" x2="700" y2="165" class="arrow" marker-end="url(#arr-f8)"/>
+  <circle cx="718" cy="165" r="16" fill="var(--surface)" stroke="var(--s7)" stroke-width="2"/><text x="718" y="170" text-anchor="middle" class="lbl-strong" font-size="15">+</text>
+  <line x1="734" y1="165" x2="760" y2="165" class="arrow" marker-end="url(#arr-f8)"/>
+  <rect x="740" y="215" width="50" height="0"/>
+  <text x="770" y="150" text-anchor="middle" class="lbl-strong" font-size="11">LN</text><text x="770" y="192" text-anchor="middle" class="lbl" font-size="10">out</text>
+  <!-- residual skips -->
+  <path d="M150,165 L150,70 L386,70 L386,149" fill="none" stroke="var(--s7)" stroke-width="2" stroke-dasharray="6 3" marker-end="url(#arr-f8)"/>
+  <text x="268" y="62" text-anchor="middle" class="lbl" font-size="11" fill="var(--s7)" font-weight="700">residual: x + Attention(x)</text>
+  <path d="M512,165 L512,70 L718,70 L718,149" fill="none" stroke="var(--s7)" stroke-width="2" stroke-dasharray="6 3" marker-end="url(#arr-f8)"/>
+  <text x="615" y="62" text-anchor="middle" class="lbl" font-size="11" fill="var(--s7)" font-weight="700">residual: x + FFN(x)</text>
+  <circle cx="150" cy="165" r="4" fill="var(--s7)"/><circle cx="512" cy="165" r="4" fill="var(--s7)"/>
+  <!-- repeat bracket -->
+  <rect x="170" y="100" width="580" height="130" rx="10" fill="none" stroke="var(--ink-3)" stroke-dasharray="4 4"/>
+  <text x="460" y="252" text-anchor="middle" class="lbl-strong" font-size="12">one block — repeat N times (BERT-base: 12, GPT-3: 96), each with its own weights</text>
+  <!-- shape note -->
+  <text x="400" y="290" text-anchor="middle" class="lbl" font-size="11">Shape in = shape out = (n tokens × d<tspan font-size="8" dy="3">model</tspan><tspan dy="-3">), so blocks stack freely. Only attention mixes across positions;</tspan></text>
+  <text x="400" y="308" text-anchor="middle" class="lbl" font-size="11">the FFN is where most parameters live (≈ 2/3 of each block) and where facts are thought to be stored.</text>
+  <text x="400" y="340" text-anchor="middle" class="lbl" font-size="11">Modern variants put LayerNorm <em>before</em> each sub-layer ("pre-norm"); it trains more stably at depth. Same idea.</text>
+</svg>
+<figcaption><strong>Figure 18.8 — The Transformer block: gather, then think, with an escape hatch.</strong> Attention mixes information across tokens; the feed-forward network processes each token on its own; the residual paths (violet) guarantee that every block starts from the identity and the gradient has a clean highway to the input. Stack N of these and you have BERT or GPT.</figcaption>
+</figure>
+
+<pre class="code" data-lang="python"><code><span class="cm"># A full Transformer encoder block from torch.nn, forward pass on random tokens</span>
+<span class="kw">import</span> torch, torch.nn <span class="kw">as</span> nn
+torch.manual_seed(<span class="nu">0</span>)
+
+vocab, d_model, seq_len, batch = <span class="nu">1000</span>, <span class="nu">64</span>, <span class="nu">12</span>, <span class="nu">4</span>
+tok_emb = nn.Embedding(vocab, d_model)                    <span class="cm"># token id -&gt; vector</span>
+pos_emb = nn.Embedding(seq_len, d_model)                  <span class="cm"># learned positional embedding</span>
+block = nn.TransformerEncoderLayer(d_model=d_model, nhead=<span class="nu">4</span>, dim_feedforward=<span class="nu">256</span>,
+                                   dropout=<span class="nu">0.0</span>, batch_first=<span class="kw">True</span>)
+stack = nn.TransformerEncoder(block, num_layers=<span class="nu">3</span>)        <span class="cm"># 3 identical blocks, separate weights</span>
+
+ids = torch.randint(<span class="nu">0</span>, vocab, (batch, seq_len))           <span class="cm"># (batch, seq)</span>
+x = tok_emb(ids) + pos_emb(torch.arange(seq_len))         <span class="cm"># (batch, seq, d_model)</span>
+<span class="fn">print</span>(<span class="st">"token ids :"</span>, <span class="fn">tuple</span>(ids.shape))
+<span class="fn">print</span>(<span class="st">"embeddings:"</span>, <span class="fn">tuple</span>(x.shape))
+y = stack(x)
+<span class="fn">print</span>(<span class="st">"output    :"</span>, <span class="fn">tuple</span>(y.shape))                      <span class="cm"># shape is preserved through every block</span>
+n = <span class="fn">sum</span>(p.numel() <span class="kw">for</span> p <span class="kw">in</span> stack.parameters())
+<span class="fn">print</span>(<span class="st">f"parameters in 3 blocks: {n:,}"</span>)
+<span class="out"># token ids : (4, 12)</span>
+<span class="out"># embeddings: (4, 12, 64)</span>
+<span class="out"># output    : (4, 12, 64)</span>
+<span class="out"># parameters in 3 blocks: 149,952</span></code></pre>
+
+<div class="callout key"><div class="title">Key idea</div>
+<p>Count the parameters: with d = 64 and a 4d feed-forward, each block has 4·64² ≈ 16k in attention and 2·64·256 ≈ 33k in the FFN (plus biases and norms) — about 50k, and the FFN is two-thirds of it. Scale d to 12,288 and N to 96 and you get GPT-3's 175 billion. The recipe never changed; only d, N, and the data did.</p>
+</div>
+
+<div class="callout warn"><div class="title">Common mistake</div>
+<p>Forgetting the positional encoding. <code>nn.TransformerEncoderLayer</code> does <em>not</em> add one for you. A model without it still trains and even reaches a decent loss on bag-of-words-like tasks, which hides the bug — until you notice it cannot tell "not good" from "good not".</p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s8">8. Encoder, decoder, or both?</h2>
+
+<p>The block in Figure 18.8 can be wired three ways, and the wiring decides what a model is good for. The only real difference between an "encoder" block and a "decoder" block is the <strong>mask</strong> applied to the attention scores.</p>
+
+<figure class="fig">
+<svg viewBox="0 0 820 380" role="img" aria-label="Three Transformer families: encoder-only with a full attention mask (every token sees every token), decoder-only with a causal lower-triangular mask (each token sees only earlier tokens), and encoder-decoder where the decoder additionally cross-attends to encoder outputs">
+  <defs><marker id="arr-f9" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+  <!-- encoder-only -->
+  <rect x="15" y="15" width="255" height="350" rx="10" class="fill-surface2" stroke="var(--s1)" stroke-width="2"/>
+  <text x="142" y="42" text-anchor="middle" class="lbl-strong" font-size="14">Encoder-only (BERT-like)</text>
+  <text x="142" y="60" text-anchor="middle" class="lbl" font-size="11">reads everything, both directions</text>
+  <g>
+    <text x="142" y="86" text-anchor="middle" class="lbl" font-size="10">attention mask (rows = query, cols = key)</text>
+    <g transform="translate(77,96)">
+      <g fill="var(--s1)" fill-opacity=".55">
+        <rect x="0" y="0" width="26" height="26"/><rect x="26" y="0" width="26" height="26"/><rect x="52" y="0" width="26" height="26"/><rect x="78" y="0" width="26" height="26"/><rect x="104" y="0" width="26" height="26"/>
+        <rect x="0" y="26" width="26" height="26"/><rect x="26" y="26" width="26" height="26"/><rect x="52" y="26" width="26" height="26"/><rect x="78" y="26" width="26" height="26"/><rect x="104" y="26" width="26" height="26"/>
+        <rect x="0" y="52" width="26" height="26"/><rect x="26" y="52" width="26" height="26"/><rect x="52" y="52" width="26" height="26"/><rect x="78" y="52" width="26" height="26"/><rect x="104" y="52" width="26" height="26"/>
+        <rect x="0" y="78" width="26" height="26"/><rect x="26" y="78" width="26" height="26"/><rect x="52" y="78" width="26" height="26"/><rect x="78" y="78" width="26" height="26"/><rect x="104" y="78" width="26" height="26"/>
+        <rect x="0" y="104" width="26" height="26"/><rect x="26" y="104" width="26" height="26"/><rect x="52" y="104" width="26" height="26"/><rect x="78" y="104" width="26" height="26"/><rect x="104" y="104" width="26" height="26"/>
+      </g>
+      <rect x="0" y="0" width="130" height="130" fill="none" stroke="var(--ink-3)"/>
+    </g>
+    <text x="142" y="246" text-anchor="middle" class="lbl" font-size="11">every token sees every token</text>
+    <text x="142" y="272" text-anchor="middle" class="lbl-strong" font-size="11">trained by: masked-token prediction</text>
+    <text x="142" y="292" text-anchor="middle" class="lbl" font-size="11">"my [MASK] is wrong" → invoice</text>
+    <text x="142" y="318" text-anchor="middle" class="lbl-strong" font-size="11" fill="var(--s1)">use for: classification, NER,</text>
+    <text x="142" y="334" text-anchor="middle" class="lbl-strong" font-size="11" fill="var(--s1)">embeddings, search, extraction</text>
+    <text x="142" y="352" text-anchor="middle" class="lbl" font-size="10">cannot generate text</text>
+  </g>
+  <!-- decoder-only -->
+  <rect x="283" y="15" width="255" height="350" rx="10" class="fill-surface2" stroke="var(--s2)" stroke-width="2"/>
+  <text x="410" y="42" text-anchor="middle" class="lbl-strong" font-size="14">Decoder-only (GPT-like)</text>
+  <text x="410" y="60" text-anchor="middle" class="lbl" font-size="11">reads left-to-right, predicts the next token</text>
+  <g>
+    <text x="410" y="86" text-anchor="middle" class="lbl" font-size="10">causal mask: future keys blocked (−∞)</text>
+    <g transform="translate(345,96)">
+      <g fill="var(--s2)" fill-opacity=".55">
+        <rect x="0" y="0" width="26" height="26"/>
+        <rect x="0" y="26" width="26" height="26"/><rect x="26" y="26" width="26" height="26"/>
+        <rect x="0" y="52" width="26" height="26"/><rect x="26" y="52" width="26" height="26"/><rect x="52" y="52" width="26" height="26"/>
+        <rect x="0" y="78" width="26" height="26"/><rect x="26" y="78" width="26" height="26"/><rect x="52" y="78" width="26" height="26"/><rect x="78" y="78" width="26" height="26"/>
+        <rect x="0" y="104" width="26" height="26"/><rect x="26" y="104" width="26" height="26"/><rect x="52" y="104" width="26" height="26"/><rect x="78" y="104" width="26" height="26"/><rect x="104" y="104" width="26" height="26"/>
+      </g>
+      <g fill="var(--ink-3)" fill-opacity=".15">
+        <rect x="26" y="0" width="104" height="26"/><rect x="52" y="26" width="78" height="26"/><rect x="78" y="52" width="52" height="26"/><rect x="104" y="78" width="26" height="26"/>
+      </g>
+      <text x="90" y="30" text-anchor="middle" font-size="11" fill="var(--ink-3)">−∞</text>
+      <rect x="0" y="0" width="130" height="130" fill="none" stroke="var(--ink-3)"/>
+    </g>
+    <text x="410" y="246" text-anchor="middle" class="lbl" font-size="11">token i sees tokens 0…i only</text>
+    <text x="410" y="272" text-anchor="middle" class="lbl-strong" font-size="11">trained by: next-token prediction</text>
+    <text x="410" y="292" text-anchor="middle" class="lbl" font-size="11">"my invoice is" → wrong</text>
+    <text x="410" y="318" text-anchor="middle" class="lbl-strong" font-size="11" fill="var(--s2)">use for: generation, chat, code,</text>
+    <text x="410" y="334" text-anchor="middle" class="lbl-strong" font-size="11" fill="var(--s2)">summarization, any task as text</text>
+    <text x="410" y="352" text-anchor="middle" class="lbl" font-size="10">all modern LLMs are this</text>
+  </g>
+  <!-- encoder-decoder -->
+  <rect x="551" y="15" width="255" height="350" rx="10" class="fill-surface2" stroke="var(--s3)" stroke-width="2"/>
+  <text x="678" y="42" text-anchor="middle" class="lbl-strong" font-size="14">Encoder–decoder (T5-like)</text>
+  <text x="678" y="60" text-anchor="middle" class="lbl" font-size="11">read fully, then write causally</text>
+  <g>
+    <rect x="580" y="90" width="90" height="64" rx="6" fill="var(--s1)" fill-opacity=".14" stroke="var(--s1)" stroke-width="1.5"/>
+    <text x="625" y="116" text-anchor="middle" class="lbl-strong" font-size="11">Encoder</text><text x="625" y="132" text-anchor="middle" class="lbl" font-size="10">full mask</text><text x="625" y="146" text-anchor="middle" class="lbl" font-size="10">on the input</text>
+    <rect x="688" y="90" width="90" height="64" rx="6" fill="var(--s2)" fill-opacity=".14" stroke="var(--s2)" stroke-width="1.5"/>
+    <text x="733" y="116" text-anchor="middle" class="lbl-strong" font-size="11">Decoder</text><text x="733" y="132" text-anchor="middle" class="lbl" font-size="10">causal mask</text><text x="733" y="146" text-anchor="middle" class="lbl" font-size="10">on the output</text>
+    <line x1="670" y1="122" x2="686" y2="122" class="arrow" marker-end="url(#arr-f9)"/>
+    <text x="678" y="178" text-anchor="middle" class="lbl" font-size="11">decoder gets an extra sub-layer:</text>
+    <text x="678" y="194" text-anchor="middle" class="lbl-strong" font-size="11">cross-attention</text>
+    <text x="678" y="210" text-anchor="middle" class="lbl" font-size="11">Q from decoder, K and V from encoder</text>
+    <text x="678" y="226" text-anchor="middle" class="lbl" font-size="11">(this is the 2014 idea, kept)</text>
+    <text x="678" y="272" text-anchor="middle" class="lbl-strong" font-size="11">trained by: span corruption / seq2seq</text>
+    <text x="678" y="292" text-anchor="middle" class="lbl" font-size="11">"Rechnung ist falsch" → "invoice is wrong"</text>
+    <text x="678" y="318" text-anchor="middle" class="lbl-strong" font-size="11" fill="var(--s3)">use for: translation, structured</text>
+    <text x="678" y="334" text-anchor="middle" class="lbl-strong" font-size="11" fill="var(--s3)">seq2seq (text→SQL), speech (Whisper)</text>
+    <text x="678" y="352" text-anchor="middle" class="lbl" font-size="10">less common for new work today</text>
+  </g>
+</svg>
+<figcaption><strong>Figure 18.9 — Three wirings of the same block, distinguished by their masks.</strong> Encoder-only sees the whole input at once and is the natural fit for understanding tasks. Decoder-only sees only the past, which is exactly what you need to generate one token at a time — and, it turned out, scales best. Encoder–decoder keeps both and links them with cross-attention.</figcaption>
+</figure>
+
+<h3>The causal mask</h3>
+<p>To train a model to predict the next token, you feed it the whole sequence at once (that is the parallelism win) but must stop token i from peeking at token i+1 — otherwise it would just copy the answer. The fix is to set every score above the diagonal to −∞ before the softmax. e<sup>−∞</sup> = 0, so those keys get exactly zero weight, and each row still sums to 1 over the allowed keys. A single sequence of n tokens then yields n training examples ("predict token 2 from token 1", "predict token 3 from tokens 1–2", …) in one forward pass.</p>
+
+<pre class="code" data-lang="python"><code><span class="cm"># The causal mask: token i may only look at tokens 0..i</span>
+<span class="kw">import</span> torch
+torch.set_printoptions(precision=<span class="nu">2</span>, sci_mode=<span class="kw">False</span>)
+torch.manual_seed(<span class="nu">1</span>)
+
+T = <span class="nu">5</span>
+mask = torch.tril(torch.ones(T, T))              <span class="cm"># lower-triangular 1s</span>
+<span class="fn">print</span>(mask)
+
+scores = torch.randn(T, T)                        <span class="cm"># pretend these are Q K^T / sqrt(d)</span>
+masked = scores.masked_fill(mask == <span class="nu">0</span>, <span class="fn">float</span>(<span class="st">"-inf"</span>))
+w = torch.softmax(masked, dim=-<span class="nu">1</span>)
+<span class="fn">print</span>(w)                                          <span class="cm"># upper triangle is exactly 0</span>
+<span class="fn">print</span>(<span class="st">"row sums:"</span>, w.sum(dim=-<span class="nu">1</span>))
+<span class="out"># tensor([[1., 0., 0., 0., 0.],</span>
+<span class="out">#         [1., 1., 0., 0., 0.],</span>
+<span class="out">#         [1., 1., 1., 0., 0.],</span>
+<span class="out">#         [1., 1., 1., 1., 0.],</span>
+<span class="out">#         [1., 1., 1., 1., 1.]])</span>
+<span class="out"># tensor([[1.00, 0.00, 0.00, 0.00, 0.00],</span>
+<span class="out">#         [0.59, 0.41, 0.00, 0.00, 0.00],</span>
+<span class="out">#         [0.74, 0.11, 0.15, 0.00, 0.00],</span>
+<span class="out">#         [0.07, 0.65, 0.14, 0.13, 0.00],</span>
+<span class="out">#         [0.05, 0.13, 0.01, 0.76, 0.05]])</span>
+<span class="out"># row sums: tensor([1.00, 1.00, 1.00, 1.00, 1.00])</span></code></pre>
+
+<div class="tbl-wrap">
+<table class="tbl">
+<thead><tr><th>Your task at work</th><th>Family</th><th>Typical starting point</th><th>Why</th></tr></thead>
+<tbody>
+<tr><td>Classify tickets / reviews / documents</td><td>Encoder-only</td><td>Fine-tuned DistilBERT / DeBERTa, or an embedding model + logistic regression</td><td>Bidirectional context, small, fast, cheap to serve; see Chapter 19</td></tr>
+<tr><td>Extract entities, dates, amounts</td><td>Encoder-only (or an LLM with structured output)</td><td>Token-classification head on BERT-like model</td><td>Per-token labels need both-direction context</td></tr>
+<tr><td>Semantic search, dedup, clustering</td><td>Encoder-only</td><td>Sentence-embedding model</td><td>Need one vector per text; Chapter 19</td></tr>
+<tr><td>Draft replies, summarize, answer questions, write code</td><td>Decoder-only</td><td>Hosted or open LLM via API, prompting first</td><td>Generation requires the causal setup; scale matters</td></tr>
+<tr><td>Translate, transcribe, text→SQL with a fixed schema</td><td>Encoder–decoder or decoder-only</td><td>Whisper / NLLB / T5-style, or an LLM</td><td>Classic seq2seq; LLMs now match it for most pairs</td></tr>
+<tr><td>Forecast many related time series</td><td>Any, or a GRU</td><td>Gradient boosting with lag features first (Ch 14); then a small Transformer or GRU</td><td>Deep models win only with many series and rich covariates</td></tr>
+</tbody>
+</table>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s9">9. Cost, context length, and why Transformers won</h2>
+
+<h3>The quadratic bill</h3>
+<p>Self-attention computes a score for every (query, key) pair: n² scores per head per layer, and an n × n weight matrix to store during training. Double the context and you quadruple the attention cost. For n = 512 that is nothing; for n = 128,000 it is the dominant cost, which is why "context length" is a headline feature of every LLM release and why a 100-page document costs so much more than a 10-page one. The feed-forward part is linear in n but quadratic in d, so at moderate lengths the FFN dominates and at long lengths attention does.</p>
+
+<div class="formula">Attention cost per layer ∝ n² · d       FFN cost per layer ∝ n · d²</div>
+
+<div class="callout math"><div class="title">The math (optional)</div>
+<p><strong>n</strong> is the number of tokens in the context, <strong>d</strong> the model width. Q Kᵀ is an (n × d)(d × n) multiply: n²d operations; multiplying the weights by V is another n²d. The FFN applies (d × 4d) and (4d × d) matrices to each of n tokens: 8nd² operations. Crossover is at n ≈ 8d: for d = 4096 that is ≈ 32k tokens — beyond that, attention is the bigger bill.</p>
+</div>
+
+<p><strong>The KV cache.</strong> When a decoder generates text one token at a time, the keys and values of all previous tokens do not change (the mask means earlier tokens never see later ones). So an inference engine computes K and V for each token once and caches them; generating token n+1 costs one new query against n cached keys instead of recomputing everything. That cache is why LLM serving is memory-bound: for a 70B-parameter model with a 32k context, the cache for one conversation is several gigabytes, and it is the reason long conversations get slower and pricier, and why providers charge less for "cached" prompt tokens.</p>
+
+<p><strong>Efficient attention.</strong> A large literature attacks the n² term: FlashAttention (exact attention, but computed in tiles so the n × n matrix never touches slow memory — now the default everywhere), sliding-window and sparse attention (each token attends to a local window plus a few global tokens), grouped-query attention (share K and V across heads to shrink the cache), and linear-attention or state-space variants (Mamba and relatives) that bring back an RNN-like recurrence with better scaling. For practitioners the summary is: exact attention with FlashAttention up to ~100k tokens is what you will actually use; the rest is worth knowing exists.</p>
+
+<h3>Why Transformers won</h3>
+<p>Three reasons, in order of importance.</p>
+
+<ol class="steps">
+  <li><strong>Parallelism.</strong> Every token's attention is independent given the inputs, so a whole sequence — and a whole batch of sequences — is one big matrix multiply. GPUs are matrix-multiply machines. An RNN's chain of n small steps could never saturate them; a Transformer does. Training on trillions of tokens became feasible.</li>
+  <li><strong>Long-range access.</strong> Any token reaches any other in one hop with a learned weight. Precise retrieval ("the invoice number mentioned 3,000 tokens ago") becomes easy rather than heroic.</li>
+  <li><strong>Predictable scaling.</strong> Loss falls as a smooth power law in model size, data, and compute (Figure 18.10). That predictability let labs plan billion-dollar training runs with confidence that the result would be better. No previous architecture behaved this reliably.</li>
+</ol>
+
+<figure class="fig">
+<svg viewBox="0 0 760 320" role="img" aria-label="Log-log plot of validation loss versus training compute; three model sizes each trace a curve that flattens; the lower envelope of the curves is a straight line, a power law">
+  <defs><marker id="arr-f10" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+  <text x="400" y="22" text-anchor="middle" class="lbl-strong" font-size="14">Loss vs. compute (both axes log scale)</text>
+  <line x1="70" y1="270" x2="720" y2="270" class="axis" marker-end="url(#arr-f10)"/>
+  <line x1="70" y1="270" x2="70" y2="40" class="axis" marker-end="url(#arr-f10)"/>
+  <text x="395" y="300" text-anchor="middle" class="lbl">training compute (PF-days, log scale)</text>
+  <text x="34" y="155" text-anchor="middle" class="lbl" transform="rotate(-90 34 155)">validation loss (log)</text>
+  <g class="lbl" font-size="10">
+    <text x="100" y="286" text-anchor="middle">10⁻³</text><text x="220" y="286" text-anchor="middle">10⁻¹</text><text x="340" y="286" text-anchor="middle">10¹</text><text x="460" y="286" text-anchor="middle">10³</text><text x="580" y="286" text-anchor="middle">10⁵</text>
+    <text x="62" y="260" text-anchor="end">2.0</text><text x="62" y="170" text-anchor="end">3.0</text><text x="62" y="80" text-anchor="end">4.5</text>
+  </g>
+  <g class="grid"><line x1="220" y1="270" x2="220" y2="45"/><line x1="340" y1="270" x2="340" y2="45"/><line x1="460" y1="270" x2="460" y2="45"/><line x1="580" y1="270" x2="580" y2="45"/></g>
+  <!-- envelope power law -->
+  <line x1="90" y1="72" x2="700" y2="232" stroke="var(--s7)" stroke-width="2" stroke-dasharray="7 4"/>
+  <text x="560" y="180" class="lbl" font-size="11" fill="var(--s7)" font-weight="700">L ∝ C<tspan font-size="8" dy="-4">−0.05</tspan><tspan dy="4"> — a straight line for 7 orders of magnitude</tspan></text>
+  <!-- small model -->
+  <path d="M100,75 C150,110 190,135 240,150 C270,158 300,160 340,161" fill="none" stroke="var(--s1)" stroke-width="2.5"/>
+  <text x="345" y="166" class="lbl" font-size="11" fill="var(--s1)" font-weight="700">small model (plateaus)</text>
+  <!-- medium -->
+  <path d="M190,98 C250,135 300,165 360,185 C400,196 440,200 480,201" fill="none" stroke="var(--s2)" stroke-width="2.5"/>
+  <text x="485" y="206" class="lbl" font-size="11" fill="var(--s2)" font-weight="700">medium</text>
+  <!-- large -->
+  <path d="M300,128 C370,165 430,200 500,220 C550,232 600,236 660,237" fill="none" stroke="var(--s3)" stroke-width="2.5"/>
+  <text x="600" y="255" class="lbl" font-size="11" fill="var(--s3)" font-weight="700">large model</text>
+  <text x="400" y="60" text-anchor="middle" class="lbl" font-size="11">Each size eventually plateaus; the <tspan fill="var(--s7)" font-weight="700">envelope</tspan> keeps falling. Bigger model + more data + more compute, in the right ratio, is a reliable bet.</text>
+</svg>
+<figcaption><strong>Figure 18.10 — Scaling laws: loss is a smooth power law in compute.</strong> Each curve is one model size trained longer; each flattens when it runs out of capacity. The envelope across sizes is a straight line on log-log axes (shape after Kaplan et al. 2020 and Hoffmann et al. 2022, which also showed that data must grow with model size). This predictability, not any single trick, is why the field bet everything on scaling Transformers.</figcaption>
+</figure>
+
+<h3>Transformers beyond text — honestly</h3>
+<p><strong>Vision.</strong> The Vision Transformer (ViT) cuts an image into 16 × 16 patches, embeds each patch as a "token", adds positional encodings, and runs the standard encoder. With enough data (or with pretraining) it matches or beats CNNs (Chapter 17), and it is now the backbone of most image-text models. On a small in-house dataset without pretraining, a CNN or a pretrained CNN still tends to win.</p>
+<p><strong>Time series.</strong> Transformer forecasters (Informer, PatchTST, and "foundation" models pretrained on millions of series) exist and are useful when you have thousands of related series with covariates. Several careful benchmarks found that a well-tuned linear model or gradient boosting with lag features matches them on typical business data. Start with Chapter 14; graduate to deep models when you have the scale to justify them.</p>
+<p><strong>Tabular.</strong> Attention over columns (TabTransformer, FT-Transformer, and "prior-fitted" models like TabPFN) is a real research area. On the tabular problems most companies have, gradient boosting (Chapter 10) remains the thing to beat, and usually wins. Attention becomes interesting when rows are sets of variable size (a basket of products, a list of transactions) — exactly the shape ordinary tabular models cannot take.</p>
+
+<div class="callout pro"><div class="title">At work</div>
+<p>You will almost never train a Transformer from scratch. The skill that pays is <em>reading</em> the architecture card of a pretrained model — "decoder-only, 32 layers, 32 heads, d = 4096, RoPE, 128k context, grouped-query attention" — and translating it into consequences: how much memory the KV cache needs at your context length, whether it can do bidirectional classification (no, but it can be prompted), and whether its context is long enough for your documents. This chapter gave you every word in that sentence.</p>
+</div>
+
+<div class="callout pro"><div class="title">At work: budgeting context</div>
+<p>Cost and latency of an LLM call scale with prompt tokens (roughly linearly, with the attention share growing with length) and output tokens (each one a full forward pass, cached KV or not). A 40-page contract is ~30k tokens; sending it 1,000 times a day is 30M prompt tokens — check the price sheet before designing the pipeline. Chunk, retrieve, and send only what is needed (Chapter 19's RAG section) rather than stuffing the context because you can.</p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s10">10. Build one: a character-level language model</h2>
+
+<p>Everything above fits in 40 lines. The model below is a decoder-only Transformer with one block: token and position embeddings, one causal attention head with a residual, a feed-forward with a residual, and a linear head that predicts the next character. We train it on a short sentence repeated many times, so the loss should collapse toward zero within a few hundred steps and the model should be able to continue the sentence. Read it top to bottom against Figure 18.8.</p>
+
+<pre class="code" data-lang="python"><code><span class="cm"># A tiny character-level next-token model (one causal attention head + FFN), trained in seconds on CPU</span>
+<span class="kw">import</span> torch, torch.nn <span class="kw">as</span> nn, torch.nn.functional <span class="kw">as</span> F, math, time
+torch.manual_seed(<span class="nu">0</span>)
+
+text = <span class="st">"the quick brown fox jumps over the lazy dog. "</span> * <span class="nu">40</span>
+chars = <span class="fn">sorted</span>(<span class="fn">set</span>(text)); stoi = {c: i <span class="kw">for</span> i, c <span class="kw">in</span> <span class="fn">enumerate</span>(chars)}
+data = torch.tensor([stoi[c] <span class="kw">for</span> c <span class="kw">in</span> text])
+V, T, d = <span class="fn">len</span>(chars), <span class="nu">24</span>, <span class="nu">32</span>                        <span class="cm"># vocab size, context length, model width</span>
+
+<span class="kw">class</span> <span class="fn">TinyLM</span>(nn.Module):
+    <span class="kw">def</span> <span class="fn">__init__</span>(self):
+        <span class="fn">super</span>().__init__()
+        self.tok, self.pos = nn.Embedding(V, d), nn.Embedding(T, d)
+        self.qkv = nn.Linear(d, <span class="nu">3</span> * d, bias=<span class="kw">False</span>)                     <span class="cm"># one attention head</span>
+        self.ln1, self.ln2 = nn.LayerNorm(d), nn.LayerNorm(d)
+        self.ffn = nn.Sequential(nn.Linear(d, <span class="nu">4</span> * d), nn.GELU(), nn.Linear(<span class="nu">4</span> * d, d))
+        self.head = nn.Linear(d, V)
+    <span class="kw">def</span> <span class="fn">forward</span>(self, idx):                         <span class="cm"># idx: (batch, t)</span>
+        b, t = idx.shape
+        x = self.tok(idx) + self.pos(torch.arange(t))
+        q, k, v = self.qkv(self.ln1(x)).chunk(<span class="nu">3</span>, dim=-<span class="nu">1</span>)
+        att = q @ k.transpose(-<span class="nu">2</span>, -<span class="nu">1</span>) / math.sqrt(d)
+        att = att.masked_fill(torch.tril(torch.ones(t, t)) == <span class="nu">0</span>, <span class="fn">float</span>(<span class="st">"-inf"</span>))   <span class="cm"># causal mask</span>
+        x = x + torch.softmax(att, dim=-<span class="nu">1</span>) @ v       <span class="cm"># attention + residual</span>
+        x = x + self.ffn(self.ln2(x))                <span class="cm"># feed-forward + residual</span>
+        <span class="kw">return</span> self.head(x)                          <span class="cm"># (batch, t, V) logits for the NEXT char</span>
+
+model = TinyLM(); opt = torch.optim.AdamW(model.parameters(), lr=<span class="nu">3e-3</span>)
+<span class="kw">def</span> <span class="fn">batch</span>(bs=<span class="nu">32</span>):
+    i = torch.randint(<span class="nu">0</span>, <span class="fn">len</span>(data) - T - <span class="nu">1</span>, (bs,))
+    <span class="kw">return</span> torch.stack([data[j:j+T] <span class="kw">for</span> j <span class="kw">in</span> i]), torch.stack([data[j+<span class="nu">1</span>:j+T+<span class="nu">1</span>] <span class="kw">for</span> j <span class="kw">in</span> i])
+
+t0 = time.time()
+<span class="kw">for</span> step <span class="kw">in</span> <span class="fn">range</span>(<span class="nu">301</span>):
+    xb, yb = batch()
+    loss = F.cross_entropy(model(xb).reshape(-<span class="nu">1</span>, V), yb.reshape(-<span class="nu">1</span>))
+    opt.zero_grad(); loss.backward(); opt.step()
+    <span class="kw">if</span> step % <span class="nu">50</span> == <span class="nu">0</span>: <span class="fn">print</span>(<span class="st">f"step {step:3d}  loss {loss.item():.3f}"</span>)
+<span class="fn">print</span>(<span class="st">f"trained in {time.time()-t0:.1f}s"</span>)
+
+idx = torch.tensor([[stoi[c] <span class="kw">for</span> c <span class="kw">in</span> <span class="st">"the quick"</span>]])     <span class="cm"># generate 60 chars greedily</span>
+<span class="kw">with</span> torch.no_grad():
+    <span class="kw">for</span> _ <span class="kw">in</span> <span class="fn">range</span>(<span class="nu">60</span>):
+        logits = model(idx[:, -T:])[:, -<span class="nu">1</span>]
+        idx = torch.cat([idx, logits.argmax(-<span class="nu">1</span>, keepdim=<span class="kw">True</span>)], dim=<span class="nu">1</span>)
+<span class="fn">print</span>(<span class="st">""</span>.join(chars[i] <span class="kw">for</span> i <span class="kw">in</span> idx[<span class="nu">0</span>].tolist()))
+<span class="out"># step   0  loss 3.641</span>
+<span class="out"># step  50  loss ≈ 0.57</span>
+<span class="out"># step 100  loss ≈ 0.12</span>
+<span class="out"># step 150  loss ≈ 0.06</span>
+<span class="out"># step 200  loss ≈ 0.03</span>
+<span class="out"># step 250  loss ≈ 0.03</span>
+<span class="out"># step 300  loss ≈ 0.04</span>
+<span class="out"># trained in ≈ 10–20s   (CPU-dependent)</span>
+<span class="out"># the quick brown fox jumps over the lazy dog. the quick brown fox jump</span></code></pre>
+
+<p>Three things to notice. The starting loss ≈ 3.6 is ln(29), the loss of guessing uniformly over 29 characters — always check that your first loss makes sense. The loss collapses because the data is trivially predictable; on real text a character model plateaus around 1.0–1.5 nats. And generation is the causal loop of Figure 18.3: predict, append, repeat — exactly what a chat model does, at 70 billion parameters instead of 20 thousand.</p>
+
+<div class="callout eli9"><div class="title">Explain it like I'm 9</div>
+<p>The model played a guessing game 300 times: "here are 24 letters; what comes next?" At first it guessed randomly. Each time, it got told the answer and nudged its numbers a little. After a few hundred rounds it knows the sentence by heart — and can finish it from just "the quick". A chat model plays the same game, but on the whole internet, and the game is much harder to memorize, so it has to learn the patterns instead.</p>
+</div>
+
+<div class="callout key"><div class="title">Key idea</div>
+<p>Next-token prediction on a causal Transformer is the <em>entire</em> pretraining objective of GPT-class models. There is no secret second objective. Everything they can do — translate, summarize, write code — is a side effect of getting very good at predicting the next token of human-written text. Chapter 19 takes it from here: tokenization, embeddings, fine-tuning, prompting, and how to put these models to work.</p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="quiz">Quiz</h2>
+<div class="quiz">
+  <h3>Check your understanding</h3>
+
+  <div class="q">
+    <p class="question">1. Why do plain RNNs struggle to learn dependencies 50 tokens apart?</p>
+    <ul class="opts">
+      <li><button>The hidden state is too small to store 50 tokens</button></li>
+      <li><button data-correct>The gradient must pass through ~50 multiplications by the same Jacobian and shrinks (or explodes) geometrically</button></li>
+      <li><button>They have no positional encoding</button></li>
+      <li><button>Softmax saturates for long sequences</button></li>
+    </ul>
+    <div class="explain">Backpropagation through time multiplies by ∂h<sub>t</sub>/∂h<sub>t−1</sub> at every hop; a factor slightly below 1 raised to the 50th power is ≈ 0, so no learning signal reaches the early steps. LSTM gates fix this by letting the cell state pass through with factor ≈ 1.</div>
+  </div>
+
+  <div class="q">
+    <p class="question">2. In scaled dot-product attention, what is the purpose of dividing by √d<sub>k</sub>?</p>
+    <ul class="opts">
+      <li><button>To make the weights sum to 1</button></li>
+      <li><button>To normalize the value vectors</button></li>
+      <li><button data-correct>To keep the scores at unit scale so the softmax does not saturate into a one-hot with vanishing gradients</button></li>
+      <li><button>To reduce the O(n²) cost</button></li>
+    </ul>
+    <div class="explain">Dot products of d<sub>k</sub>-dimensional vectors grow in variance with d<sub>k</sub>. Large scores push the softmax toward 0/1 outputs whose gradients are ≈ 0. Dividing by √d<sub>k</sub> undoes the growth; the softmax itself is what makes the weights sum to 1.</div>
+  </div>
+
+  <div class="q">
+    <p class="question">3. A colleague removes the positional encoding from a Transformer classifier and reports that accuracy barely changed. What is the most likely explanation?</p>
+    <ul class="opts">
+      <li><button>Attention learns position on its own</button></li>
+      <li><button data-correct>The task is mostly bag-of-words: which tokens appear matters more than their order</button></li>
+      <li><button>The residual connections carry position</button></li>
+      <li><button>Layer normalization encodes position</button></li>
+    </ul>
+    <div class="explain">Without positional information attention is permutation-equivariant, so the model can only use <em>which</em> tokens are present. Many classification tasks (topic, sentiment) are largely solvable that way — which hides the bug until an order-sensitive case ("not good") appears.</div>
+  </div>
+
+  <div class="q">
+    <p class="question">4. You need per-token labels (find every invoice number and amount in a ticket). Which architecture family fits best out of the box?</p>
+    <ul class="opts">
+      <li><button data-correct>Encoder-only (BERT-like) with a token-classification head</button></li>
+      <li><button>Decoder-only, because it is the most modern</button></li>
+      <li><button>Encoder–decoder, because extraction is seq2seq</button></li>
+      <li><button>A GRU, because entities are sequential</button></li>
+    </ul>
+    <div class="explain">Each token's label benefits from context on both sides, which the full (bidirectional) mask provides. Decoder-only LLMs can also do this via prompting with structured output, but at far higher cost per document.</div>
+  </div>
+
+  <div class="q">
+    <p class="question">5. Doubling the context length of an LLM call from 8k to 16k tokens does roughly what to the attention compute?</p>
+    <ul class="opts">
+      <li><button>Doubles it</button></li>
+      <li><button data-correct>Quadruples it</button></li>
+      <li><button>Leaves it unchanged thanks to the KV cache</button></li>
+      <li><button>Increases it 8×</button></li>
+    </ul>
+    <div class="explain">Attention scores every (query, key) pair: n² of them. 2n tokens ⇒ 4n² pairs. The KV cache avoids <em>recomputing</em> past keys during generation; it does not remove the quadratic number of pairs.</div>
+  </div>
+
+  <div class="q">
+    <p class="question">6. What does the causal mask do during training of a decoder-only model?</p>
+    <ul class="opts">
+      <li><button>Hides random tokens so the model learns to fill them in</button></li>
+      <li><button>Prevents the model from attending to padding</button></li>
+      <li><button data-correct>Sets scores from each position to all later positions to −∞ so every position predicts its next token using only the past</button></li>
+      <li><button>Speeds up attention by skipping half the matrix</button></li>
+    </ul>
+    <div class="explain">With the lower-triangular mask, one forward pass over an n-token sequence yields n next-token predictions, none of which can cheat by seeing the answer. Hiding random tokens is the encoder (BERT) objective; padding is a separate mask.</div>
+  </div>
+</div>
+
+<h2 id="exercises">Exercises</h2>
+
+<div class="exercise"><div class="title">Exercise 18.1 — Attention by hand</div>
+<p>Using the Q, K, V of Figure 18.4, change the query for "cat" to [0, 2] (leave everything else). Compute the new scores, weights and output for that row by hand, then verify with the first code block. What happened to the weight on "cat" and why?</p>
+<details class="answer"><summary>Show answer</summary>
+<p>Scores for the "cat" row become [0, 2, 2]/√2 = [0, 1.41, 1.41]. Softmax: e⁰ = 1, e<sup>1.41</sup> ≈ 4.11, 4.11; sum ≈ 9.22 → weights ≈ [0.11, 0.45, 0.45]. Output ≈ 0.11·[1,2] + 0.45·[3,4] + 0.45·[5,6] ≈ [3.7, 4.7]. Doubling the query's magnitude sharpened the softmax: the two matching keys ("cat" and "sat", both with a 1 in dimension 2) went from 0.40 each to 0.45 each and "the" fell from 0.20 to 0.11. Bigger scores → peakier weights — the same effect the √d<sub>k</sub> scaling is there to control.</p>
+</details>
+</div>
+
+<div class="exercise"><div class="title">Exercise 18.2 — Break the character model</div>
+<p>In the last code block, (a) replace the causal mask line with <code>att = att</code> (no mask) and retrain; (b) restore the mask, but delete <code>+ self.pos(torch.arange(t))</code> and retrain. For each, predict what happens to the training loss and the generated text before you run it, then check.</p>
+<details class="answer"><summary>Show answer</summary>
+<p>(a) Training loss drops to ≈ 0 almost instantly — each position can attend to the next token, which <em>is</em> the label, so the model copies it. Generation is garbage, because at inference the next token is not there to copy. This is the leakage the causal mask prevents. (b) Without positions the model still learns something (character bigram statistics survive because attention weights can favour high-similarity tokens), but the loss plateaus much higher and the generated text loops or stutters, since the model cannot tell which "o" is the one before "x". Order was the signal.</p>
+</details>
+</div>
+
+<div class="exercise"><div class="title">Exercise 18.3 — Read a model card at work</div>
+<p>Pick an LLM your company uses or is evaluating and find its architecture description (layers, heads, width, context length, positional scheme, attention variant). Write one paragraph translating each item into a consequence for your use case: maximum document size you can send, whether the KV cache for your typical conversation fits in the serving hardware (estimate: 2 × layers × d × 2 bytes per token for fp16, divided by the grouped-query factor), and whether the model can be used as an encoder for embeddings.</p>
+<details class="answer"><summary>Show answer</summary>
+<p>Example for a "32 layers, d = 4096, 8 KV heads of 32, 128k context, RoPE, fp16" model: the KV cache is 2 × 32 × 4096 × 2 bytes ≈ 0.5 MB per token before grouped-query sharing, ≈ 0.13 MB after (8/32), so a 20k-token conversation holds ≈ 2.6 GB — fine on one 80 GB GPU for a handful of concurrent users, tight for hundreds. 128k context covers ~100 pages, but the quadratic cost and the price per token argue for retrieval instead of stuffing. RoPE means it was trained with relative positions and will degrade gracefully near the limit. It is decoder-only: it can produce embeddings from the last hidden state, but a purpose-built encoder embedding model will be smaller, cheaper and usually better for search.</p>
+</details>
+</div>
+
+<div class="summary">
+  <h3>Chapter summary</h3>
+  <ul class="checklist">
+    <li>Sequence models must handle variable length and be sensitive to order; RNNs do it with a loop and a fixed-size hidden state.</li>
+    <li>Backprop through time multiplies gradients by the same Jacobian at every step: they vanish or explode. LSTM/GRU gates add an additive memory lane that fixes this well enough, but RNNs stay sequential (slow) and long-range retrieval stays fragile.</li>
+    <li>Encoder–decoder RNNs squeeze the whole input into one vector — the bottleneck attention was invented to remove.</li>
+    <li>Attention = softmax(QKᵀ/√d<sub>k</sub>)V: a soft dictionary lookup where each query returns a weighted blend of values. Every number in it is a dot product, a softmax, or an average.</li>
+    <li>Self-attention lets every token read every other token in one hop; multiple heads give several lookups per layer; positional encodings (sinusoidal, learned, RoPE) put order back in.</li>
+    <li>A Transformer block is attention → add &amp; norm → feed-forward → add &amp; norm; residuals make deep stacks trainable; shapes are preserved so blocks stack.</li>
+    <li>Encoder-only (BERT) for understanding tasks; decoder-only (GPT) with a causal mask for generation; encoder–decoder (T5) for classic seq2seq.</li>
+    <li>Attention is O(n²) in context length; the KV cache makes generation affordable but memory-hungry; budget tokens deliberately.</li>
+    <li>Transformers won on parallelism, long-range access, and predictable scaling laws — not on a single clever trick.</li>
+    <li>At work you read model cards and fine-tune or prompt pretrained models; training from scratch is the exception (Chapter 19).</li>
+  </ul>
+</div>
+
+<div class="mark-done"></div>
+<nav class="pager"></nav>
+
+</div></main>
+</div>
+
+<script src="../assets/chapters.js"></script>
+<script src="../assets/app.js"></script>
+<script>
+(function () {
+  /* ---------- Widget 1: attention explorer ---------- */
+  var toks = ["cats", "chase", "mice", "because", "they", "are", "hungry"];
+  var W = [
+    [0.55, 0.20, 0.05, 0.03, 0.10, 0.02, 0.05],
+    [0.40, 0.30, 0.20, 0.03, 0.03, 0.02, 0.02],
+    [0.15, 0.35, 0.40, 0.04, 0.02, 0.02, 0.02],
+    [0.06, 0.30, 0.14, 0.30, 0.10, 0.05, 0.05],
+    [0.60, 0.04, 0.08, 0.06, 0.15, 0.04, 0.03],
+    [0.06, 0.03, 0.03, 0.05, 0.45, 0.30, 0.08],
+    [0.34, 0.04, 0.06, 0.06, 0.28, 0.06, 0.16]
+  ];
+  var svg = document.getElementById("attn-svg"), btns = document.getElementById("attn-btns"), top = document.getElementById("attn-top");
+  var sel = 4, buttons = [];
+  toks.forEach(function (t, i) {
+    var b = document.createElement("button"); b.className = "btn"; b.textContent = t;
+    b.addEventListener("click", function () { sel = i; render(); });
+    btns.appendChild(b); buttons.push(b);
+  });
+  function x(i) { return 70 + i * 105; }
+  function render() {
+    var w = W[sel], s = "", best = 0;
+    buttons.forEach(function (b, i) { b.style.background = i === sel ? "var(--accent)" : ""; b.style.color = i === sel ? "#fff" : ""; });
+    for (var i = 0; i < toks.length; i++) if (w[i] > w[best]) best = i;
+    s += '<text x="380" y="18" text-anchor="middle" font-size="12" opacity=".75">query: "' + toks[sel] + '" — attention weight to each key token (row of the softmax, sums to 1)</text>';
+    for (var i = 0; i < toks.length; i++) {
+      var h = w[i] * 110, isSel = i === sel, col = isSel ? "var(--s7)" : (i === best ? "var(--s2)" : "var(--s1)");
+      s += '<rect x="' + (x(i) - 22) + '" y="' + (150 - h) + '" width="44" height="' + h + '" rx="3" fill="' + col + '" fill-opacity=".85"/>';
+      s += '<text x="' + x(i) + '" y="' + (144 - h) + '" text-anchor="middle" font-size="11" font-weight="700">' + w[i].toFixed(2) + '</text>';
+      s += '<rect x="' + (x(i) - 36) + '" y="176" width="72" height="26" rx="6" fill="' + (isSel ? "var(--s7)" : "var(--surface-2)") + '" stroke="' + (isSel ? "var(--s7)" : "var(--border)") + '"/>';
+      s += '<text x="' + x(i) + '" y="194" text-anchor="middle" font-size="12" font-weight="700"' + (isSel ? ' fill="#fff"' : '') + '>' + toks[i] + '</text>';
+      if (i !== sel) {
+        var sw = 0.5 + w[i] * 9;
+        s += '<path d="M' + x(sel) + ',204 C' + x(sel) + ',240 ' + x(i) + ',240 ' + x(i) + ',204" fill="none" stroke="var(--s2)" stroke-width="' + sw.toFixed(1) + '" stroke-opacity="' + (0.25 + w[i]).toFixed(2) + '"/>';
+      }
+    }
+    s += '<line x1="30" y1="150" x2="730" y2="150" stroke="currentColor" stroke-opacity=".3"/>';
+    s += '<text x="30" y="235" font-size="11" opacity=".7">line thickness = weight</text>';
+    svg.innerHTML = s;
+    top.textContent = toks[best] + " (" + w[best].toFixed(2) + ")";
+  }
+  render();
+
+  /* ---------- Widget 2: positional-encoding visualizer ---------- */
+  var D = 32, slider = document.getElementById("pe-pos"), psvg = document.getElementById("pe-svg");
+  var sim0 = document.getElementById("pe-sim"), sim50 = document.getElementById("pe-sim50");
+  function pe(pos) {
+    var v = [];
+    for (var i = 0; i < D; i++) {
+      var div = Math.pow(10000, (2 * Math.floor(i / 2)) / D);
+      v.push(i % 2 === 0 ? Math.sin(pos / div) : Math.cos(pos / div));
+    }
+    return v;
+  }
+  function cos(a, b) { var d = 0, na = 0, nb = 0; for (var i = 0; i < a.length; i++) { d += a[i] * b[i]; na += a[i] * a[i]; nb += b[i] * b[i]; } return d / Math.sqrt(na * nb); }
+  var p0 = pe(0), p50 = pe(50);
+  function renderPE() {
+    var pos = +slider.value, v = pe(pos), s = "", cw = 22, x0 = 26;
+    s += '<text x="' + x0 + '" y="20" font-size="12" font-weight="700">PE(position ' + pos + ') — ' + D + ' dimensions</text>';
+    for (var i = 0; i < D; i++) {
+      var col = v[i] >= 0 ? "var(--s1)" : "var(--s2)";
+      s += '<rect x="' + (x0 + i * cw) + '" y="30" width="' + cw + '" height="44" fill="' + col + '" fill-opacity="' + Math.abs(v[i]).toFixed(2) + '" stroke="var(--surface)"/>';
+      if (i % 4 === 0) s += '<text x="' + (x0 + i * cw + cw / 2) + '" y="90" text-anchor="middle" font-size="10" opacity=".7">' + i + '</text>';
+    }
+    s += '<text x="' + (x0 + D * cw / 2) + '" y="106" text-anchor="middle" font-size="11" opacity=".7">dimension (left = fastest wave, right = slowest)</text>';
+    s += '<text x="' + x0 + '" y="132" font-size="11" opacity=".85">first four values: [' + v.slice(0, 4).map(function (t) { return t.toFixed(2); }).join(", ") + ' …]   sin/cos pairs at falling frequency</text>';
+    psvg.innerHTML = s;
+    sim0.textContent = cos(v, p0).toFixed(3);
+    sim50.textContent = cos(v, p50).toFixed(3);
+  }
+  slider.addEventListener("input", renderPE); renderPE();
+})();
+</script>
+</body>
+</html>

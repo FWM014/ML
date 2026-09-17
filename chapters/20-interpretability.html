@@ -1,0 +1,1522 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>20 · Explaining Models: SHAP &amp; Friends — ML: Zero to Expert</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body data-chapter="20">
+<header class="topbar"></header>
+<div class="progress-track"><div></div></div>
+<div class="shell">
+<nav class="sidebar"></nav>
+<main class="content"><div class="container">
+
+<header class="ch-header">
+  <div class="kicker">Part IV · Expert &amp; Production · Chapter 20</div>
+  <h1>Explaining Models: SHAP &amp; Friends</h1>
+  <p class="lede">A model that nobody understands is a model that nobody trusts, nobody can debug, and — in credit, hiring, health and insurance — nobody is allowed to deploy. This chapter gives you the full explanation toolkit, from permutation importance to Shapley values, and the fairness checks that go with it.</p>
+  <div class="meta"><span class="level expert">Expert</span> <span>⏱ 90 min read</span> <span>·</span> <span>Prereqs: Ch 9, 10, 13</span></div>
+</header>
+
+<div class="objectives">
+  <h3>By the end of this chapter you will be able to</h3>
+  <ul>
+    <li>Place any explanation method on the global/local × intrinsic/post-hoc map and pick the right one for the question being asked.</li>
+    <li>Compute permutation importance correctly (on validation data) and explain why impurity importance lies.</li>
+    <li>Read and produce partial dependence, ICE, SHAP beeswarm, bar and waterfall plots — and say what each one does <em>not</em> show.</li>
+    <li>Compute a Shapley value by hand for a small game and explain what TreeSHAP does for a real model.</li>
+    <li>Generate a counterfactual ("what would have to change?") for a customer-facing decision.</li>
+    <li>Measure group fairness with demographic parity, equal opportunity and equalized odds, and know why you cannot have all three.</li>
+    <li>Walk into a stakeholder meeting with a one-page explanation pack that survives hard questions.</li>
+  </ul>
+</div>
+
+<div class="toc-inline"><strong>In this chapter</strong>
+<ol>
+  <li><a href="#s1">Why explain a model at all?</a></li>
+  <li><a href="#s2">The map: four kinds of explanation</a></li>
+  <li><a href="#s3">Models that explain themselves</a></li>
+  <li><a href="#s4">Feature importance, done honestly</a></li>
+  <li><a href="#s5">Partial dependence &amp; ICE</a></li>
+  <li><a href="#s6">SHAP: fair credit for every feature</a></li>
+  <li><a href="#s7">LIME, counterfactuals &amp; surrogates</a></li>
+  <li><a href="#s8">Caveats: when explanations lie</a></li>
+  <li><a href="#s9">Fairness &amp; bias</a></li>
+  <li><a href="#s10">Model cards &amp; the stakeholder recipe</a></li>
+  <li><a href="#quiz">Quiz &amp; exercises</a></li>
+</ol></div>
+
+<!-- ============================================================ -->
+<h2 id="s1">1. Why explain a model at all?</h2>
+
+<p>Here is the situation this chapter is built around. A lender has trained a gradient-boosted model (Chapter 10) that predicts whether a loan applicant will repay. On the validation set it beats the old scorecard by four AUC points. The team is thrilled. Then five things happen in one week:</p>
+
+<ol class="steps">
+  <li><strong>The head of credit asks "why should I trust it?"</strong> Four AUC points is not an answer. She wants to know <em>what the model looks at</em> and whether that matches thirty years of lending intuition. <strong>Trust</strong> is the first reason to explain.</li>
+  <li><strong>A data engineer notices the top feature is <code>days_since_last_statement</code>.</strong> That column is only populated <em>after</em> a loan is issued. The model has been reading the answer off a column that will not exist at prediction time — <strong>leakage</strong> (Chapter 7). Feature importance found in ten minutes what a metric could never find.</li>
+  <li><strong>Legal reminds everyone that declined applicants are entitled to a reason.</strong> In the US the Equal Credit Opportunity Act requires "adverse action" notices with specific principal reasons; the EU's GDPR and AI Act push in the same direction for automated decisions. <strong>Regulation</strong> makes per-decision explanation mandatory, not optional.</li>
+  <li><strong>Someone plots the model's behaviour and sees approval probability <em>drop</em> as income rises above €120k.</strong> That is a data artefact (few rich applicants, several of whom defaulted on business loans), not a truth about the world. <strong>Debugging</strong> a model's logic is impossible without looking inside it.</li>
+  <li><strong>The branch staff who must act on the score ignore it.</strong> They do not understand it, so they override it. A model nobody uses has an ROI of zero. <strong>Adoption</strong> is the reason most projects need explanations most urgently.</li>
+</ol>
+
+<p>Trust, leakage-hunting, regulation, debugging, adoption: five different reasons, and they need different tools. "Which feature matters most overall?" is a global question. "Why was <em>this</em> applicant declined?" is a local one. A regulator wants a stable, auditable answer; a data scientist debugging a model wants the fastest possible answer. The first skill is to recognise which question is being asked.</p>
+
+<div class="callout eli9"><div class="title">Explain it like I'm 9</div>
+<p>Imagine a very good chess player who can't talk. She wins every game, but when you ask "why did you move the knight?" she just shrugs. Would you let her play <em>your</em> tournament games for money, without being able to check she isn't cheating, or about to blunder? Explanation tools are the translator that lets the silent expert say "the knight protects the king and attacks the queen — mostly the queen." Once she can say that, you can check her reasoning, catch her mistakes, and decide when to trust her.</p>
+</div>
+
+<div class="callout key"><div class="title">Key idea</div>
+<p>An explanation is an answer to a <strong>specific question</strong> about a model: <em>what does it rely on overall?</em> (global), <em>why did it give this output?</em> (local), <em>what would have to change to flip the output?</em> (counterfactual), <em>does it treat groups differently?</em> (fairness). No single plot answers all four. Choosing the tool starts with naming the question.</p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s2">2. The map: four kinds of explanation</h2>
+
+<p>Every explanation method sits somewhere on two axes. <strong>Scope:</strong> does it describe the whole model (global) or one prediction (local)? <strong>Timing:</strong> is the model transparent by construction (intrinsic) or do we interrogate a finished black box (post-hoc)? A third, orthogonal distinction is whether the method needs to know what kind of model it is looking at (<strong>model-specific</strong>, like TreeSHAP or a neural net's gradients) or works on anything with a <code>predict</code> function (<strong>model-agnostic</strong>, like permutation importance, PDP, KernelSHAP and LIME).</p>
+
+<figure class="fig">
+<svg viewBox="0 0 780 360" role="img" aria-label="A two-by-two map of explanation methods: global versus local scope on the horizontal axis, intrinsic versus post-hoc on the vertical axis, with methods placed in each quadrant">
+  <defs><marker id="arr-f1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+  <!-- axes labels -->
+  <text x="290" y="24" text-anchor="middle" class="lbl-strong" font-size="14">GLOBAL — "what does the model rely on?"</text>
+  <text x="620" y="24" text-anchor="middle" class="lbl-strong" font-size="14">LOCAL — "why this prediction?"</text>
+  <text x="26" y="120" text-anchor="middle" class="lbl-strong" font-size="13" transform="rotate(-90 26 120)">INTRINSIC</text>
+  <text x="26" y="270" text-anchor="middle" class="lbl-strong" font-size="13" transform="rotate(-90 26 270)">POST-HOC</text>
+  <!-- quadrants -->
+  <rect x="50" y="40" width="440" height="150" rx="8" fill="var(--s3)" fill-opacity=".12" stroke="var(--s3)" stroke-width="1.5"/>
+  <rect x="500" y="40" width="260" height="150" rx="8" fill="var(--s3)" fill-opacity=".12" stroke="var(--s3)" stroke-width="1.5"/>
+  <rect x="50" y="200" width="440" height="150" rx="8" fill="var(--s1)" fill-opacity=".10" stroke="var(--s1)" stroke-width="1.5"/>
+  <rect x="500" y="200" width="260" height="150" rx="8" fill="var(--s1)" fill-opacity=".10" stroke="var(--s1)" stroke-width="1.5"/>
+  <!-- intrinsic global -->
+  <text x="70" y="66" class="lbl-strong">Read the model itself</text>
+  <text x="70" y="90" class="lbl">• Linear / logistic coefficients (after scaling)</text>
+  <text x="70" y="110" class="lbl">• Decision tree structure (depth ≤ 4)</text>
+  <text x="70" y="130" class="lbl">• GAM / EBM shape functions</text>
+  <text x="70" y="150" class="lbl">• Rule lists, scorecards</text>
+  <text x="70" y="176" class="lbl" fill="var(--s3)" font-weight="700">exact, but only for simple models</text>
+  <!-- intrinsic local -->
+  <text x="520" y="66" class="lbl-strong">Trace one row</text>
+  <text x="520" y="90" class="lbl">• Coefficient × value per feature</text>
+  <text x="520" y="110" class="lbl">• The root-to-leaf path in a tree</text>
+  <text x="520" y="130" class="lbl">• Nearest neighbours (kNN)</text>
+  <text x="520" y="176" class="lbl" fill="var(--s3)" font-weight="700">"here is exactly the rule that fired"</text>
+  <!-- post-hoc global -->
+  <text x="70" y="226" class="lbl-strong">Interrogate the black box overall</text>
+  <text x="70" y="250" class="lbl">• Permutation importance      • mean |SHAP| bar</text>
+  <text x="70" y="270" class="lbl">• Partial dependence (PDP)     • SHAP beeswarm</text>
+  <text x="70" y="290" class="lbl">• Global surrogate tree        • ALE plots</text>
+  <text x="70" y="310" class="lbl">• Impurity importance (trees only — biased)</text>
+  <text x="70" y="336" class="lbl" fill="var(--s1)" font-weight="700">works on any model; approximations</text>
+  <!-- post-hoc local -->
+  <text x="520" y="226" class="lbl-strong">Interrogate one prediction</text>
+  <text x="520" y="250" class="lbl">• SHAP waterfall / force plot</text>
+  <text x="520" y="270" class="lbl">• LIME (local linear surrogate)</text>
+  <text x="520" y="290" class="lbl">• ICE curve for this row</text>
+  <text x="520" y="310" class="lbl">• Counterfactual ("change X to flip")</text>
+  <text x="520" y="336" class="lbl" fill="var(--s1)" font-weight="700">what regulators &amp; customers ask for</text>
+</svg>
+<figcaption><strong>Figure 20.1 — The explanation map.</strong> Global methods answer "what does the model rely on?", local ones "why this prediction?". Intrinsic methods read a transparent model directly; post-hoc methods probe a finished black box. Most of the chapter lives in the bottom row, because that is where boosted trees and neural networks live.</figcaption>
+</figure>
+
+<div class="tbl-wrap">
+<table class="tbl">
+<thead><tr><th>Question at work</th><th>Scope</th><th>Reach for</th><th>Watch out for</th></tr></thead>
+<tbody>
+<tr><td>"Is the model using something it shouldn't?" (leakage, proxies)</td><td>Global</td><td>Permutation importance, mean |SHAP|</td><td>Correlated features share credit</td></tr>
+<tr><td>"How does the prediction change with X?"</td><td>Global</td><td>PDP + ICE, SHAP dependence plot</td><td>Extrapolation into impossible regions</td></tr>
+<tr><td>"Why was this application declined?"</td><td>Local</td><td>SHAP waterfall</td><td>Units are log-odds for classifiers</td></tr>
+<tr><td>"What could the customer do to be approved?"</td><td>Local</td><td>Counterfactual search</td><td>Must be actionable and plausible</td></tr>
+<tr><td>"Give me a rule the business can follow"</td><td>Global</td><td>Surrogate tree, EBM</td><td>Report surrogate fidelity</td></tr>
+<tr><td>"Does it treat group B worse than group A?"</td><td>Global</td><td>Fairness metrics per group</td><td>Pick the metric before you look</td></tr>
+</tbody>
+</table>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s3">3. Models that explain themselves</h2>
+
+<p>Before reaching for post-hoc tools, ask whether an intrinsically interpretable model is good enough. Surprisingly often it is — and when the accuracy gap to a boosted model is small, an interpretable model is the right engineering choice for a regulated decision.</p>
+
+<h3>Linear and logistic coefficients — with the scaling caveat</h3>
+<p>In a linear model ŷ = w<sub>0</sub> + w<sub>1</sub>x<sub>1</sub> + … + w<sub>n</sub>x<sub>n</sub> each coefficient says "one unit more of x<sub>j</sub> moves the prediction by w<sub>j</sub>, holding the others fixed." That sentence contains two traps. First, <strong>units</strong>: a coefficient of 0.002 on <code>income_eur</code> and 3.0 on <code>num_dependents</code> tells you nothing about which matters more — income spans 100,000 units, dependents span 5. Only after standardising the features (Chapter 8) are coefficients comparable, and then w<sub>j</sub> reads as "effect of one standard deviation." Second, <strong>"holding the others fixed"</strong> is a fiction when features are correlated: you cannot raise <code>worst radius</code> while holding <code>worst perimeter</code> fixed, so the individual coefficients of correlated features are unstable (they can even flip sign) even when their sum is perfectly stable.</p>
+
+<div class="callout math"><div class="title">The math (optional)</div>
+<div class="formula">logit(p) = ln(p / (1 − p)) = w<sub>0</sub> + ∑<sub>j</sub> w<sub>j</sub> x<sub>j</sub> &nbsp;&nbsp;⇒&nbsp;&nbsp; odds ratio for +1 in x<sub>j</sub> = e<sup>w<sub>j</sub></sup></div>
+<p>For logistic regression the coefficient w<sub>j</sub> is the change in <em>log-odds</em> per unit of x<sub>j</sub>; exponentiate it to get an odds ratio (e<sup>0.7</sup> ≈ 2.0 means the odds of the positive class double). Log-odds are additive, probabilities are not — this is why SHAP for classifiers also works in log-odds (Section 6).</p>
+</div>
+
+<h3>Decision trees</h3>
+<p>A depth-3 tree is a flowchart anyone can follow, and the root-to-leaf path <em>is</em> the local explanation: "declined because utilisation &gt; 80% and months-on-book &lt; 12." Past depth 4 or 5 the flowchart stops being readable, and Chapter 9 showed that single trees are unstable. Trees are best as the honest baseline you compare a black box against, and as <em>surrogates</em> (Section 7).</p>
+
+<h3>GAMs and EBMs</h3>
+<p>A <strong>generalised additive model</strong> keeps the additive structure of a linear model but lets each feature have its own learned <em>shape function</em>: ŷ = w<sub>0</sub> + f<sub>1</sub>(x<sub>1</sub>) + … + f<sub>n</sub>(x<sub>n</sub>). Each f<sub>j</sub> is a curve you can plot, so the whole model is a small gallery of curves. <strong>Explainable Boosting Machines</strong> (EBM, in the <code>interpret</code> package) fit those curves with boosting and add a few pairwise interaction terms; on tabular data they typically land within a point or two of a tuned GBM while remaining exactly interpretable. If you work in a regulated domain, an EBM should be one of the candidates in every model bake-off.</p>
+
+<div class="callout pro"><div class="title">At work</div>
+<p>The question is never "interpretable model or accurate model?" It is "how much accuracy does interpretability cost here, and is that cost worth what interpretability buys?" Measure the gap. A 0.3-point AUC gap is worth paying for a model that legal can sign off in a week; a 6-point gap in fraud detection is not. Write the number down in the model card (Section 10) so the trade-off is a decision, not an accident.</p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s4">4. Feature importance, done honestly</h2>
+
+<p>"Which features matter most?" is the first question everyone asks. Tree libraries answer it for free with <strong>impurity importance</strong> (also called gain or Gini importance): for each feature, add up how much every split on that feature reduced impurity (Gini, entropy or squared error, Chapter 9), across all trees, and normalise to sum to 1. It costs nothing, and it is biased in three predictable ways:</p>
+
+<ul>
+  <li><strong>It favours high-cardinality features.</strong> A continuous feature or an ID-like column offers thousands of candidate split points, so it gets to reduce impurity somewhere by chance. A random noise column with many unique values will routinely out-rank a genuinely useful binary feature.</li>
+  <li><strong>It is computed on training data.</strong> It measures how much the model <em>used</em> a feature while fitting — including while overfitting — not whether the feature helps on new data.</li>
+  <li><strong>Correlated features are arbitrary.</strong> When two features carry the same signal, whichever the tree happened to pick at the top gets the credit; the other looks useless.</li>
+</ul>
+
+<p><strong>Permutation importance</strong> fixes the first two problems by asking a cleaner question: <em>if I destroy the information in this column, how much worse does the model get?</em></p>
+
+<ol class="steps">
+  <li><strong>Score the model on held-out data.</strong> Compute the metric you actually care about (AUC, log-loss, RMSE) on the validation set: <em>s</em><sub>base</sub>.</li>
+  <li><strong>Shuffle one column.</strong> Randomly permute the values of feature <em>j</em> across rows. Every row keeps a <em>realistic</em> value of x<sub>j</sub>, just not its own — the marginal distribution is preserved, the link to the label is cut.</li>
+  <li><strong>Re-score.</strong> Predict with the shuffled data and compute the metric again: <em>s</em><sub>shuffled,j</sub>.</li>
+  <li><strong>Importance = the drop.</strong> imp<sub>j</sub> = <em>s</em><sub>base</sub> − <em>s</em><sub>shuffled,j</sub>. Repeat the shuffle 10–30 times and report mean ± standard deviation, because one shuffle is noisy.</li>
+  <li><strong>Restore the column and move to the next feature.</strong> No retraining anywhere — this is why it is cheap enough to run on any model.</li>
+</ol>
+
+<figure class="fig">
+<svg viewBox="0 0 780 320" role="img" aria-label="Permutation importance mechanism: a validation table has one column shuffled, the trained model scores both versions, and the importance is the drop in the metric">
+  <defs><marker id="arr-f2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+  <text x="150" y="24" text-anchor="middle" class="lbl-strong" font-size="14">Validation data (untouched)</text>
+  <!-- original table -->
+  <g>
+    <rect x="30" y="40" width="240" height="26" class="fill-surface2" stroke="var(--border)"/>
+    <text x="60" y="58" text-anchor="middle" class="lbl-strong" font-size="11">age</text>
+    <text x="120" y="58" text-anchor="middle" class="lbl-strong" font-size="11">income</text>
+    <text x="180" y="58" text-anchor="middle" class="lbl-strong" font-size="11">util %</text>
+    <text x="240" y="58" text-anchor="middle" class="lbl-strong" font-size="11">y</text>
+    <g class="lbl" font-size="11">
+      <rect x="30" y="66" width="240" height="24" fill="none" stroke="var(--border)"/><text x="60" y="82" text-anchor="middle">34</text><text x="120" y="82" text-anchor="middle">41k</text><text x="180" y="82" text-anchor="middle">12</text><text x="240" y="82" text-anchor="middle">repaid</text>
+      <rect x="30" y="90" width="240" height="24" fill="none" stroke="var(--border)"/><text x="60" y="106" text-anchor="middle">51</text><text x="120" y="106" text-anchor="middle">88k</text><text x="180" y="106" text-anchor="middle">67</text><text x="240" y="106" text-anchor="middle">default</text>
+      <rect x="30" y="114" width="240" height="24" fill="none" stroke="var(--border)"/><text x="60" y="130" text-anchor="middle">27</text><text x="120" y="130" text-anchor="middle">29k</text><text x="180" y="130" text-anchor="middle">91</text><text x="240" y="130" text-anchor="middle">default</text>
+      <rect x="30" y="138" width="240" height="24" fill="none" stroke="var(--border)"/><text x="60" y="154" text-anchor="middle">45</text><text x="120" y="154" text-anchor="middle">63k</text><text x="180" y="154" text-anchor="middle">8</text><text x="240" y="154" text-anchor="middle">repaid</text>
+    </g>
+  </g>
+  <text x="150" y="196" text-anchor="middle" class="lbl">model → AUC<tspan font-size="9" dy="3">base</tspan><tspan dy="-3"> = 0.91</tspan></text>
+
+  <!-- shuffled table -->
+  <text x="550" y="24" text-anchor="middle" class="lbl-strong" font-size="14">Same data, "util %" column shuffled</text>
+  <g>
+    <rect x="430" y="40" width="240" height="26" class="fill-surface2" stroke="var(--border)"/>
+    <text x="460" y="58" text-anchor="middle" class="lbl-strong" font-size="11">age</text>
+    <text x="520" y="58" text-anchor="middle" class="lbl-strong" font-size="11">income</text>
+    <rect x="550" y="40" width="60" height="122" fill="var(--s2)" fill-opacity=".18"/>
+    <text x="580" y="58" text-anchor="middle" class="lbl-strong" font-size="11" fill="var(--s2)">util %</text>
+    <text x="640" y="58" text-anchor="middle" class="lbl-strong" font-size="11">y</text>
+    <g class="lbl" font-size="11">
+      <rect x="430" y="66" width="240" height="24" fill="none" stroke="var(--border)"/><text x="460" y="82" text-anchor="middle">34</text><text x="520" y="82" text-anchor="middle">41k</text><text x="580" y="82" text-anchor="middle" fill="var(--s2)" font-weight="700">91</text><text x="640" y="82" text-anchor="middle">repaid</text>
+      <rect x="430" y="90" width="240" height="24" fill="none" stroke="var(--border)"/><text x="460" y="106" text-anchor="middle">51</text><text x="520" y="106" text-anchor="middle">88k</text><text x="580" y="106" text-anchor="middle" fill="var(--s2)" font-weight="700">8</text><text x="640" y="106" text-anchor="middle">default</text>
+      <rect x="430" y="114" width="240" height="24" fill="none" stroke="var(--border)"/><text x="460" y="130" text-anchor="middle">27</text><text x="520" y="130" text-anchor="middle">29k</text><text x="580" y="130" text-anchor="middle" fill="var(--s2)" font-weight="700">12</text><text x="640" y="130" text-anchor="middle">default</text>
+      <rect x="430" y="138" width="240" height="24" fill="none" stroke="var(--border)"/><text x="460" y="154" text-anchor="middle">45</text><text x="520" y="154" text-anchor="middle">63k</text><text x="580" y="154" text-anchor="middle" fill="var(--s2)" font-weight="700">67</text><text x="640" y="154" text-anchor="middle">repaid</text>
+    </g>
+  </g>
+  <!-- shuffle arrows -->
+  <path d="M290,100 C340,60 380,60 425,100" class="arrow" marker-end="url(#arr-f2)"/>
+  <text x="358" y="70" text-anchor="middle" class="lbl-strong" fill="var(--s2)">shuffle</text>
+  <text x="358" y="84" text-anchor="middle" class="lbl" font-size="10">(rows keep real values,</text>
+  <text x="358" y="96" text-anchor="middle" class="lbl" font-size="10">link to y is cut)</text>
+  <text x="550" y="196" text-anchor="middle" class="lbl">model → AUC<tspan font-size="9" dy="3">shuffled</tspan><tspan dy="-3"> = 0.84</tspan></text>
+  <!-- result bar -->
+  <rect x="120" y="222" width="540" height="70" rx="8" class="box-accent"/>
+  <text x="390" y="248" text-anchor="middle" class="lbl-strong" font-size="14">importance(util %) = 0.91 − 0.84 = 0.07 AUC</text>
+  <text x="390" y="272" text-anchor="middle" class="lbl">repeat the shuffle 20× → 0.07 ± 0.01 · no retraining · any model · any metric</text>
+  <text x="390" y="312" text-anchor="middle" class="lbl" font-size="11">A feature whose shuffle changes nothing (importance ≈ 0) is one the model does not rely on — even if impurity importance says otherwise.</text>
+</svg>
+<figcaption><strong>Figure 20.2 — Permutation importance shuffles one column and measures the damage.</strong> Because it is computed on validation data with the metric you care about, it measures what the model <em>needs</em>, not what it happened to <em>touch</em> during training.</figcaption>
+</figure>
+
+<pre class="code" data-lang="python"><code><span class="cm"># Impurity importance vs permutation importance on a gradient-boosted model</span>
+<span class="kw">import</span> numpy <span class="kw">as</span> np, pandas <span class="kw">as</span> pd
+<span class="kw">from</span> sklearn.datasets <span class="kw">import</span> load_breast_cancer
+<span class="kw">from</span> sklearn.model_selection <span class="kw">import</span> train_test_split
+<span class="kw">from</span> sklearn.ensemble <span class="kw">import</span> GradientBoostingClassifier
+<span class="kw">from</span> sklearn.inspection <span class="kw">import</span> permutation_importance
+
+X, y = load_breast_cancer(return_X_y=<span class="kw">True</span>, as_frame=<span class="kw">True</span>)
+X_tr, X_va, y_tr, y_va = train_test_split(X, y, test_size=<span class="nu">0.3</span>, random_state=<span class="nu">0</span>, stratify=y)
+
+gbm = GradientBoostingClassifier(n_estimators=<span class="nu">200</span>, max_depth=<span class="nu">3</span>, learning_rate=<span class="nu">0.05</span>, random_state=<span class="nu">0</span>)
+gbm.fit(X_tr, y_tr)
+<span class="fn">print</span>(<span class="st">f"validation accuracy = {gbm.score(X_va, y_va):.3f}"</span>)
+
+<span class="cm"># 1) impurity ("gain") importance: free, computed on TRAINING data, sums to 1</span>
+imp = pd.Series(gbm.feature_importances_, index=X.columns).sort_values(ascending=<span class="kw">False</span>)
+
+<span class="cm"># 2) permutation importance: shuffle one column, measure the drop in a metric on VALIDATION data</span>
+perm = permutation_importance(gbm, X_va, y_va, scoring=<span class="st">"neg_log_loss"</span>, n_repeats=<span class="nu">20</span>, random_state=<span class="nu">0</span>, n_jobs=<span class="nu">1</span>)
+pi = pd.Series(perm.importances_mean, index=X.columns).sort_values(ascending=<span class="kw">False</span>)
+sd = pd.Series(perm.importances_std, index=X.columns)
+
+<span class="fn">print</span>(<span class="st">"\ntop-5 impurity importance        top-5 permutation importance (log-loss increase)"</span>)
+<span class="kw">for</span> (a, va), (b, vb) <span class="kw">in</span> <span class="fn">zip</span>(imp.head(<span class="nu">5</span>).items(), pi.head(<span class="nu">5</span>).items()):
+    <span class="fn">print</span>(<span class="st">f"{a:&lt;24}{va:5.3f}        {b:&lt;24}{vb:5.3f} ± {sd[b]:.3f}"</span>)
+<span class="fn">print</span>(<span class="st">f"\nfeatures whose permutation importance is &lt;= 0: {(pi &lt;= 0).sum()} of {len(pi)}"</span>)
+<span class="out"># validation accuracy = 0.942</span>
+<span class="out">#</span>
+<span class="out"># top-5 impurity importance        top-5 permutation importance (log-loss increase)</span>
+<span class="out"># worst perimeter         0.493        worst texture           0.074 ± 0.026</span>
+<span class="out"># worst concave points    0.159        worst perimeter         0.045 ± 0.031</span>
+<span class="out"># mean concave points     0.105        mean concave points     0.044 ± 0.025</span>
+<span class="out"># worst concave points    0.080        worst concave points    0.044 ± 0.033</span>
+<span class="out"># worst texture           0.029        worst radius            0.028 ± 0.029</span>
+<span class="out">#</span>
+<span class="out"># features whose permutation importance is &lt;= 0: 11 of 30</span></code></pre>
+
+<p>Read the two columns against each other. Impurity importance says <code>worst perimeter</code> carries half the model (0.49) and <code>worst texture</code> is a footnote (0.03). Permutation importance says the reverse: shuffling <code>worst texture</code> hurts the most, and <code>worst perimeter</code> loses much of its crown. Why? <code>worst perimeter</code>, <code>worst radius</code> and <code>worst area</code> are almost the same measurement (correlation above 0.97). The trees split on perimeter first, so impurity credits perimeter; but when you shuffle perimeter alone, radius and area still carry the signal and the model barely suffers. Texture, by contrast, has no stand-in, so destroying it hurts. Also note the ± column: with 171 validation rows the ranks below the top two are genuinely uncertain. Report the uncertainty; do not present a ranked list as if it were carved in stone.</p>
+
+<div class="callout warn"><div class="title">Common mistake</div>
+<p><strong>Computing permutation importance on the training set.</strong> An overfit model "needs" the noise it memorised, so training-set permutation importance rewards exactly the features that will fail in production. Always pass the validation (or test) set. The second mistake is the mirror image of the first: concluding "feature X has importance zero, so it is useless." With correlated features, zero permutation importance means <em>redundant given the others</em>, not <em>uninformative</em>. Drop-column importance (retrain without the feature) or grouping correlated features before shuffling both address this.</p>
+</div>
+
+<div class="callout pro"><div class="title">At work: the leakage detector</div>
+<p>Run permutation importance on every model before you believe its validation score. A single feature with importance far above the rest — especially a date, an ID, a status field, or anything that could be written <em>after</em> the outcome — is a leakage suspect. In the lender's case <code>days_since_last_statement</code> had three times the importance of the next feature. That pattern should make you suspicious before it makes you proud.</p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s5">5. Partial dependence &amp; ICE</h2>
+
+<p>Importance says <em>how much</em> a feature matters; it says nothing about <em>how</em>. Does default risk go up with utilisation, down, or up-then-down? The <strong>partial dependence plot</strong> (PDP) answers this by brute force: take every row in the data, overwrite feature <em>j</em> with a chosen value <em>v</em>, predict, and average. Slide <em>v</em> across the feature's range and you get one curve — "the average prediction as a function of x<sub>j</sub>, with everything else as it is in the data."</p>
+
+<div class="callout math"><div class="title">The math (optional)</div>
+<div class="formula">PD<sub>j</sub>(v) = (1/n) ∑<sub>i=1</sub><sup>n</sup> f(v, x<sub>i,−j</sub>)</div>
+<p><em>f</em> is the fitted model, <em>n</em> the number of rows, x<sub>i,−j</sub> all the features of row <em>i</em> except <em>j</em>, which is forced to the value <em>v</em>. Each term f(v, x<sub>i,−j</sub>) as a function of <em>v</em> is one <strong>ICE curve</strong> (individual conditional expectation): the model's response for row <em>i</em> alone. The PDP is simply the mean of the ICE curves — and a mean can hide anything.</p>
+</div>
+
+<figure class="fig">
+<svg viewBox="0 0 780 320" role="img" aria-label="Left: eight ICE curves, half rising and half falling with the feature, whose average partial dependence curve is nearly flat. Right: a two-dimensional partial dependence heatmap over two features showing an interaction">
+  <defs><marker id="arr-f3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+  <text x="210" y="24" text-anchor="middle" class="lbl-strong" font-size="14">ICE curves (blue) and their average, the PDP (orange)</text>
+  <line x1="60" y1="250" x2="370" y2="250" class="axis" marker-end="url(#arr-f3)"/>
+  <line x1="60" y1="250" x2="60" y2="40" class="axis" marker-end="url(#arr-f3)"/>
+  <text x="215" y="278" text-anchor="middle" class="lbl">feature x<tspan font-size="9" dy="3">j</tspan><tspan dy="-3"> (e.g. hours of exercise per week)</tspan></text>
+  <text x="30" y="150" text-anchor="middle" class="lbl" transform="rotate(-90 30 150)">predicted P(y = 1)</text>
+  <path d="M60.0,246.0 L70.3,246.0 L80.7,246.0 L91.0,246.0 L101.4,246.0 L111.7,246.0 L122.1,246.0 L132.4,246.0 L142.8,246.0 L153.1,246.0 L163.4,246.0 L173.8,246.0 L184.1,246.0 L194.5,236.3 L204.8,225.5 L215.2,214.5 L225.5,203.7 L235.9,193.5 L246.2,184.1 L256.6,175.9 L266.9,168.8 L277.2,162.8 L287.6,157.9 L297.9,154.0 L308.3,150.9 L318.6,148.4 L329.0,146.4 L339.3,144.9 L349.7,143.8 L360.0,142.9" fill="none" stroke="var(--s1)" stroke-width="1.4" stroke-opacity=".55"/>
+<path d="M60.0,246.0 L70.3,246.0 L80.7,246.0 L91.0,246.0 L101.4,246.0 L111.7,246.0 L122.1,246.0 L132.4,246.0 L142.8,245.7 L153.1,241.0 L163.4,235.3 L173.8,228.7 L184.1,221.2 L194.5,213.1 L204.8,204.4 L215.2,195.6 L225.5,186.9 L235.9,178.8 L246.2,171.3 L256.6,164.7 L266.9,159.0 L277.2,154.3 L287.6,150.4 L297.9,147.2 L308.3,144.7 L318.6,142.7 L329.0,141.1 L339.3,139.9 L349.7,139.0 L360.0,138.3" fill="none" stroke="var(--s1)" stroke-width="1.4" stroke-opacity=".55"/>
+<path d="M60.0,226.3 L70.3,225.7 L80.7,225.0 L91.0,224.1 L101.4,223.0 L111.7,221.5 L122.1,219.6 L132.4,217.2 L142.8,214.3 L153.1,210.7 L163.4,206.5 L173.8,201.5 L184.1,195.9 L194.5,189.8 L204.8,183.3 L215.2,176.7 L225.5,170.2 L235.9,164.1 L246.2,158.5 L256.6,153.5 L266.9,149.3 L277.2,145.7 L287.6,142.8 L297.9,140.4 L308.3,138.5 L318.6,137.0 L329.0,135.9 L339.3,135.0 L349.7,134.3 L360.0,133.7" fill="none" stroke="var(--s1)" stroke-width="1.4" stroke-opacity=".55"/>
+<path d="M60.0,173.1 L70.3,172.9 L80.7,172.5 L91.0,172.1 L101.4,171.5 L111.7,170.7 L122.1,169.8 L132.4,168.6 L142.8,167.2 L153.1,165.4 L163.4,163.2 L173.8,160.8 L184.1,158.0 L194.5,154.9 L204.8,151.7 L215.2,148.3 L225.5,145.1 L235.9,142.0 L246.2,139.2 L256.6,136.8 L266.9,134.6 L277.2,132.8 L287.6,131.4 L297.9,130.2 L308.3,129.3 L318.6,128.5 L329.0,127.9 L339.3,127.5 L349.7,127.1 L360.0,126.9" fill="none" stroke="var(--s1)" stroke-width="1.4" stroke-opacity=".55"/>
+<path d="M60.0,106.9 L70.3,107.1 L80.7,107.5 L91.0,107.9 L101.4,108.5 L111.7,109.3 L122.1,110.2 L132.4,111.4 L142.8,112.8 L153.1,114.6 L163.4,116.8 L173.8,119.2 L184.1,122.0 L194.5,125.1 L204.8,128.3 L215.2,131.7 L225.5,134.9 L235.9,138.0 L246.2,140.8 L256.6,143.2 L266.9,145.4 L277.2,147.2 L287.6,148.6 L297.9,149.8 L308.3,150.7 L318.6,151.5 L329.0,152.1 L339.3,152.5 L349.7,152.9 L360.0,153.1" fill="none" stroke="var(--s1)" stroke-width="1.4" stroke-opacity=".55"/>
+<path d="M60.0,71.4 L70.3,71.9 L80.7,72.5 L91.0,73.2 L101.4,74.2 L111.7,75.4 L122.1,77.0 L132.4,79.0 L142.8,81.4 L153.1,84.4 L163.4,87.9 L173.8,92.1 L184.1,96.7 L194.5,101.8 L204.8,107.2 L215.2,112.8 L225.5,118.2 L235.9,123.3 L246.2,127.9 L256.6,132.1 L266.9,135.6 L277.2,138.6 L287.6,141.0 L297.9,143.0 L308.3,144.6 L318.6,145.8 L329.0,146.8 L339.3,147.5 L349.7,148.1 L360.0,148.6" fill="none" stroke="var(--s1)" stroke-width="1.4" stroke-opacity=".55"/>
+<path d="M60.0,54.0 L70.3,54.0 L80.7,54.0 L91.0,54.0 L101.4,54.0 L111.7,54.0 L122.1,54.0 L132.4,54.0 L142.8,54.0 L153.1,54.0 L163.4,54.7 L173.8,61.3 L184.1,68.8 L194.5,76.9 L204.8,85.6 L215.2,94.4 L225.5,103.1 L235.9,111.2 L246.2,118.7 L256.6,125.3 L266.9,131.0 L277.2,135.7 L287.6,139.6 L297.9,142.8 L308.3,145.3 L318.6,147.3 L329.0,148.9 L339.3,150.1 L349.7,151.0 L360.0,151.7" fill="none" stroke="var(--s1)" stroke-width="1.4" stroke-opacity=".55"/>
+<path d="M60.0,54.0 L70.3,54.0 L80.7,54.0 L91.0,54.0 L101.4,54.0 L111.7,54.0 L122.1,54.0 L132.4,54.0 L142.8,54.0 L153.1,54.0 L163.4,54.0 L173.8,54.0 L184.1,56.1 L194.5,65.3 L204.8,75.0 L215.2,85.0 L225.5,94.7 L235.9,103.9 L246.2,112.3 L256.6,119.7 L266.9,126.1 L277.2,131.5 L287.6,135.9 L297.9,139.4 L308.3,142.2 L318.6,144.5 L329.0,146.2 L339.3,147.6 L349.7,148.6 L360.0,149.4" fill="none" stroke="var(--s1)" stroke-width="1.4" stroke-opacity=".55"/>
+<path d="M60.0,147.2 L70.3,147.2 L80.7,147.2 L91.0,147.2 L101.4,147.1 L111.7,147.1 L122.1,147.1 L132.4,147.0 L142.8,146.9 L153.1,146.3 L163.4,145.6 L173.8,145.4 L184.1,145.6 L194.5,145.4 L204.8,145.1 L215.2,144.9 L225.5,144.6 L235.9,144.3 L246.2,144.1 L256.6,143.9 L266.9,143.7 L277.2,143.6 L287.6,143.4 L297.9,143.3 L308.3,143.3 L318.6,143.2 L329.0,143.2 L339.3,143.1 L349.7,143.1 L360.0,143.1" fill="none" stroke="var(--s2)" stroke-width="3.5"/>
+  <text x="368" y="66" text-anchor="end" class="lbl" fill="var(--s1)">rows where x<tspan font-size="8" dy="3">j</tspan><tspan dy="-3"> helps</tspan></text>
+  <text x="368" y="244" text-anchor="end" class="lbl" fill="var(--s1)">rows where x<tspan font-size="8" dy="3">j</tspan><tspan dy="-3"> hurts</tspan></text>
+  <text x="130" y="140" class="lbl-strong" fill="var(--s2)">PDP ≈ flat</text>
+  <text x="130" y="155" class="lbl" font-size="11">"no effect on average" — but a</text>
+  <text x="130" y="169" class="lbl" font-size="11">strong effect for every single row</text>
+  <text x="215" y="304" text-anchor="middle" class="lbl" font-size="11">Heterogeneous ICE curves = an interaction with some other feature.</text>
+  <!-- right: 2-D PDP -->
+  <text x="600" y="24" text-anchor="middle" class="lbl-strong" font-size="14">2-D PDP: an interaction surface</text>
+  <g>
+    <rect x="470" y="50" width="40" height="40" fill="var(--q100)"/><rect x="510" y="50" width="40" height="40" fill="var(--q200)"/><rect x="550" y="50" width="40" height="40" fill="var(--q300)"/><rect x="590" y="50" width="40" height="40" fill="var(--q500)"/><rect x="630" y="50" width="40" height="40" fill="var(--q700)"/>
+    <rect x="470" y="90" width="40" height="40" fill="var(--q100)"/><rect x="510" y="90" width="40" height="40" fill="var(--q200)"/><rect x="550" y="90" width="40" height="40" fill="var(--q300)"/><rect x="590" y="90" width="40" height="40" fill="var(--q400)"/><rect x="630" y="90" width="40" height="40" fill="var(--q600)"/>
+    <rect x="470" y="130" width="40" height="40" fill="var(--q100)"/><rect x="510" y="130" width="40" height="40" fill="var(--q100)"/><rect x="550" y="130" width="40" height="40" fill="var(--q200)"/><rect x="590" y="130" width="40" height="40" fill="var(--q300)"/><rect x="630" y="130" width="40" height="40" fill="var(--q400)"/>
+    <rect x="470" y="170" width="40" height="40" fill="var(--q100)"/><rect x="510" y="170" width="40" height="40" fill="var(--q100)"/><rect x="550" y="170" width="40" height="40" fill="var(--q100)"/><rect x="590" y="170" width="40" height="40" fill="var(--q200)"/><rect x="630" y="170" width="40" height="40" fill="var(--q200)"/>
+    <rect x="470" y="210" width="40" height="40" fill="var(--q100)"/><rect x="510" y="210" width="40" height="40" fill="var(--q100)"/><rect x="550" y="210" width="40" height="40" fill="var(--q100)"/><rect x="590" y="210" width="40" height="40" fill="var(--q100)"/><rect x="630" y="210" width="40" height="40" fill="var(--q100)"/>
+  </g>
+  <rect x="470" y="50" width="200" height="200" fill="none" stroke="var(--ink-3)"/>
+  <text x="570" y="272" text-anchor="middle" class="lbl">utilisation % →</text>
+  <text x="452" y="150" text-anchor="middle" class="lbl" transform="rotate(-90 452 150)">months on book →</text>
+  <!-- legend -->
+  <rect x="690" y="50" width="14" height="200" fill="var(--q400)"/>
+  <rect x="690" y="50" width="14" height="40" fill="var(--q700)"/><rect x="690" y="90" width="14" height="40" fill="var(--q600)"/><rect x="690" y="130" width="14" height="40" fill="var(--q400)"/><rect x="690" y="170" width="14" height="40" fill="var(--q200)"/><rect x="690" y="210" width="14" height="40" fill="var(--q100)"/>
+  <text x="710" y="58" class="lbl" font-size="10">high</text><text x="710" y="248" class="lbl" font-size="10">low</text>
+  <text x="712" y="150" class="lbl" font-size="10">P(default)</text>
+  <text x="570" y="296" text-anchor="middle" class="lbl" font-size="11">High utilisation hurts only new accounts — an interaction.</text>
+  <text x="570" y="310" text-anchor="middle" class="lbl" font-size="11">Top-left corner is empty in the data: extrapolation.</text>
+</svg>
+<figcaption><strong>Figure 20.3 — A PDP is an average, and averages hide.</strong> Left: every ICE curve moves strongly with the feature, but half rise and half fall, so their mean (the PDP) is flat — the model has a real, strong, <em>interacting</em> effect that a PDP alone would report as "nothing." Right: a two-way PDP shows the interaction directly, and reminds you that some cells contain no real data.</figcaption>
+</figure>
+
+<p>Three rules for reading these plots at work:</p>
+<ul>
+  <li><strong>Always draw ICE curves under the PDP.</strong> If they are parallel, the PDP is trustworthy. If they fan out or cross, there is an interaction and the average is misleading; go find the interacting feature with a 2-D PDP or a SHAP dependence plot.</li>
+  <li><strong>Mark where the data actually is.</strong> The PDP forces every row to take value <em>v</em>, including combinations that never occur (a 19-year-old with 40 years of credit history). In those regions the curve is pure <strong>extrapolation</strong> — the model's guess about a world it never saw. Overlay a rug of observed values, or restrict the grid to the 5th–95th percentiles as sklearn does by default. <strong>Accumulated local effects</strong> (ALE) plots avoid the problem by only asking about small local changes around real data points; use them when features are strongly correlated.</li>
+  <li><strong>A PDP is not a causal curve.</strong> It shows what the <em>model</em> does when a feature changes, not what the <em>world</em> would do if you changed it. Section 8 returns to this.</li>
+</ul>
+
+<pre class="code" data-lang="python"><code><span class="cm"># Partial dependence and ICE, as numbers (the plot is just these numbers drawn)</span>
+<span class="kw">import</span> numpy <span class="kw">as</span> np
+<span class="kw">from</span> sklearn.datasets <span class="kw">import</span> load_breast_cancer
+<span class="kw">from</span> sklearn.ensemble <span class="kw">import</span> GradientBoostingClassifier
+<span class="kw">from</span> sklearn.inspection <span class="kw">import</span> partial_dependence
+
+X, y = load_breast_cancer(return_X_y=<span class="kw">True</span>, as_frame=<span class="kw">True</span>)
+feats = [<span class="st">"mean radius"</span>, <span class="st">"mean texture"</span>, <span class="st">"mean smoothness"</span>, <span class="st">"mean concave points"</span>, <span class="st">"mean symmetry"</span>, <span class="st">"worst texture"</span>]
+X = X[feats]                     <span class="cm"># a less-correlated subset so the curves are readable</span>
+gbm = GradientBoostingClassifier(n_estimators=<span class="nu">150</span>, max_depth=<span class="nu">3</span>, learning_rate=<span class="nu">0.05</span>, random_state=<span class="nu">0</span>).fit(X, y)
+
+<span class="kw">for</span> feat <span class="kw">in</span> [<span class="st">"mean radius"</span>, <span class="st">"mean concave points"</span>]:
+    res = partial_dependence(gbm, X, features=[feat], kind=<span class="st">"both"</span>, grid_resolution=<span class="nu">6</span>, response_method=<span class="st">"predict_proba"</span>)
+    grid, avg, ice = res[<span class="st">"grid_values"</span>][<span class="nu">0</span>], res[<span class="st">"average"</span>][<span class="nu">0</span>], res[<span class="st">"individual"</span>][<span class="nu">0</span>]
+    <span class="fn">print</span>(<span class="st">f"\n{feat:&gt;20} {'PDP P(benign)':&gt;14} {'ICE 10th pct':&gt;13} {'ICE 90th pct':&gt;13}"</span>)
+    <span class="kw">for</span> g, a, lo, hi <span class="kw">in</span> <span class="fn">zip</span>(grid, avg, np.percentile(ice, <span class="nu">10</span>, axis=<span class="nu">0</span>), np.percentile(ice, <span class="nu">90</span>, axis=<span class="nu">0</span>)):
+        <span class="fn">print</span>(<span class="st">f"{g:20.3f} {a:14.3f} {lo:13.3f} {hi:13.3f}"</span>)
+
+<span class="cm"># 2-D partial dependence for an interaction (column indices 0 = mean radius, 3 = mean concave points)</span>
+pd2 = partial_dependence(gbm, X, features=[(<span class="nu">0</span>, <span class="nu">3</span>)], grid_resolution=<span class="nu">3</span>, method=<span class="st">"brute"</span>, response_method=<span class="st">"predict_proba"</span>)
+<span class="fn">print</span>(<span class="st">"\n2-D PDP (rows: mean radius, cols: mean concave points):"</span>)
+<span class="fn">print</span>(np.round(pd2[<span class="st">"average"</span>][<span class="nu">0</span>], <span class="nu">3</span>))
+<span class="out">#          mean radius  PDP P(benign)  ICE 10th pct  ICE 90th pct</span>
+<span class="out">#                9.499          0.708         0.030         0.998</span>
+<span class="out">#               11.715          0.704         0.026         0.998</span>
+<span class="out">#               13.932          0.645         0.007         0.994</span>
+<span class="out">#               16.148          0.328         0.004         0.972</span>
+<span class="out">#               18.365          0.310         0.004         0.962</span>
+<span class="out">#               20.581          0.310         0.004         0.962</span>
+<span class="out">#</span>
+<span class="out">#  mean concave points  PDP P(benign)  ICE 10th pct  ICE 90th pct</span>
+<span class="out">#                0.006          0.748         0.071         0.997</span>
+<span class="out">#                0.030          0.738         0.054         0.996</span>
+<span class="out">#                0.054          0.529         0.009         0.992</span>
+<span class="out">#                0.078          0.396         0.004         0.982</span>
+<span class="out">#                0.102          0.132         0.004         0.351</span>
+<span class="out">#                0.126          0.132         0.004         0.351</span>
+<span class="out">#</span>
+<span class="out"># 2-D PDP (rows: mean radius, cols: mean concave points):</span>
+<span class="out"># [[0.989 0.575 0.196]</span>
+<span class="out">#  [0.666 0.396 0.097]</span>
+<span class="out">#  [0.38  0.178 0.01 ]]</span></code></pre>
+
+<p>The <code>mean radius</code> PDP drops from 0.71 to 0.31 between radius 12 and 16 and then flattens — a tree ensemble's typical staircase. But look at the ICE percentiles: at every grid value the 10th percentile row is near 0 and the 90th is near 1. In other words, for most tumours the other five features already decide the answer, and radius only moves the ones in the middle. The 2-D table shows the interaction: with small concave points, a small radius gives P(benign) = 0.99 and a large radius 0.38; with many concave points, radius hardly matters (0.20 → 0.01) because the model has already decided. <code>PartialDependenceDisplay.from_estimator(gbm, X, ["mean radius"], kind="both")</code> draws exactly these numbers.</p>
+
+<div class="widget" id="w-pdp">
+  <div class="w-title">Interactive: PDP explorer — the average versus the individuals</div>
+  <div class="controls">
+    <span>Feature:</span>
+    <button class="btn" data-f="0" id="pdp-b0">x₁ (additive)</button>
+    <button class="btn" data-f="1" id="pdp-b1">x₂ (interacts with x₃)</button>
+    <button class="btn" data-f="2" id="pdp-b2">x₃ (curved)</button>
+    <label>value <input type="range" id="pdp-x" min="-3" max="3" step="0.1" value="0" data-out="pdp-x-out"> <output id="pdp-x-out"></output></label>
+    <span>PDP: <span class="readout" id="pdp-r">–</span></span>
+  </div>
+  <svg viewBox="0 0 700 300" id="pdp-svg" role="img" aria-label="ICE curves for eight background rows and their average PDP, for a fixed synthetic model; a slider moves the evaluation point"></svg>
+  <div class="note">Fixed model: f(x) = 3·tanh(x₁) + x₂·x₃ + 0.4·x₃². Blue = ICE curves of 8 background rows, orange = their mean (the PDP), dots = the value at your slider. For x₁ all ICE curves are parallel, so the PDP tells the whole story. For x₂ the curves fan out — their slope is each row's x₃ — and the PDP is nearly flat: the "average effect" is a lie for every individual row. That is what heterogeneous ICE looks like.</div>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s6">6. SHAP: fair credit for every feature</h2>
+
+<p>Importance ranks features; PDPs draw average curves. Neither answers the local question the regulator asks: <em>for this applicant, how much did each feature push the score up or down?</em> SHAP (SHapley Additive exPlanations) answers it with a number per feature per prediction, and those numbers have a property nothing else in this chapter has: they <strong>add up exactly</strong> to the prediction. To see where they come from we need a short detour through a taxi.</p>
+
+<div class="callout eli9"><div class="title">Explain it like I'm 9: three friends split a taxi</div>
+<p>Anna, Ben and Cara share a taxi home along the same road. Anna lives closest: alone, her ride would cost €6. Ben's would cost €12. Cara lives far out: €42. Because they share, the total is just €42 (the taxi drives to Cara's anyway). How should they split it? "€14 each" is unfair to Anna. "Everyone pays their solo fare" over-collects. The fair answer, the <strong>Shapley value</strong>, is: imagine them getting in the taxi in every possible order, and each time charge each person only the <em>extra</em> cost they add to whoever is already in the taxi. Then average each person's extra cost over all six orders. Anna ends up paying €2, Ben €5 and Cara €35 — and 2 + 5 + 35 = 42 exactly. In SHAP, the "friends" are the features, the "fare" is the prediction, and "getting in the taxi" means "being known to the model."</p>
+</div>
+
+<h3>The fully worked example</h3>
+<p>Formally we have a set of <em>players</em> N = {A, B, C} and a <em>value function</em> v(S) that gives the payout of any coalition S. Here v(S) is the fare of the taxi that serves the members of S. All 2³ = 8 coalitions:</p>
+
+<div class="tbl-wrap">
+<table class="tbl">
+<thead><tr><th>Coalition S</th><th>∅</th><th>{A}</th><th>{B}</th><th>{C}</th><th>{A,B}</th><th>{A,C}</th><th>{B,C}</th><th>{A,B,C}</th></tr></thead>
+<tbody><tr><td><strong>v(S)</strong> (fare, €)</td><td class="num">0</td><td class="num">6</td><td class="num">12</td><td class="num">42</td><td class="num">12</td><td class="num">42</td><td class="num">42</td><td class="num">42</td></tr></tbody>
+</table>
+</div>
+
+<p>Now every one of the 3! = 6 arrival orders, and each player's <strong>marginal contribution</strong> — what v gains at the moment they join:</p>
+
+<div class="tbl-wrap">
+<table class="tbl">
+<thead><tr><th>Order</th><th>A's marginal contribution</th><th>B's marginal contribution</th><th>C's marginal contribution</th></tr></thead>
+<tbody>
+<tr><td>A → B → C</td><td class="num">v(A) − v(∅) = 6</td><td class="num">v(AB) − v(A) = 6</td><td class="num">v(ABC) − v(AB) = 30</td></tr>
+<tr><td>A → C → B</td><td class="num">v(A) − v(∅) = 6</td><td class="num">v(ABC) − v(AC) = 0</td><td class="num">v(AC) − v(A) = 36</td></tr>
+<tr><td>B → A → C</td><td class="num">v(AB) − v(B) = 0</td><td class="num">v(B) − v(∅) = 12</td><td class="num">v(ABC) − v(AB) = 30</td></tr>
+<tr><td>B → C → A</td><td class="num">v(ABC) − v(BC) = 0</td><td class="num">v(B) − v(∅) = 12</td><td class="num">v(BC) − v(B) = 30</td></tr>
+<tr><td>C → A → B</td><td class="num">v(AC) − v(C) = 0</td><td class="num">v(ABC) − v(AC) = 0</td><td class="num">v(C) − v(∅) = 42</td></tr>
+<tr><td>C → B → A</td><td class="num">v(ABC) − v(BC) = 0</td><td class="num">v(BC) − v(C) = 0</td><td class="num">v(C) − v(∅) = 42</td></tr>
+<tr><td><strong>Average = Shapley value φ</strong></td><td class="num"><strong>12 / 6 = 2</strong></td><td class="num"><strong>30 / 6 = 5</strong></td><td class="num"><strong>210 / 6 = 35</strong></td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="callout math"><div class="title">The math (optional)</div>
+<div class="formula">φ<sub>i</sub> = ∑<sub>S ⊆ N∖{i}</sub> [ |S|! (n − |S| − 1)! / n! ] · [ v(S ∪ {i}) − v(S) ]</div>
+<p>φ<sub>i</sub> is player <em>i</em>'s Shapley value; the sum runs over every coalition S that does <em>not</em> contain <em>i</em>; v(S ∪ {i}) − v(S) is <em>i</em>'s marginal contribution to S; and the bracketed weight is the fraction of the n! orderings in which exactly the members of S arrive before <em>i</em>. Averaging over orderings and summing over coalitions with these weights are the same computation. For a model, the players are the n features, and v(S) is the model's expected prediction when only the features in S are known: v(S) = E[ f(x) | x<sub>S</sub> ]. SHAP estimates that expectation by filling the unknown features with values from a <em>background</em> dataset.</p>
+</div>
+
+<p>The Shapley value is the <em>only</em> way to split the payout that satisfies four fairness axioms at once, which is why it is worth the trouble:</p>
+<div class="grid2">
+  <div class="card accent"><h4>Efficiency</h4><p>The shares add up to the whole: ∑φ<sub>i</sub> = v(N) − v(∅). For a model: base value + ∑ SHAP = prediction, <em>exactly</em>. This is what makes waterfall plots honest.</p></div>
+  <div class="card accent"><h4>Symmetry</h4><p>Two players who contribute the same to every coalition get the same share. Two perfectly redundant features split their credit equally.</p></div>
+  <div class="card accent"><h4>Dummy (null player)</h4><p>A player who adds nothing to any coalition gets zero. A feature the model never uses has SHAP = 0 for every row.</p></div>
+  <div class="card accent"><h4>Additivity</h4><p>For a sum of games, shares add. For an ensemble of trees, the SHAP values of the ensemble are the sum of the SHAP values of each tree — this is what makes TreeSHAP possible.</p></div>
+</div>
+
+<pre class="code" data-lang="python"><code><span class="cm"># Exact Shapley values for a 3-player game, by brute force over all coalitions</span>
+<span class="kw">from</span> itertools <span class="kw">import</span> permutations, combinations
+<span class="kw">from</span> math <span class="kw">import</span> factorial
+
+<span class="cm"># v(S) = value the model "earns" with only the features in S present (here: a taxi fare shared by 3 friends)</span>
+players = [<span class="st">"A"</span>, <span class="st">"B"</span>, <span class="st">"C"</span>]
+v = {(): <span class="nu">0</span>, (<span class="st">"A"</span>,): <span class="nu">6</span>, (<span class="st">"B"</span>,): <span class="nu">12</span>, (<span class="st">"C"</span>,): <span class="nu">42</span>,
+     (<span class="st">"A"</span>, <span class="st">"B"</span>): <span class="nu">12</span>, (<span class="st">"A"</span>, <span class="st">"C"</span>): <span class="nu">42</span>, (<span class="st">"B"</span>, <span class="st">"C"</span>): <span class="nu">42</span>, (<span class="st">"A"</span>, <span class="st">"B"</span>, <span class="st">"C"</span>): <span class="nu">42</span>}
+<span class="kw">def</span> <span class="fn">val</span>(S): <span class="kw">return</span> v[<span class="fn">tuple</span>(<span class="fn">sorted</span>(S))]
+
+<span class="cm"># Method 1: average marginal contribution over all 3! = 6 orderings</span>
+phi = {p: <span class="nu">0.0</span> <span class="kw">for</span> p <span class="kw">in</span> players}
+<span class="kw">for</span> order <span class="kw">in</span> permutations(players):
+    seen = []
+    <span class="kw">for</span> p <span class="kw">in</span> order:
+        phi[p] += val(seen + [p]) - val(seen)
+        seen.append(p)
+<span class="kw">for</span> p <span class="kw">in</span> players: phi[p] /= factorial(<span class="fn">len</span>(players))
+<span class="fn">print</span>(<span class="st">"Shapley (via orderings):"</span>, {p: <span class="fn">round</span>(phi[p], <span class="nu">2</span>) <span class="kw">for</span> p <span class="kw">in</span> players})
+
+<span class="cm"># Method 2: the weighted-coalition formula  phi_i = sum_S |S|!(n-|S|-1)!/n! * [v(S+i) - v(S)]</span>
+n = <span class="fn">len</span>(players)
+<span class="kw">def</span> <span class="fn">shapley</span>(i):
+    others = [p <span class="kw">for</span> p <span class="kw">in</span> players <span class="kw">if</span> p != i]
+    total = <span class="nu">0.0</span>
+    <span class="kw">for</span> k <span class="kw">in</span> <span class="fn">range</span>(n):
+        <span class="kw">for</span> S <span class="kw">in</span> combinations(others, k):
+            w = factorial(k) * factorial(n - k - <span class="nu">1</span>) / factorial(n)
+            total += w * (val(<span class="fn">list</span>(S) + [i]) - val(<span class="fn">list</span>(S)))
+    <span class="kw">return</span> total
+<span class="fn">print</span>(<span class="st">"Shapley (via formula):  "</span>, {p: <span class="fn">round</span>(shapley(p), <span class="nu">2</span>) <span class="kw">for</span> p <span class="kw">in</span> players})
+<span class="fn">print</span>(<span class="st">"efficiency: sum ="</span>, <span class="fn">round</span>(<span class="fn">sum</span>(shapley(p) <span class="kw">for</span> p <span class="kw">in</span> players), <span class="nu">2</span>), <span class="st">"= v(all) ="</span>, val(players))
+<span class="out"># Shapley (via orderings): {'A': 2.0, 'B': 5.0, 'C': 35.0}</span>
+<span class="out"># Shapley (via formula):   {'A': 2.0, 'B': 5.0, 'C': 35.0}</span>
+<span class="out"># efficiency: sum = 42.0 = v(all) = 42</span></code></pre>
+
+<div class="widget" id="w-shap">
+  <div class="w-title">Interactive: Shapley calculator — set the coalition values, watch the fair split</div>
+  <div class="controls">
+    <label>v(A) <input type="range" id="sh-a" min="0" max="60" value="6" data-out="sh-a-o"> <output id="sh-a-o"></output></label>
+    <label>v(B) <input type="range" id="sh-b" min="0" max="60" value="12" data-out="sh-b-o"> <output id="sh-b-o"></output></label>
+    <label>v(C) <input type="range" id="sh-c" min="0" max="60" value="42" data-out="sh-c-o"> <output id="sh-c-o"></output></label>
+    <label>v(AB) <input type="range" id="sh-ab" min="0" max="60" value="12" data-out="sh-ab-o"> <output id="sh-ab-o"></output></label>
+    <label>v(AC) <input type="range" id="sh-ac" min="0" max="60" value="42" data-out="sh-ac-o"> <output id="sh-ac-o"></output></label>
+    <label>v(BC) <input type="range" id="sh-bc" min="0" max="60" value="42" data-out="sh-bc-o"> <output id="sh-bc-o"></output></label>
+    <label>v(ABC) <input type="range" id="sh-abc" min="0" max="60" value="42" data-out="sh-abc-o"> <output id="sh-abc-o"></output></label>
+  </div>
+  <div id="sh-table" class="tbl-wrap"></div>
+  <svg viewBox="0 0 700 150" id="sh-svg" role="img" aria-label="Bars showing the Shapley value of players A, B and C"></svg>
+  <div class="note">Try v(AB) = 30 (A and B together are worth more than apart: a positive interaction) and watch both A and B gain. Try making C a "dummy" — set v(C)=0, v(AC)=v(A), v(BC)=v(B), v(ABC)=v(AB) — and C's share drops to exactly zero. The bars always sum to v(ABC): that is the efficiency axiom.</div>
+</div>
+
+<h3>Why exact SHAP is impossible, and how the approximations work</h3>
+<p>The formula sums over every subset of the other features: 2<sup>n−1</sup> coalitions per feature. With 30 features that is half a billion model evaluations per row, each of which needs its own expectation over a background set. Nobody does that. Two shortcuts make SHAP practical:</p>
+<ul>
+  <li><strong>KernelSHAP</strong> (model-agnostic). Sample a few hundred to a few thousand coalitions, evaluate the model with "absent" features filled in from the background data, and fit a weighted linear regression whose coefficients are the SHAP values. The weights are chosen so that the regression solution equals the Shapley value in the limit. It works on <em>any</em> model, and it is slow: explaining 1,000 rows of a 30-feature model can take minutes to hours.</li>
+  <li><strong>TreeSHAP</strong> (model-specific). For tree ensembles, the expectation E[f(x) | x<sub>S</sub>] can be read off the tree by tracking how many training samples flow down each branch. Lundberg's algorithm computes <em>exact</em> Shapley values in O(T·L·D²) — trees × leaves × depth² — which is milliseconds per row. This is why SHAP on gradient boosting is the de facto standard for tabular explanation: exact, fast, and the additivity axiom means the ensemble's values are the sum of the trees' values.</li>
+  <li><strong>DeepSHAP / GradientSHAP</strong> for neural networks, and <strong>LinearSHAP</strong> for linear models, use each model class's structure similarly.</li>
+</ul>
+
+<div class="callout key"><div class="title">Key idea</div>
+<p>A SHAP value φ<sub>ij</sub> answers: <em>"compared with the average prediction over the background data, how much did feature j push row i's prediction, fairly accounting for every way the features could have been revealed?"</em> Positive pushes the prediction up, negative pushes it down, and base value + ∑<sub>j</sub> φ<sub>ij</sub> = f(x<sub>i</sub>) to the last decimal.</p>
+</div>
+
+<h3>Reading the four standard SHAP plots</h3>
+
+<figure class="fig">
+<svg viewBox="0 0 780 330" role="img" aria-label="A SHAP beeswarm summary plot: six feature rows, each a horizontal swarm of dots positioned by SHAP value and coloured by feature value from low (blue) to high (orange)">
+  <text x="390" y="22" text-anchor="middle" class="lbl-strong" font-size="14">SHAP summary (beeswarm): every dot is one patient, one feature</text>
+  <line x1="465" y1="40" x2="465" y2="290" stroke="var(--ink-3)" stroke-dasharray="4 3"/>
+  <line x1="230" y1="290" x2="700" y2="290" class="axis"/>
+  <text x="230" y="308" text-anchor="middle" class="lbl">−3</text><text x="347" y="308" text-anchor="middle" class="lbl">−1.5</text><text x="465" y="308" text-anchor="middle" class="lbl">0</text><text x="582" y="308" text-anchor="middle" class="lbl">+1.5</text><text x="700" y="308" text-anchor="middle" class="lbl">+3</text>
+  <text x="465" y="326" text-anchor="middle" class="lbl">SHAP value (impact on log-odds of "benign")</text>
+  <circle cx="237.8" cy="62.0" r="3.2" fill="color-mix(in srgb, var(--s2) 95%, var(--s1))" fill-opacity=".85"/>
+<circle cx="237.8" cy="64.5" r="3.2" fill="color-mix(in srgb, var(--s2) 97%, var(--s1))" fill-opacity=".85"/>
+<circle cx="237.8" cy="57.0" r="3.2" fill="color-mix(in srgb, var(--s2) 89%, var(--s1))" fill-opacity=".85"/>
+<circle cx="237.8" cy="69.5" r="3.2" fill="color-mix(in srgb, var(--s2) 93%, var(--s1))" fill-opacity=".85"/>
+<circle cx="263.4" cy="62.0" r="3.2" fill="color-mix(in srgb, var(--s2) 82%, var(--s1))" fill-opacity=".85"/>
+<circle cx="294.0" cy="62.0" r="3.2" fill="color-mix(in srgb, var(--s2) 82%, var(--s1))" fill-opacity=".85"/>
+<circle cx="295.2" cy="64.5" r="3.2" fill="color-mix(in srgb, var(--s2) 77%, var(--s1))" fill-opacity=".85"/>
+<circle cx="313.5" cy="62.0" r="3.2" fill="color-mix(in srgb, var(--s2) 70%, var(--s1))" fill-opacity=".85"/>
+<circle cx="326.6" cy="62.0" r="3.2" fill="color-mix(in srgb, var(--s2) 69%, var(--s1))" fill-opacity=".85"/>
+<circle cx="339.0" cy="62.0" r="3.2" fill="color-mix(in srgb, var(--s2) 58%, var(--s1))" fill-opacity=".85"/>
+<circle cx="339.1" cy="64.5" r="3.2" fill="color-mix(in srgb, var(--s2) 68%, var(--s1))" fill-opacity=".85"/>
+<circle cx="339.4" cy="57.0" r="3.2" fill="color-mix(in srgb, var(--s2) 63%, var(--s1))" fill-opacity=".85"/>
+<circle cx="342.9" cy="62.0" r="3.2" fill="color-mix(in srgb, var(--s2) 80%, var(--s1))" fill-opacity=".85"/>
+<circle cx="353.9" cy="62.0" r="3.2" fill="color-mix(in srgb, var(--s2) 73%, var(--s1))" fill-opacity=".85"/>
+<circle cx="355.3" cy="64.5" r="3.2" fill="color-mix(in srgb, var(--s2) 74%, var(--s1))" fill-opacity=".85"/>
+<circle cx="355.5" cy="57.0" r="3.2" fill="color-mix(in srgb, var(--s2) 73%, var(--s1))" fill-opacity=".85"/>
+<circle cx="358.0" cy="69.5" r="3.2" fill="color-mix(in srgb, var(--s2) 65%, var(--s1))" fill-opacity=".85"/>
+<circle cx="366.1" cy="62.0" r="3.2" fill="color-mix(in srgb, var(--s2) 72%, var(--s1))" fill-opacity=".85"/>
+<circle cx="385.0" cy="62.0" r="3.2" fill="color-mix(in srgb, var(--s2) 64%, var(--s1))" fill-opacity=".85"/>
+<circle cx="402.4" cy="62.0" r="3.2" fill="color-mix(in srgb, var(--s2) 58%, var(--s1))" fill-opacity=".85"/>
+<circle cx="420.5" cy="62.0" r="3.2" fill="color-mix(in srgb, var(--s2) 66%, var(--s1))" fill-opacity=".85"/>
+<circle cx="431.2" cy="62.0" r="3.2" fill="color-mix(in srgb, var(--s2) 51%, var(--s1))" fill-opacity=".85"/>
+<circle cx="443.1" cy="62.0" r="3.2" fill="color-mix(in srgb, var(--s2) 58%, var(--s1))" fill-opacity=".85"/>
+<circle cx="470.1" cy="62.0" r="3.2" fill="color-mix(in srgb, var(--s2) 47%, var(--s1))" fill-opacity=".85"/>
+<circle cx="491.1" cy="62.0" r="3.2" fill="color-mix(in srgb, var(--s2) 47%, var(--s1))" fill-opacity=".85"/>
+<circle cx="510.4" cy="62.0" r="3.2" fill="color-mix(in srgb, var(--s2) 43%, var(--s1))" fill-opacity=".85"/>
+<circle cx="518.3" cy="62.0" r="3.2" fill="color-mix(in srgb, var(--s2) 39%, var(--s1))" fill-opacity=".85"/>
+<circle cx="532.7" cy="62.0" r="3.2" fill="color-mix(in srgb, var(--s2) 28%, var(--s1))" fill-opacity=".85"/>
+<circle cx="536.7" cy="64.5" r="3.2" fill="color-mix(in srgb, var(--s2) 43%, var(--s1))" fill-opacity=".85"/>
+<circle cx="545.5" cy="62.0" r="3.2" fill="color-mix(in srgb, var(--s2) 37%, var(--s1))" fill-opacity=".85"/>
+<circle cx="547.3" cy="64.5" r="3.2" fill="color-mix(in srgb, var(--s2) 42%, var(--s1))" fill-opacity=".85"/>
+<circle cx="598.4" cy="62.0" r="3.2" fill="color-mix(in srgb, var(--s2) 29%, var(--s1))" fill-opacity=".85"/>
+<circle cx="603.0" cy="62.0" r="3.2" fill="color-mix(in srgb, var(--s2) 29%, var(--s1))" fill-opacity=".85"/>
+<circle cx="603.8" cy="64.5" r="3.2" fill="color-mix(in srgb, var(--s2) 31%, var(--s1))" fill-opacity=".85"/>
+<circle cx="608.5" cy="57.0" r="3.2" fill="color-mix(in srgb, var(--s2) 23%, var(--s1))" fill-opacity=".85"/>
+<circle cx="614.8" cy="62.0" r="3.2" fill="color-mix(in srgb, var(--s2) 20%, var(--s1))" fill-opacity=".85"/>
+<circle cx="623.6" cy="62.0" r="3.2" fill="color-mix(in srgb, var(--s2) 15%, var(--s1))" fill-opacity=".85"/>
+<circle cx="629.0" cy="64.5" r="3.2" fill="color-mix(in srgb, var(--s2) 29%, var(--s1))" fill-opacity=".85"/>
+<circle cx="655.8" cy="62.0" r="3.2" fill="color-mix(in srgb, var(--s2) 21%, var(--s1))" fill-opacity=".85"/>
+<circle cx="657.8" cy="62.0" r="3.2" fill="color-mix(in srgb, var(--s2) 9%, var(--s1))" fill-opacity=".85"/>
+<circle cx="676.2" cy="62.0" r="3.2" fill="color-mix(in srgb, var(--s2) 0%, var(--s1))" fill-opacity=".85"/>
+<circle cx="692.2" cy="62.0" r="3.2" fill="color-mix(in srgb, var(--s2) 8%, var(--s1))" fill-opacity=".85"/>
+<circle cx="692.2" cy="64.5" r="3.2" fill="color-mix(in srgb, var(--s2) 9%, var(--s1))" fill-opacity=".85"/>
+<circle cx="692.2" cy="57.0" r="3.2" fill="color-mix(in srgb, var(--s2) 11%, var(--s1))" fill-opacity=".85"/>
+<circle cx="692.2" cy="69.5" r="3.2" fill="color-mix(in srgb, var(--s2) 3%, var(--s1))" fill-opacity=".85"/>
+<text x="218" y="66" text-anchor="end" class="lbl">worst concave points</text>
+<circle cx="245.0" cy="102.0" r="3.2" fill="color-mix(in srgb, var(--s2) 94%, var(--s1))" fill-opacity=".85"/>
+<circle cx="252.5" cy="102.0" r="3.2" fill="color-mix(in srgb, var(--s2) 92%, var(--s1))" fill-opacity=".85"/>
+<circle cx="253.2" cy="104.5" r="3.2" fill="color-mix(in srgb, var(--s2) 82%, var(--s1))" fill-opacity=".85"/>
+<circle cx="271.2" cy="102.0" r="3.2" fill="color-mix(in srgb, var(--s2) 90%, var(--s1))" fill-opacity=".85"/>
+<circle cx="317.5" cy="102.0" r="3.2" fill="color-mix(in srgb, var(--s2) 77%, var(--s1))" fill-opacity=".85"/>
+<circle cx="322.2" cy="104.5" r="3.2" fill="color-mix(in srgb, var(--s2) 84%, var(--s1))" fill-opacity=".85"/>
+<circle cx="336.2" cy="102.0" r="3.2" fill="color-mix(in srgb, var(--s2) 74%, var(--s1))" fill-opacity=".85"/>
+<circle cx="348.8" cy="102.0" r="3.2" fill="color-mix(in srgb, var(--s2) 74%, var(--s1))" fill-opacity=".85"/>
+<circle cx="350.2" cy="104.5" r="3.2" fill="color-mix(in srgb, var(--s2) 70%, var(--s1))" fill-opacity=".85"/>
+<circle cx="360.4" cy="102.0" r="3.2" fill="color-mix(in srgb, var(--s2) 81%, var(--s1))" fill-opacity=".85"/>
+<circle cx="364.9" cy="104.5" r="3.2" fill="color-mix(in srgb, var(--s2) 74%, var(--s1))" fill-opacity=".85"/>
+<circle cx="375.0" cy="102.0" r="3.2" fill="color-mix(in srgb, var(--s2) 66%, var(--s1))" fill-opacity=".85"/>
+<circle cx="401.2" cy="102.0" r="3.2" fill="color-mix(in srgb, var(--s2) 66%, var(--s1))" fill-opacity=".85"/>
+<circle cx="412.0" cy="102.0" r="3.2" fill="color-mix(in srgb, var(--s2) 61%, var(--s1))" fill-opacity=".85"/>
+<circle cx="420.0" cy="102.0" r="3.2" fill="color-mix(in srgb, var(--s2) 54%, var(--s1))" fill-opacity=".85"/>
+<circle cx="440.8" cy="102.0" r="3.2" fill="color-mix(in srgb, var(--s2) 53%, var(--s1))" fill-opacity=".85"/>
+<circle cx="441.5" cy="102.0" r="3.2" fill="color-mix(in srgb, var(--s2) 52%, var(--s1))" fill-opacity=".85"/>
+<circle cx="441.8" cy="104.5" r="3.2" fill="color-mix(in srgb, var(--s2) 49%, var(--s1))" fill-opacity=".85"/>
+<circle cx="451.9" cy="102.0" r="3.2" fill="color-mix(in srgb, var(--s2) 55%, var(--s1))" fill-opacity=".85"/>
+<circle cx="452.8" cy="104.5" r="3.2" fill="color-mix(in srgb, var(--s2) 48%, var(--s1))" fill-opacity=".85"/>
+<circle cx="458.0" cy="97.0" r="3.2" fill="color-mix(in srgb, var(--s2) 56%, var(--s1))" fill-opacity=".85"/>
+<circle cx="460.2" cy="102.0" r="3.2" fill="color-mix(in srgb, var(--s2) 57%, var(--s1))" fill-opacity=".85"/>
+<circle cx="460.5" cy="104.5" r="3.2" fill="color-mix(in srgb, var(--s2) 48%, var(--s1))" fill-opacity=".85"/>
+<circle cx="463.0" cy="97.0" r="3.2" fill="color-mix(in srgb, var(--s2) 58%, var(--s1))" fill-opacity=".85"/>
+<circle cx="466.0" cy="109.5" r="3.2" fill="color-mix(in srgb, var(--s2) 52%, var(--s1))" fill-opacity=".85"/>
+<circle cx="469.4" cy="102.0" r="3.2" fill="color-mix(in srgb, var(--s2) 58%, var(--s1))" fill-opacity=".85"/>
+<circle cx="474.8" cy="104.5" r="3.2" fill="color-mix(in srgb, var(--s2) 39%, var(--s1))" fill-opacity=".85"/>
+<circle cx="484.2" cy="102.0" r="3.2" fill="color-mix(in srgb, var(--s2) 39%, var(--s1))" fill-opacity=".85"/>
+<circle cx="488.9" cy="102.0" r="3.2" fill="color-mix(in srgb, var(--s2) 44%, var(--s1))" fill-opacity=".85"/>
+<circle cx="525.4" cy="102.0" r="3.2" fill="color-mix(in srgb, var(--s2) 34%, var(--s1))" fill-opacity=".85"/>
+<circle cx="525.9" cy="104.5" r="3.2" fill="color-mix(in srgb, var(--s2) 38%, var(--s1))" fill-opacity=".85"/>
+<circle cx="527.8" cy="97.0" r="3.2" fill="color-mix(in srgb, var(--s2) 38%, var(--s1))" fill-opacity=".85"/>
+<circle cx="540.1" cy="102.0" r="3.2" fill="color-mix(in srgb, var(--s2) 38%, var(--s1))" fill-opacity=".85"/>
+<circle cx="541.4" cy="104.5" r="3.2" fill="color-mix(in srgb, var(--s2) 34%, var(--s1))" fill-opacity=".85"/>
+<circle cx="541.8" cy="97.0" r="3.2" fill="color-mix(in srgb, var(--s2) 48%, var(--s1))" fill-opacity=".85"/>
+<circle cx="544.6" cy="109.5" r="3.2" fill="color-mix(in srgb, var(--s2) 34%, var(--s1))" fill-opacity=".85"/>
+<circle cx="581.4" cy="102.0" r="3.2" fill="color-mix(in srgb, var(--s2) 31%, var(--s1))" fill-opacity=".85"/>
+<circle cx="591.4" cy="102.0" r="3.2" fill="color-mix(in srgb, var(--s2) 19%, var(--s1))" fill-opacity=".85"/>
+<circle cx="602.9" cy="102.0" r="3.2" fill="color-mix(in srgb, var(--s2) 26%, var(--s1))" fill-opacity=".85"/>
+<circle cx="607.3" cy="102.0" r="3.2" fill="color-mix(in srgb, var(--s2) 25%, var(--s1))" fill-opacity=".85"/>
+<circle cx="630.6" cy="102.0" r="3.2" fill="color-mix(in srgb, var(--s2) 20%, var(--s1))" fill-opacity=".85"/>
+<circle cx="648.1" cy="102.0" r="3.2" fill="color-mix(in srgb, var(--s2) 10%, var(--s1))" fill-opacity=".85"/>
+<circle cx="648.2" cy="104.5" r="3.2" fill="color-mix(in srgb, var(--s2) 9%, var(--s1))" fill-opacity=".85"/>
+<circle cx="658.9" cy="102.0" r="3.2" fill="color-mix(in srgb, var(--s2) 12%, var(--s1))" fill-opacity=".85"/>
+<circle cx="660.2" cy="104.5" r="3.2" fill="color-mix(in srgb, var(--s2) 1%, var(--s1))" fill-opacity=".85"/>
+<text x="218" y="106" text-anchor="end" class="lbl">worst perimeter</text>
+<circle cx="274.4" cy="142.0" r="3.2" fill="color-mix(in srgb, var(--s2) 89%, var(--s1))" fill-opacity=".85"/>
+<circle cx="276.2" cy="144.5" r="3.2" fill="color-mix(in srgb, var(--s2) 96%, var(--s1))" fill-opacity=".85"/>
+<circle cx="291.2" cy="142.0" r="3.2" fill="color-mix(in srgb, var(--s2) 96%, var(--s1))" fill-opacity=".85"/>
+<circle cx="296.9" cy="144.5" r="3.2" fill="color-mix(in srgb, var(--s2) 87%, var(--s1))" fill-opacity=".85"/>
+<circle cx="298.5" cy="142.0" r="3.2" fill="color-mix(in srgb, var(--s2) 85%, var(--s1))" fill-opacity=".85"/>
+<circle cx="305.8" cy="144.5" r="3.2" fill="color-mix(in srgb, var(--s2) 87%, var(--s1))" fill-opacity=".85"/>
+<circle cx="333.4" cy="142.0" r="3.2" fill="color-mix(in srgb, var(--s2) 78%, var(--s1))" fill-opacity=".85"/>
+<circle cx="340.7" cy="144.5" r="3.2" fill="color-mix(in srgb, var(--s2) 87%, var(--s1))" fill-opacity=".85"/>
+<circle cx="353.2" cy="142.0" r="3.2" fill="color-mix(in srgb, var(--s2) 81%, var(--s1))" fill-opacity=".85"/>
+<circle cx="366.2" cy="142.0" r="3.2" fill="color-mix(in srgb, var(--s2) 76%, var(--s1))" fill-opacity=".85"/>
+<circle cx="367.0" cy="144.5" r="3.2" fill="color-mix(in srgb, var(--s2) 86%, var(--s1))" fill-opacity=".85"/>
+<circle cx="377.1" cy="142.0" r="3.2" fill="color-mix(in srgb, var(--s2) 65%, var(--s1))" fill-opacity=".85"/>
+<circle cx="377.2" cy="144.5" r="3.2" fill="color-mix(in srgb, var(--s2) 68%, var(--s1))" fill-opacity=".85"/>
+<circle cx="379.4" cy="142.0" r="3.2" fill="color-mix(in srgb, var(--s2) 66%, var(--s1))" fill-opacity=".85"/>
+<circle cx="386.5" cy="144.5" r="3.2" fill="color-mix(in srgb, var(--s2) 71%, var(--s1))" fill-opacity=".85"/>
+<circle cx="391.0" cy="142.0" r="3.2" fill="color-mix(in srgb, var(--s2) 66%, var(--s1))" fill-opacity=".85"/>
+<circle cx="391.4" cy="144.5" r="3.2" fill="color-mix(in srgb, var(--s2) 72%, var(--s1))" fill-opacity=".85"/>
+<circle cx="391.6" cy="137.0" r="3.2" fill="color-mix(in srgb, var(--s2) 68%, var(--s1))" fill-opacity=".85"/>
+<circle cx="392.3" cy="149.5" r="3.2" fill="color-mix(in srgb, var(--s2) 56%, var(--s1))" fill-opacity=".85"/>
+<circle cx="398.2" cy="142.0" r="3.2" fill="color-mix(in srgb, var(--s2) 56%, var(--s1))" fill-opacity=".85"/>
+<circle cx="405.7" cy="142.0" r="3.2" fill="color-mix(in srgb, var(--s2) 64%, var(--s1))" fill-opacity=".85"/>
+<circle cx="413.5" cy="144.5" r="3.2" fill="color-mix(in srgb, var(--s2) 66%, var(--s1))" fill-opacity=".85"/>
+<circle cx="415.5" cy="142.0" r="3.2" fill="color-mix(in srgb, var(--s2) 61%, var(--s1))" fill-opacity=".85"/>
+<circle cx="416.5" cy="144.5" r="3.2" fill="color-mix(in srgb, var(--s2) 54%, var(--s1))" fill-opacity=".85"/>
+<circle cx="422.0" cy="137.0" r="3.2" fill="color-mix(in srgb, var(--s2) 66%, var(--s1))" fill-opacity=".85"/>
+<circle cx="426.0" cy="142.0" r="3.2" fill="color-mix(in srgb, var(--s2) 53%, var(--s1))" fill-opacity=".85"/>
+<circle cx="453.6" cy="142.0" r="3.2" fill="color-mix(in srgb, var(--s2) 56%, var(--s1))" fill-opacity=".85"/>
+<circle cx="459.6" cy="142.0" r="3.2" fill="color-mix(in srgb, var(--s2) 64%, var(--s1))" fill-opacity=".85"/>
+<circle cx="483.6" cy="142.0" r="3.2" fill="color-mix(in srgb, var(--s2) 48%, var(--s1))" fill-opacity=".85"/>
+<circle cx="492.9" cy="142.0" r="3.2" fill="color-mix(in srgb, var(--s2) 43%, var(--s1))" fill-opacity=".85"/>
+<circle cx="505.9" cy="142.0" r="3.2" fill="color-mix(in srgb, var(--s2) 39%, var(--s1))" fill-opacity=".85"/>
+<circle cx="506.4" cy="144.5" r="3.2" fill="color-mix(in srgb, var(--s2) 34%, var(--s1))" fill-opacity=".85"/>
+<circle cx="510.9" cy="137.0" r="3.2" fill="color-mix(in srgb, var(--s2) 32%, var(--s1))" fill-opacity=".85"/>
+<circle cx="514.2" cy="142.0" r="3.2" fill="color-mix(in srgb, var(--s2) 48%, var(--s1))" fill-opacity=".85"/>
+<circle cx="514.5" cy="144.5" r="3.2" fill="color-mix(in srgb, var(--s2) 38%, var(--s1))" fill-opacity=".85"/>
+<circle cx="527.3" cy="142.0" r="3.2" fill="color-mix(in srgb, var(--s2) 35%, var(--s1))" fill-opacity=".85"/>
+<circle cx="547.4" cy="142.0" r="3.2" fill="color-mix(in srgb, var(--s2) 40%, var(--s1))" fill-opacity=".85"/>
+<circle cx="557.1" cy="142.0" r="3.2" fill="color-mix(in srgb, var(--s2) 27%, var(--s1))" fill-opacity=".85"/>
+<circle cx="587.9" cy="142.0" r="3.2" fill="color-mix(in srgb, var(--s2) 16%, var(--s1))" fill-opacity=".85"/>
+<circle cx="619.5" cy="142.0" r="3.2" fill="color-mix(in srgb, var(--s2) 13%, var(--s1))" fill-opacity=".85"/>
+<circle cx="638.7" cy="142.0" r="3.2" fill="color-mix(in srgb, var(--s2) 11%, var(--s1))" fill-opacity=".85"/>
+<circle cx="638.7" cy="144.5" r="3.2" fill="color-mix(in srgb, var(--s2) 7%, var(--s1))" fill-opacity=".85"/>
+<circle cx="665.5" cy="142.0" r="3.2" fill="color-mix(in srgb, var(--s2) 2%, var(--s1))" fill-opacity=".85"/>
+<circle cx="668.4" cy="142.0" r="3.2" fill="color-mix(in srgb, var(--s2) 0%, var(--s1))" fill-opacity=".85"/>
+<circle cx="692.2" cy="142.0" r="3.2" fill="color-mix(in srgb, var(--s2) 1%, var(--s1))" fill-opacity=".85"/>
+<text x="218" y="146" text-anchor="end" class="lbl">mean concave points</text>
+<circle cx="299.8" cy="182.0" r="3.2" fill="color-mix(in srgb, var(--s2) 95%, var(--s1))" fill-opacity=".85"/>
+<circle cx="301.0" cy="184.5" r="3.2" fill="color-mix(in srgb, var(--s2) 99%, var(--s1))" fill-opacity=".85"/>
+<circle cx="313.0" cy="182.0" r="3.2" fill="color-mix(in srgb, var(--s2) 94%, var(--s1))" fill-opacity=".85"/>
+<circle cx="326.1" cy="182.0" r="3.2" fill="color-mix(in srgb, var(--s2) 88%, var(--s1))" fill-opacity=".85"/>
+<circle cx="329.7" cy="184.5" r="3.2" fill="color-mix(in srgb, var(--s2) 94%, var(--s1))" fill-opacity=".85"/>
+<circle cx="332.2" cy="177.0" r="3.2" fill="color-mix(in srgb, var(--s2) 92%, var(--s1))" fill-opacity=".85"/>
+<circle cx="339.2" cy="182.0" r="3.2" fill="color-mix(in srgb, var(--s2) 93%, var(--s1))" fill-opacity=".85"/>
+<circle cx="346.0" cy="182.0" r="3.2" fill="color-mix(in srgb, var(--s2) 82%, var(--s1))" fill-opacity=".85"/>
+<circle cx="353.7" cy="182.0" r="3.2" fill="color-mix(in srgb, var(--s2) 90%, var(--s1))" fill-opacity=".85"/>
+<circle cx="367.3" cy="182.0" r="3.2" fill="color-mix(in srgb, var(--s2) 86%, var(--s1))" fill-opacity=".85"/>
+<circle cx="367.8" cy="184.5" r="3.2" fill="color-mix(in srgb, var(--s2) 79%, var(--s1))" fill-opacity=".85"/>
+<circle cx="385.2" cy="182.0" r="3.2" fill="color-mix(in srgb, var(--s2) 77%, var(--s1))" fill-opacity=".85"/>
+<circle cx="388.6" cy="182.0" r="3.2" fill="color-mix(in srgb, var(--s2) 72%, var(--s1))" fill-opacity=".85"/>
+<circle cx="394.3" cy="184.5" r="3.2" fill="color-mix(in srgb, var(--s2) 69%, var(--s1))" fill-opacity=".85"/>
+<circle cx="400.3" cy="182.0" r="3.2" fill="color-mix(in srgb, var(--s2) 74%, var(--s1))" fill-opacity=".85"/>
+<circle cx="402.9" cy="184.5" r="3.2" fill="color-mix(in srgb, var(--s2) 67%, var(--s1))" fill-opacity=".85"/>
+<circle cx="410.5" cy="182.0" r="3.2" fill="color-mix(in srgb, var(--s2) 63%, var(--s1))" fill-opacity=".85"/>
+<circle cx="411.9" cy="184.5" r="3.2" fill="color-mix(in srgb, var(--s2) 73%, var(--s1))" fill-opacity=".85"/>
+<circle cx="424.0" cy="182.0" r="3.2" fill="color-mix(in srgb, var(--s2) 66%, var(--s1))" fill-opacity=".85"/>
+<circle cx="429.8" cy="184.5" r="3.2" fill="color-mix(in srgb, var(--s2) 65%, var(--s1))" fill-opacity=".85"/>
+<circle cx="431.0" cy="177.0" r="3.2" fill="color-mix(in srgb, var(--s2) 52%, var(--s1))" fill-opacity=".85"/>
+<circle cx="437.2" cy="182.0" r="3.2" fill="color-mix(in srgb, var(--s2) 54%, var(--s1))" fill-opacity=".85"/>
+<circle cx="442.4" cy="182.0" r="3.2" fill="color-mix(in srgb, var(--s2) 50%, var(--s1))" fill-opacity=".85"/>
+<circle cx="456.0" cy="182.0" r="3.2" fill="color-mix(in srgb, var(--s2) 49%, var(--s1))" fill-opacity=".85"/>
+<circle cx="478.9" cy="182.0" r="3.2" fill="color-mix(in srgb, var(--s2) 46%, var(--s1))" fill-opacity=".85"/>
+<circle cx="486.1" cy="182.0" r="3.2" fill="color-mix(in srgb, var(--s2) 42%, var(--s1))" fill-opacity=".85"/>
+<circle cx="492.6" cy="184.5" r="3.2" fill="color-mix(in srgb, var(--s2) 38%, var(--s1))" fill-opacity=".85"/>
+<circle cx="494.3" cy="177.0" r="3.2" fill="color-mix(in srgb, var(--s2) 44%, var(--s1))" fill-opacity=".85"/>
+<circle cx="495.1" cy="182.0" r="3.2" fill="color-mix(in srgb, var(--s2) 22%, var(--s1))" fill-opacity=".85"/>
+<circle cx="499.8" cy="184.5" r="3.2" fill="color-mix(in srgb, var(--s2) 39%, var(--s1))" fill-opacity=".85"/>
+<circle cx="510.9" cy="182.0" r="3.2" fill="color-mix(in srgb, var(--s2) 32%, var(--s1))" fill-opacity=".85"/>
+<circle cx="543.3" cy="182.0" r="3.2" fill="color-mix(in srgb, var(--s2) 32%, var(--s1))" fill-opacity=".85"/>
+<circle cx="557.9" cy="182.0" r="3.2" fill="color-mix(in srgb, var(--s2) 33%, var(--s1))" fill-opacity=".85"/>
+<circle cx="568.5" cy="182.0" r="3.2" fill="color-mix(in srgb, var(--s2) 13%, var(--s1))" fill-opacity=".85"/>
+<circle cx="575.6" cy="184.5" r="3.2" fill="color-mix(in srgb, var(--s2) 23%, var(--s1))" fill-opacity=".85"/>
+<circle cx="576.1" cy="182.0" r="3.2" fill="color-mix(in srgb, var(--s2) 18%, var(--s1))" fill-opacity=".85"/>
+<circle cx="583.2" cy="184.5" r="3.2" fill="color-mix(in srgb, var(--s2) 13%, var(--s1))" fill-opacity=".85"/>
+<circle cx="586.1" cy="182.0" r="3.2" fill="color-mix(in srgb, var(--s2) 4%, var(--s1))" fill-opacity=".85"/>
+<circle cx="597.9" cy="182.0" r="3.2" fill="color-mix(in srgb, var(--s2) 11%, var(--s1))" fill-opacity=".85"/>
+<circle cx="598.3" cy="184.5" r="3.2" fill="color-mix(in srgb, var(--s2) 6%, var(--s1))" fill-opacity=".85"/>
+<circle cx="603.0" cy="182.0" r="3.2" fill="color-mix(in srgb, var(--s2) 0%, var(--s1))" fill-opacity=".85"/>
+<circle cx="605.5" cy="184.5" r="3.2" fill="color-mix(in srgb, var(--s2) 21%, var(--s1))" fill-opacity=".85"/>
+<circle cx="616.7" cy="182.0" r="3.2" fill="color-mix(in srgb, var(--s2) 4%, var(--s1))" fill-opacity=".85"/>
+<circle cx="618.2" cy="184.5" r="3.2" fill="color-mix(in srgb, var(--s2) 2%, var(--s1))" fill-opacity=".85"/>
+<circle cx="643.0" cy="182.0" r="3.2" fill="color-mix(in srgb, var(--s2) 1%, var(--s1))" fill-opacity=".85"/>
+<text x="218" y="186" text-anchor="end" class="lbl">worst radius</text>
+<circle cx="362.1" cy="222.0" r="3.2" fill="color-mix(in srgb, var(--s2) 97%, var(--s1))" fill-opacity=".85"/>
+<circle cx="374.2" cy="222.0" r="3.2" fill="color-mix(in srgb, var(--s2) 89%, var(--s1))" fill-opacity=".85"/>
+<circle cx="381.2" cy="222.0" r="3.2" fill="color-mix(in srgb, var(--s2) 94%, var(--s1))" fill-opacity=".85"/>
+<circle cx="381.2" cy="224.5" r="3.2" fill="color-mix(in srgb, var(--s2) 97%, var(--s1))" fill-opacity=".85"/>
+<circle cx="386.8" cy="217.0" r="3.2" fill="color-mix(in srgb, var(--s2) 90%, var(--s1))" fill-opacity=".85"/>
+<circle cx="397.2" cy="222.0" r="3.2" fill="color-mix(in srgb, var(--s2) 88%, var(--s1))" fill-opacity=".85"/>
+<circle cx="397.9" cy="224.5" r="3.2" fill="color-mix(in srgb, var(--s2) 86%, var(--s1))" fill-opacity=".85"/>
+<circle cx="402.2" cy="217.0" r="3.2" fill="color-mix(in srgb, var(--s2) 71%, var(--s1))" fill-opacity=".85"/>
+<circle cx="404.5" cy="229.5" r="3.2" fill="color-mix(in srgb, var(--s2) 73%, var(--s1))" fill-opacity=".85"/>
+<circle cx="405.3" cy="222.0" r="3.2" fill="color-mix(in srgb, var(--s2) 83%, var(--s1))" fill-opacity=".85"/>
+<circle cx="407.1" cy="224.5" r="3.2" fill="color-mix(in srgb, var(--s2) 79%, var(--s1))" fill-opacity=".85"/>
+<circle cx="412.3" cy="217.0" r="3.2" fill="color-mix(in srgb, var(--s2) 78%, var(--s1))" fill-opacity=".85"/>
+<circle cx="414.2" cy="222.0" r="3.2" fill="color-mix(in srgb, var(--s2) 82%, var(--s1))" fill-opacity=".85"/>
+<circle cx="416.2" cy="224.5" r="3.2" fill="color-mix(in srgb, var(--s2) 74%, var(--s1))" fill-opacity=".85"/>
+<circle cx="418.2" cy="217.0" r="3.2" fill="color-mix(in srgb, var(--s2) 78%, var(--s1))" fill-opacity=".85"/>
+<circle cx="422.9" cy="229.5" r="3.2" fill="color-mix(in srgb, var(--s2) 62%, var(--s1))" fill-opacity=".85"/>
+<circle cx="423.8" cy="222.0" r="3.2" fill="color-mix(in srgb, var(--s2) 66%, var(--s1))" fill-opacity=".85"/>
+<circle cx="425.8" cy="224.5" r="3.2" fill="color-mix(in srgb, var(--s2) 72%, var(--s1))" fill-opacity=".85"/>
+<circle cx="455.2" cy="222.0" r="3.2" fill="color-mix(in srgb, var(--s2) 50%, var(--s1))" fill-opacity=".85"/>
+<circle cx="457.0" cy="224.5" r="3.2" fill="color-mix(in srgb, var(--s2) 53%, var(--s1))" fill-opacity=".85"/>
+<circle cx="457.4" cy="217.0" r="3.2" fill="color-mix(in srgb, var(--s2) 59%, var(--s1))" fill-opacity=".85"/>
+<circle cx="461.6" cy="222.0" r="3.2" fill="color-mix(in srgb, var(--s2) 52%, var(--s1))" fill-opacity=".85"/>
+<circle cx="471.1" cy="222.0" r="3.2" fill="color-mix(in srgb, var(--s2) 39%, var(--s1))" fill-opacity=".85"/>
+<circle cx="471.7" cy="224.5" r="3.2" fill="color-mix(in srgb, var(--s2) 52%, var(--s1))" fill-opacity=".85"/>
+<circle cx="484.8" cy="222.0" r="3.2" fill="color-mix(in srgb, var(--s2) 37%, var(--s1))" fill-opacity=".85"/>
+<circle cx="487.8" cy="222.0" r="3.2" fill="color-mix(in srgb, var(--s2) 37%, var(--s1))" fill-opacity=".85"/>
+<circle cx="494.6" cy="224.5" r="3.2" fill="color-mix(in srgb, var(--s2) 29%, var(--s1))" fill-opacity=".85"/>
+<circle cx="497.0" cy="222.0" r="3.2" fill="color-mix(in srgb, var(--s2) 37%, var(--s1))" fill-opacity=".85"/>
+<circle cx="500.7" cy="224.5" r="3.2" fill="color-mix(in srgb, var(--s2) 26%, var(--s1))" fill-opacity=".85"/>
+<circle cx="505.4" cy="222.0" r="3.2" fill="color-mix(in srgb, var(--s2) 34%, var(--s1))" fill-opacity=".85"/>
+<circle cx="514.5" cy="222.0" r="3.2" fill="color-mix(in srgb, var(--s2) 26%, var(--s1))" fill-opacity=".85"/>
+<circle cx="515.1" cy="224.5" r="3.2" fill="color-mix(in srgb, var(--s2) 30%, var(--s1))" fill-opacity=".85"/>
+<circle cx="517.0" cy="217.0" r="3.2" fill="color-mix(in srgb, var(--s2) 14%, var(--s1))" fill-opacity=".85"/>
+<circle cx="517.9" cy="229.5" r="3.2" fill="color-mix(in srgb, var(--s2) 21%, var(--s1))" fill-opacity=".85"/>
+<circle cx="531.8" cy="222.0" r="3.2" fill="color-mix(in srgb, var(--s2) 20%, var(--s1))" fill-opacity=".85"/>
+<circle cx="532.8" cy="224.5" r="3.2" fill="color-mix(in srgb, var(--s2) 5%, var(--s1))" fill-opacity=".85"/>
+<circle cx="533.9" cy="217.0" r="3.2" fill="color-mix(in srgb, var(--s2) 19%, var(--s1))" fill-opacity=".85"/>
+<circle cx="534.6" cy="229.5" r="3.2" fill="color-mix(in srgb, var(--s2) 11%, var(--s1))" fill-opacity=".85"/>
+<circle cx="538.0" cy="212.0" r="3.2" fill="color-mix(in srgb, var(--s2) 21%, var(--s1))" fill-opacity=".85"/>
+<circle cx="548.1" cy="222.0" r="3.2" fill="color-mix(in srgb, var(--s2) 17%, var(--s1))" fill-opacity=".85"/>
+<circle cx="551.9" cy="222.0" r="3.2" fill="color-mix(in srgb, var(--s2) 8%, var(--s1))" fill-opacity=".85"/>
+<circle cx="552.2" cy="224.5" r="3.2" fill="color-mix(in srgb, var(--s2) 12%, var(--s1))" fill-opacity=".85"/>
+<circle cx="555.3" cy="217.0" r="3.2" fill="color-mix(in srgb, var(--s2) 7%, var(--s1))" fill-opacity=".85"/>
+<circle cx="568.1" cy="222.0" r="3.2" fill="color-mix(in srgb, var(--s2) 8%, var(--s1))" fill-opacity=".85"/>
+<circle cx="588.1" cy="222.0" r="3.2" fill="color-mix(in srgb, var(--s2) 1%, var(--s1))" fill-opacity=".85"/>
+<text x="218" y="226" text-anchor="end" class="lbl">worst area</text>
+<circle cx="381.9" cy="262.0" r="3.2" fill="color-mix(in srgb, var(--s2) 97%, var(--s1))" fill-opacity=".85"/>
+<circle cx="386.0" cy="264.5" r="3.2" fill="color-mix(in srgb, var(--s2) 94%, var(--s1))" fill-opacity=".85"/>
+<circle cx="397.4" cy="262.0" r="3.2" fill="color-mix(in srgb, var(--s2) 90%, var(--s1))" fill-opacity=".85"/>
+<circle cx="400.0" cy="264.5" r="3.2" fill="color-mix(in srgb, var(--s2) 86%, var(--s1))" fill-opacity=".85"/>
+<circle cx="400.6" cy="257.0" r="3.2" fill="color-mix(in srgb, var(--s2) 87%, var(--s1))" fill-opacity=".85"/>
+<circle cx="407.0" cy="262.0" r="3.2" fill="color-mix(in srgb, var(--s2) 79%, var(--s1))" fill-opacity=".85"/>
+<circle cx="407.2" cy="264.5" r="3.2" fill="color-mix(in srgb, var(--s2) 93%, var(--s1))" fill-opacity=".85"/>
+<circle cx="412.1" cy="257.0" r="3.2" fill="color-mix(in srgb, var(--s2) 75%, var(--s1))" fill-opacity=".85"/>
+<circle cx="417.6" cy="262.0" r="3.2" fill="color-mix(in srgb, var(--s2) 70%, var(--s1))" fill-opacity=".85"/>
+<circle cx="426.1" cy="262.0" r="3.2" fill="color-mix(in srgb, var(--s2) 70%, var(--s1))" fill-opacity=".85"/>
+<circle cx="426.4" cy="264.5" r="3.2" fill="color-mix(in srgb, var(--s2) 78%, var(--s1))" fill-opacity=".85"/>
+<circle cx="426.5" cy="257.0" r="3.2" fill="color-mix(in srgb, var(--s2) 76%, var(--s1))" fill-opacity=".85"/>
+<circle cx="430.2" cy="269.5" r="3.2" fill="color-mix(in srgb, var(--s2) 70%, var(--s1))" fill-opacity=".85"/>
+<circle cx="432.1" cy="262.0" r="3.2" fill="color-mix(in srgb, var(--s2) 72%, var(--s1))" fill-opacity=".85"/>
+<circle cx="439.3" cy="264.5" r="3.2" fill="color-mix(in srgb, var(--s2) 64%, var(--s1))" fill-opacity=".85"/>
+<circle cx="440.2" cy="257.0" r="3.2" fill="color-mix(in srgb, var(--s2) 66%, var(--s1))" fill-opacity=".85"/>
+<circle cx="441.8" cy="262.0" r="3.2" fill="color-mix(in srgb, var(--s2) 71%, var(--s1))" fill-opacity=".85"/>
+<circle cx="450.7" cy="262.0" r="3.2" fill="color-mix(in srgb, var(--s2) 60%, var(--s1))" fill-opacity=".85"/>
+<circle cx="453.2" cy="264.5" r="3.2" fill="color-mix(in srgb, var(--s2) 55%, var(--s1))" fill-opacity=".85"/>
+<circle cx="456.5" cy="257.0" r="3.2" fill="color-mix(in srgb, var(--s2) 58%, var(--s1))" fill-opacity=".85"/>
+<circle cx="460.2" cy="262.0" r="3.2" fill="color-mix(in srgb, var(--s2) 52%, var(--s1))" fill-opacity=".85"/>
+<circle cx="474.9" cy="262.0" r="3.2" fill="color-mix(in srgb, var(--s2) 37%, var(--s1))" fill-opacity=".85"/>
+<circle cx="475.3" cy="264.5" r="3.2" fill="color-mix(in srgb, var(--s2) 50%, var(--s1))" fill-opacity=".85"/>
+<circle cx="481.3" cy="262.0" r="3.2" fill="color-mix(in srgb, var(--s2) 38%, var(--s1))" fill-opacity=".85"/>
+<circle cx="482.0" cy="264.5" r="3.2" fill="color-mix(in srgb, var(--s2) 39%, var(--s1))" fill-opacity=".85"/>
+<circle cx="484.0" cy="257.0" r="3.2" fill="color-mix(in srgb, var(--s2) 49%, var(--s1))" fill-opacity=".85"/>
+<circle cx="486.9" cy="262.0" r="3.2" fill="color-mix(in srgb, var(--s2) 38%, var(--s1))" fill-opacity=".85"/>
+<circle cx="492.8" cy="264.5" r="3.2" fill="color-mix(in srgb, var(--s2) 36%, var(--s1))" fill-opacity=".85"/>
+<circle cx="501.8" cy="262.0" r="3.2" fill="color-mix(in srgb, var(--s2) 26%, var(--s1))" fill-opacity=".85"/>
+<circle cx="504.3" cy="262.0" r="3.2" fill="color-mix(in srgb, var(--s2) 28%, var(--s1))" fill-opacity=".85"/>
+<circle cx="507.0" cy="264.5" r="3.2" fill="color-mix(in srgb, var(--s2) 34%, var(--s1))" fill-opacity=".85"/>
+<circle cx="509.1" cy="257.0" r="3.2" fill="color-mix(in srgb, var(--s2) 26%, var(--s1))" fill-opacity=".85"/>
+<circle cx="512.2" cy="269.5" r="3.2" fill="color-mix(in srgb, var(--s2) 27%, var(--s1))" fill-opacity=".85"/>
+<circle cx="518.3" cy="262.0" r="3.2" fill="color-mix(in srgb, var(--s2) 16%, var(--s1))" fill-opacity=".85"/>
+<circle cx="518.6" cy="264.5" r="3.2" fill="color-mix(in srgb, var(--s2) 19%, var(--s1))" fill-opacity=".85"/>
+<circle cx="524.0" cy="262.0" r="3.2" fill="color-mix(in srgb, var(--s2) 10%, var(--s1))" fill-opacity=".85"/>
+<circle cx="532.8" cy="262.0" r="3.2" fill="color-mix(in srgb, var(--s2) 3%, var(--s1))" fill-opacity=".85"/>
+<circle cx="533.3" cy="264.5" r="3.2" fill="color-mix(in srgb, var(--s2) 11%, var(--s1))" fill-opacity=".85"/>
+<circle cx="533.4" cy="257.0" r="3.2" fill="color-mix(in srgb, var(--s2) 11%, var(--s1))" fill-opacity=".85"/>
+<circle cx="535.0" cy="269.5" r="3.2" fill="color-mix(in srgb, var(--s2) 13%, var(--s1))" fill-opacity=".85"/>
+<circle cx="544.4" cy="262.0" r="3.2" fill="color-mix(in srgb, var(--s2) 4%, var(--s1))" fill-opacity=".85"/>
+<circle cx="547.8" cy="264.5" r="3.2" fill="color-mix(in srgb, var(--s2) 11%, var(--s1))" fill-opacity=".85"/>
+<circle cx="554.9" cy="262.0" r="3.2" fill="color-mix(in srgb, var(--s2) 6%, var(--s1))" fill-opacity=".85"/>
+<circle cx="555.9" cy="264.5" r="3.2" fill="color-mix(in srgb, var(--s2) 0%, var(--s1))" fill-opacity=".85"/>
+<circle cx="556.7" cy="257.0" r="3.2" fill="color-mix(in srgb, var(--s2) 4%, var(--s1))" fill-opacity=".85"/>
+<text x="218" y="266" text-anchor="end" class="lbl">area error</text>
+  <!-- colour bar -->
+  <rect x="722" y="60" width="12" height="200" fill="var(--s1)"/>
+  <rect x="722" y="60" width="12" height="40" fill="var(--s2)"/><rect x="722" y="100" width="12" height="40" fill="color-mix(in srgb, var(--s2) 75%, var(--s1))"/><rect x="722" y="140" width="12" height="40" fill="color-mix(in srgb, var(--s2) 50%, var(--s1))"/><rect x="722" y="180" width="12" height="40" fill="color-mix(in srgb, var(--s2) 25%, var(--s1))"/>
+  <text x="740" y="68" class="lbl" font-size="10">high</text><text x="740" y="258" class="lbl" font-size="10">low</text>
+  <text x="768" y="160" text-anchor="middle" class="lbl" font-size="10" transform="rotate(90 768 160)">feature value</text>
+  <text x="235" y="44" class="lbl" font-size="10">← pushes toward malignant</text>
+  <text x="700" y="44" text-anchor="end" class="lbl" font-size="10">pushes toward benign →</text>
+</svg>
+<figcaption><strong>Figure 20.4 — The beeswarm shows three things at once.</strong> Vertical order = global importance (mean |SHAP|). Horizontal spread = how strongly the feature can move a prediction. Colour = direction: for <code>worst concave points</code>, high values (orange) sit on the left, so many concave points push toward malignant — the sign of the effect, which a bar chart cannot show.</figcaption>
+</figure>
+
+<figure class="fig">
+<svg viewBox="0 0 780 250" role="img" aria-label="Horizontal bar chart of mean absolute SHAP value per feature, sorted descending">
+  <text x="390" y="22" text-anchor="middle" class="lbl-strong" font-size="14">Global importance: mean |SHAP| per feature (log-odds units)</text>
+  <g class="lbl">
+    <text x="218" y="56" text-anchor="end">worst concave points</text><rect x="230" y="44" width="462" height="16" fill="var(--s1)"/><text x="698" y="56" font-size="11">1.54</text>
+    <text x="218" y="82" text-anchor="end">worst perimeter</text><rect x="230" y="70" width="438" height="16" fill="var(--s1)"/><text x="674" y="82" font-size="11">1.46</text>
+    <text x="218" y="108" text-anchor="end">mean concave points</text><rect x="230" y="96" width="378" height="16" fill="var(--s1)"/><text x="614" y="108" font-size="11">1.26</text>
+    <text x="218" y="134" text-anchor="end">worst radius</text><rect x="230" y="122" width="260" height="16" fill="var(--s1)"/><text x="496" y="134" font-size="11">0.87</text>
+    <text x="218" y="160" text-anchor="end">worst area</text><rect x="230" y="148" width="199" height="16" fill="var(--s1)"/><text x="435" y="160" font-size="11">0.66</text>
+    <text x="218" y="186" text-anchor="end">area error</text><rect x="230" y="174" width="190" height="16" fill="var(--s1)"/><text x="426" y="186" font-size="11">0.63</text>
+    <text x="218" y="212" text-anchor="end">24 other features</text><rect x="230" y="200" width="120" height="16" fill="var(--ink-3)" fill-opacity=".6"/><text x="356" y="212" font-size="11">0.40 (sum)</text>
+  </g>
+  <line x1="230" y1="224" x2="700" y2="224" class="axis"/>
+  <text x="230" y="240" text-anchor="middle" class="lbl" font-size="10">0</text><text x="465" y="240" text-anchor="middle" class="lbl" font-size="10">0.78</text><text x="700" y="240" text-anchor="middle" class="lbl" font-size="10">1.57</text>
+</svg>
+<figcaption><strong>Figure 20.5 — The SHAP bar plot is the beeswarm with the colour and spread thrown away.</strong> It is the right chart for a slide, and the wrong chart for understanding direction. The numbers are from the code below: they are averages of absolute values on the validation set, so they measure what the model relies on for <em>these</em> rows.</figcaption>
+</figure>
+
+<figure class="fig">
+<svg viewBox="0 0 780 330" role="img" aria-label="A SHAP waterfall plot for one patient: starting at the base value 2.25 log-odds, negative and positive feature contributions step down and up to the final prediction of 0.39 log-odds">
+  <defs><marker id="arr-f6" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+  <text x="390" y="22" text-anchor="middle" class="lbl-strong" font-size="14">Waterfall: how one patient's prediction was built (log-odds)</text>
+  <!-- axis: log-odds -1.5 .. 3 mapped to x 250..720 -->
+  <line x1="250" y1="290" x2="720" y2="290" class="axis"/>
+  <g class="lbl" font-size="10">
+    <text x="302" y="306" text-anchor="middle">−1</text><text x="407" y="306" text-anchor="middle">0</text><text x="511" y="306" text-anchor="middle">1</text><text x="616" y="306" text-anchor="middle">2</text><text x="720" y="306" text-anchor="middle">3</text>
+  </g>
+  <text x="485" y="322" text-anchor="middle" class="lbl">model output f(x) in log-odds</text>
+  <!-- base value marker -->
+  <line x1="642" y1="40" x2="642" y2="290" stroke="var(--ink-3)" stroke-dasharray="4 3"/>
+  <text x="642" y="36" text-anchor="middle" class="lbl-strong" font-size="11">E[f(x)] = 2.25 (base)</text>
+  <!-- prediction marker -->
+  <line x1="448" y1="40" x2="448" y2="290" stroke="var(--s7)" stroke-dasharray="4 3" stroke-width="1.5"/>
+  <text x="448" y="36" text-anchor="middle" class="lbl-strong" font-size="11" fill="var(--s7)">f(x) = 0.39</text>
+  <!-- bars: each step: start->end ; x = 407 + v*104.5 -->
+  <g class="lbl">
+    <text x="240" y="70" text-anchor="end">mean concave points = 0.053</text>
+    <rect x="488" y="58" width="154" height="18" fill="var(--s1)"/><text x="482" y="71" text-anchor="end" font-size="11" fill="var(--s1)" font-weight="700">−1.47</text>
+    <text x="240" y="104" text-anchor="end">worst texture = 31.7</text>
+    <rect x="342" y="92" width="146" height="18" fill="var(--s1)"/><text x="336" y="105" text-anchor="end" font-size="11" fill="var(--s1)" font-weight="700">−1.40</text>
+    <text x="240" y="138" text-anchor="end">worst concave points = 0.136</text>
+    <rect x="248" y="126" width="94" height="18" fill="var(--s1)"/><text x="262" y="122" font-size="11" fill="var(--s1)" font-weight="700">−0.90</text>
+    <text x="240" y="172" text-anchor="end">worst radius = 15.8</text>
+    <rect x="248" y="160" width="56" height="18" fill="var(--s2)"/><text x="310" y="173" font-size="11" fill="var(--s2)" font-weight="700">+0.54</text>
+    <text x="240" y="206" text-anchor="end">mean concavity = 0.084</text>
+    <rect x="304" y="194" width="55" height="18" fill="var(--s2)"/><text x="365" y="207" font-size="11" fill="var(--s2)" font-weight="700">+0.53</text>
+    <text x="240" y="240" text-anchor="end">25 other features</text>
+    <rect x="359" y="228" width="89" height="18" fill="var(--s2)"/><text x="454" y="241" font-size="11" fill="var(--s2)" font-weight="700">+0.84</text>
+  </g>
+  <!-- connectors -->
+  <g stroke="var(--ink-3)" stroke-dasharray="2 2">
+    <line x1="488" y1="76" x2="488" y2="92"/><line x1="342" y1="110" x2="342" y2="126"/><line x1="248" y1="144" x2="248" y2="160"/><line x1="304" y1="178" x2="304" y2="194"/><line x1="359" y1="212" x2="359" y2="228"/>
+  </g>
+  <text x="485" y="272" text-anchor="middle" class="lbl" font-size="11">2.25 − 1.47 − 1.40 − 0.90 + 0.54 + 0.53 + 0.84 = 0.39 → sigmoid → P(benign) = 0.60</text>
+</svg>
+<figcaption><strong>Figure 20.6 — The waterfall is the local explanation.</strong> Start at the base value (the average model output on the training data), add each feature's SHAP value, and you land exactly on this patient's prediction. Blue bars pushed toward malignant, orange toward benign. This is the plot to show for a single decision — and the one to translate into an adverse-action reason.</figcaption>
+</figure>
+
+<pre class="code" data-lang="python"><code><span class="cm"># SHAP values with TreeExplainer: global (mean |SHAP|) and local (one row) explanations</span>
+<span class="kw">import</span> numpy <span class="kw">as</span> np, pandas <span class="kw">as</span> pd, shap
+<span class="kw">from</span> sklearn.datasets <span class="kw">import</span> load_breast_cancer
+<span class="kw">from</span> sklearn.model_selection <span class="kw">import</span> train_test_split
+<span class="kw">from</span> sklearn.ensemble <span class="kw">import</span> GradientBoostingClassifier
+
+X, y = load_breast_cancer(return_X_y=<span class="kw">True</span>, as_frame=<span class="kw">True</span>)
+X_tr, X_va, y_tr, y_va = train_test_split(X, y, test_size=<span class="nu">0.3</span>, random_state=<span class="nu">0</span>, stratify=y)
+gbm = GradientBoostingClassifier(n_estimators=<span class="nu">100</span>, max_depth=<span class="nu">3</span>, learning_rate=<span class="nu">0.1</span>, random_state=<span class="nu">0</span>).fit(X_tr, y_tr)
+
+explainer = shap.TreeExplainer(gbm)          <span class="cm"># exact, polynomial-time Shapley values for trees</span>
+sv = explainer.shap_values(X_va)             <span class="cm"># shape (n_rows, n_features), in LOG-ODDS for a GBM classifier</span>
+base = <span class="fn">float</span>(np.ravel(explainer.expected_value)[<span class="nu">0</span>])
+<span class="fn">print</span>(<span class="st">"shap matrix:"</span>, sv.shape, <span class="st">"| base value (mean log-odds on training data):"</span>, <span class="fn">round</span>(base, <span class="nu">3</span>))
+
+<span class="cm"># Global: mean absolute SHAP per feature = the "bar plot"</span>
+global_imp = pd.Series(np.abs(sv).mean(axis=<span class="nu">0</span>), index=X.columns).sort_values(ascending=<span class="kw">False</span>)
+<span class="fn">print</span>(<span class="st">"\nmean |SHAP| (log-odds units), top 6:"</span>)
+<span class="fn">print</span>(global_imp.head(<span class="nu">6</span>).round(<span class="nu">3</span>).to_string())
+
+<span class="cm"># Local: explain one borderline patient = the "waterfall plot"</span>
+proba = gbm.predict_proba(X_va)[:, <span class="nu">1</span>]
+i = <span class="fn">int</span>(np.argmin(np.abs(proba - <span class="nu">0.6</span>)))           <span class="cm"># a row near the decision boundary</span>
+row = pd.Series(sv[i], index=X.columns)
+<span class="fn">print</span>(<span class="st">f"\nrow {i}: true label = {y_va.iloc[i]}, P(benign) = {proba[i]:.3f}"</span>)
+<span class="fn">print</span>(<span class="st">"largest contributions (log-odds):"</span>)
+<span class="fn">print</span>(row.reindex(row.abs().sort_values(ascending=<span class="kw">False</span>).index).head(<span class="nu">5</span>).round(<span class="nu">3</span>).to_string())
+
+<span class="cm"># Efficiency check: base + sum(SHAP) must equal the model's raw (log-odds) output</span>
+raw = gbm.decision_function(X_va.iloc[[i]])[<span class="nu">0</span>]
+<span class="fn">print</span>(<span class="st">f"\nbase + sum(shap) = {base + sv[i].sum():.4f}   model log-odds = {raw:.4f}   sigmoid -&gt; {1/(1+np.exp(-raw)):.3f}"</span>)
+
+<span class="cm"># Interaction values: a (n_features x n_features) matrix per row; the diagonal is the main effect</span>
+inter = explainer.shap_interaction_values(X_va.iloc[[i]])[<span class="nu">0</span>]
+k = <span class="fn">list</span>(X.columns).index(<span class="st">"worst concave points"</span>); j = <span class="fn">list</span>(X.columns).index(<span class="st">"worst radius"</span>)
+<span class="fn">print</span>(<span class="st">f"main effect(worst concave points) = {inter[k, k]:.3f}, interaction with worst radius = {inter[k, j]:.3f}"</span>)
+<span class="out"># shap matrix: (171, 30) | base value (mean log-odds on training data): 2.252</span>
+<span class="out">#</span>
+<span class="out"># mean |SHAP| (log-odds units), top 6:</span>
+<span class="out"># worst concave points    1.539</span>
+<span class="out"># worst perimeter         1.460</span>
+<span class="out"># mean concave points     1.259</span>
+<span class="out"># worst radius            0.865</span>
+<span class="out"># worst area              0.663</span>
+<span class="out"># area error              0.634</span>
+<span class="out">#</span>
+<span class="out"># row 25: true label = 0, P(benign) = 0.597</span>
+<span class="out"># largest contributions (log-odds):</span>
+<span class="out"># mean concave points    -1.471</span>
+<span class="out"># worst texture          -1.395</span>
+<span class="out"># worst concave points   -0.898</span>
+<span class="out"># worst radius            0.535</span>
+<span class="out"># mean concavity          0.526</span>
+<span class="out">#</span>
+<span class="out"># base + sum(shap) = 0.3916   model log-odds = 0.3916   sigmoid -&gt; 0.597</span>
+<span class="out"># main effect(worst concave points) = -0.985, interaction with worst radius = 0.022</span></code></pre>
+
+<p>Three things in that output deserve a second look. The <strong>base value is 2.25 log-odds</strong> — P ≈ 0.90 — because ~63% of the training rows are benign and the boosted model is confident on most of them; "average prediction" here means average <em>model output</em>, not the class prior. The row we picked is a <strong>malignant tumour the model calls benign with P = 0.60</strong>: the waterfall shows why it is borderline (three strong pushes down, two up), which is exactly the kind of case a clinician should review. And the <strong>interaction value</strong> between the two "worst" features is tiny (0.02) relative to the main effect (−0.99) — the model is treating them nearly additively for this row.</p>
+
+<h3>Dependence plots and interaction values</h3>
+<p>A <strong>SHAP dependence plot</strong> scatters one feature's value (x-axis) against its SHAP value (y-axis), one dot per row. It is the PDP's honest cousin: instead of averaging, it shows every row, so a vertical spread at a fixed x means an interaction — and colouring the dots by a second feature usually reveals which one. <strong>Interaction values</strong> (<code>shap_interaction_values</code>) go further and decompose each φ<sub>ij</sub> into a main effect plus pairwise terms φ<sub>ijk</sub>, so you can rank interactions the way you rank features. They are exact for trees and cost roughly n times more than plain SHAP.</p>
+
+<div class="callout warn"><div class="title">Common mistake</div>
+<p><strong>Reading classifier SHAP values as probabilities.</strong> For tree-based classifiers, <code>TreeExplainer</code> returns SHAP values in the model's <em>raw</em> output space — log-odds (margin) for GBM/XGBoost/LightGBM. A SHAP value of +1.0 does not mean "+100% probability"; it means the odds were multiplied by e ≈ 2.7. Log-odds are the right space for additivity, but not for a stakeholder. Either explain in odds ("this feature tripled the odds of approval") or, if you must show probabilities, use <code>model_output="probability"</code> with a background dataset — and accept that those values are approximate and no longer exactly additive across features. For scikit-learn's <code>RandomForestClassifier</code>, TreeSHAP works in probability space directly, and returns one matrix per class.</p>
+</div>
+
+<div class="callout pro"><div class="title">At work: SHAP hygiene</div>
+<ul>
+  <li><strong>Explain on validation or production data, never only training data.</strong> Global SHAP on training rows describes what the model memorised.</li>
+  <li><strong>Fix the background.</strong> The base value depends on the background dataset. Use a representative sample (a few hundred rows of training data is typical), store it with the model, and never change it silently between releases — every waterfall's starting point would move.</li>
+  <li><strong>Cache explanations.</strong> TreeSHAP is fast but not free; for a real-time credit decision, compute the waterfall once at scoring time and store the top-5 reasons alongside the score (Chapter 21 covers the logging).</li>
+  <li><strong>Translate, don't paste.</strong> "worst concave points = 0.16 contributed −0.90 log-odds" is not a reason a customer can act on. Map features to plain-language reason codes in advance.</li>
+</ul>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s7">7. LIME, counterfactuals &amp; surrogates</h2>
+
+<h3>LIME: a local linear stand-in</h3>
+<p>Before SHAP, the standard local method was <strong>LIME</strong> (Local Interpretable Model-agnostic Explanations), and it is still worth understanding because its idea is simple and its failure mode is instructive. To explain a prediction at x: (1) generate a few thousand perturbed copies of x by jittering its features; (2) get the black box's prediction for each copy; (3) weight the copies by how close they are to x (a kernel); (4) fit a weighted linear regression to those predictions; (5) report its coefficients. The linear model is nonsense globally, but in a small neighbourhood of x it is a decent approximation of the black box, and its coefficients are the local feature effects.</p>
+
+<figure class="fig">
+<svg viewBox="0 0 780 330" role="img" aria-label="Left: a curved decision boundary, a point x, perturbed samples around it sized by proximity weight, and a straight local surrogate line tangent to the boundary near x. Right: the same boundary with a counterfactual arrow moving x to the nearest point on the other side">
+  <defs><marker id="arr-f7" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+  <!-- LEFT: LIME -->
+  <text x="200" y="22" text-anchor="middle" class="lbl-strong" font-size="14">LIME: fit a straight line where you are standing</text>
+  <line x1="40" y1="280" x2="370" y2="280" class="axis"/><line x1="40" y1="280" x2="40" y2="40" class="axis"/>
+  <text x="205" y="300" text-anchor="middle" class="lbl">income</text>
+  <text x="22" y="160" text-anchor="middle" class="lbl" transform="rotate(-90 22 160)">utilisation</text>
+  <!-- regions -->
+  <path d="M40,280 L40,120 C120,80 160,200 230,150 C290,110 330,60 370,50 L370,280 Z" fill="var(--s2)" fill-opacity=".10"/>
+  <path d="M40,40 L40,120 C120,80 160,200 230,150 C290,110 330,60 370,50 L370,40 Z" fill="var(--s1)" fill-opacity=".10"/>
+  <path d="M40,120 C120,80 160,200 230,150 C290,110 330,60 370,50" fill="none" stroke="var(--s7)" stroke-width="2.5"/>
+  <text x="60" y="60" class="lbl" fill="var(--s1)" font-weight="700">approve</text>
+  <text x="310" y="265" class="lbl" fill="var(--s2)" font-weight="700">decline</text>
+  <!-- perturbed samples, size by weight -->
+  <g fill="var(--ink-3)" fill-opacity=".6">
+    <circle cx="190" cy="140" r="2"/><circle cx="270" cy="200" r="2"/><circle cx="150" cy="210" r="2.5"/><circle cx="300" cy="120" r="2"/><circle cx="120" cy="150" r="2.5"/>
+    <circle cx="210" cy="200" r="3"/><circle cx="250" cy="130" r="3"/><circle cx="200" cy="175" r="4"/><circle cx="240" cy="180" r="4"/><circle cx="215" cy="150" r="4.5"/>
+    <circle cx="235" cy="160" r="5"/><circle cx="220" cy="185" r="5"/><circle cx="245" cy="145" r="4.5"/><circle cx="205" cy="160" r="4"/><circle cx="260" cy="170" r="3.5"/>
+    <circle cx="170" cy="120" r="2"/><circle cx="280" cy="90" r="2"/><circle cx="130" cy="240" r="2"/><circle cx="330" cy="200" r="2"/>
+  </g>
+  <!-- local linear surrogate -->
+  <line x1="150" y1="205" x2="320" y2="115" stroke="var(--s4)" stroke-width="2.5" stroke-dasharray="7 4"/>
+  <text x="300" y="100" text-anchor="end" class="lbl-strong" fill="var(--s4)" font-size="11">local linear surrogate</text>
+  <!-- the point -->
+  <circle cx="228" cy="168" r="6" fill="var(--s7)" stroke="var(--surface)" stroke-width="2"/>
+  <text x="240" y="172" class="lbl-strong">x</text>
+  <text x="205" y="318" text-anchor="middle" class="lbl" font-size="11">Bigger dots = closer to x = higher weight in the regression.</text>
+
+  <!-- RIGHT: counterfactual -->
+  <text x="590" y="22" text-anchor="middle" class="lbl-strong" font-size="14">Counterfactual: the shortest walk across the line</text>
+  <line x1="430" y1="280" x2="760" y2="280" class="axis"/><line x1="430" y1="280" x2="430" y2="40" class="axis"/>
+  <text x="595" y="300" text-anchor="middle" class="lbl">income</text>
+  <text x="412" y="160" text-anchor="middle" class="lbl" transform="rotate(-90 412 160)">utilisation</text>
+  <path d="M430,280 L430,120 C510,80 550,200 620,150 C680,110 720,60 760,50 L760,280 Z" fill="var(--s2)" fill-opacity=".10"/>
+  <path d="M430,40 L430,120 C510,80 550,200 620,150 C680,110 720,60 760,50 L760,40 Z" fill="var(--s1)" fill-opacity=".10"/>
+  <path d="M430,120 C510,80 550,200 620,150 C680,110 720,60 760,50" fill="none" stroke="var(--s7)" stroke-width="2.5"/>
+  <text x="450" y="60" class="lbl" fill="var(--s1)" font-weight="700">approve</text>
+  <text x="700" y="265" class="lbl" fill="var(--s2)" font-weight="700">decline</text>
+  <circle cx="640" cy="215" r="6" fill="var(--s2)" stroke="var(--surface)" stroke-width="2"/>
+  <text x="652" y="222" class="lbl-strong">x (declined)</text>
+  <line x1="640" y1="205" x2="640" y2="142" stroke="var(--s3)" stroke-width="2.5" marker-end="url(#arr-f7)"/>
+  <circle cx="640" cy="130" r="6" fill="var(--s1)" stroke="var(--surface)" stroke-width="2"/>
+  <text x="652" y="126" class="lbl-strong">x′ (approved)</text>
+  <text x="595" y="318" text-anchor="middle" class="lbl" font-size="11">"Reduce utilisation from 71% to 48% and the decision flips." Income unchanged.</text>
+</svg>
+<figcaption><strong>Figure 20.7 — Two local explanations of one decision.</strong> LIME describes the boundary <em>near</em> x with a line; move x slightly and the sampled neighbourhood — and the line — can change a lot, which is LIME's instability. A counterfactual ignores the model's internals entirely and reports the smallest change to the inputs that would flip the output: the most useful sentence a declined customer can hear.</figcaption>
+</figure>
+
+<p>LIME's weakness is <strong>instability</strong>: the explanation depends on the random perturbations, the kernel width and the discretisation of features, none of which have a principled default. Run it twice on the same row and the top-3 features can reorder; run it on two nearly identical rows and the signs can differ. For a debugging session that is tolerable; for an adverse-action notice that must be reproducible six months later in front of a regulator, it is not. This is the main practical reason SHAP replaced LIME for tabular models: the same input, model and background give the same explanation every time. Where LIME still shines is unstructured data — explaining an image classifier by super-pixels or a text classifier by words — because its perturbation scheme adapts naturally to "turn this word off."</p>
+
+<h3>Counterfactual explanations</h3>
+<p>A <strong>counterfactual explanation</strong> answers "what is the smallest change to this input that would have produced the other decision?" — <em>if your utilisation had been 48% instead of 71%, you would have been approved.</em> It is the explanation format that humans find most natural, and the one that is most directly actionable for the person affected. Generating one is an optimisation: minimise the distance between x and x′ subject to f(x′) crossing the threshold, plus constraints that keep x′ <strong>plausible</strong> (a real customer could exist there — no age of 250), <strong>actionable</strong> (do not tell a customer to become younger; do not touch protected attributes) and <strong>sparse</strong> (change one or two features, not twelve). The <code>dice-ml</code> and <code>alibi</code> packages do this properly; the code below does the one-feature brute-force version, which is often enough for tabular models with a handful of actionable features.</p>
+
+<h3>Global surrogate models</h3>
+<p>The blunt instrument: fit a small, interpretable model — usually a depth-3 or depth-4 tree — not to the labels but to the <em>black box's predictions</em>. The surrogate is then a readable approximation of the black box, and the fraction of test rows on which it agrees with the black box (its <strong>fidelity</strong>) tells you how much to trust the approximation. A surrogate with 94% fidelity is a great way to explain "roughly how the model thinks" to a business audience; a surrogate with 70% fidelity is a story about a different model. Always report the number.</p>
+
+<pre class="code" data-lang="python"><code><span class="cm"># Global surrogate tree + a brute-force counterfactual for one prediction</span>
+<span class="kw">import</span> numpy <span class="kw">as</span> np, pandas <span class="kw">as</span> pd
+<span class="kw">from</span> sklearn.datasets <span class="kw">import</span> load_breast_cancer
+<span class="kw">from</span> sklearn.model_selection <span class="kw">import</span> train_test_split
+<span class="kw">from</span> sklearn.ensemble <span class="kw">import</span> RandomForestClassifier
+<span class="kw">from</span> sklearn.tree <span class="kw">import</span> DecisionTreeClassifier, export_text
+
+X, y = load_breast_cancer(return_X_y=<span class="kw">True</span>, as_frame=<span class="kw">True</span>)
+feats = [<span class="st">"mean radius"</span>, <span class="st">"mean texture"</span>, <span class="st">"mean smoothness"</span>, <span class="st">"mean concave points"</span>, <span class="st">"mean symmetry"</span>, <span class="st">"worst texture"</span>]
+X = X[feats]
+X_tr, X_te, y_tr, y_te = train_test_split(X, y, test_size=<span class="nu">0.3</span>, random_state=<span class="nu">0</span>, stratify=y)
+rf = RandomForestClassifier(n_estimators=<span class="nu">300</span>, random_state=<span class="nu">0</span>).fit(X_tr, y_tr)
+
+<span class="cm"># Surrogate: fit a shallow tree to the BLACK BOX'S predictions (not to the labels)</span>
+sur = DecisionTreeClassifier(max_depth=<span class="nu">2</span>, random_state=<span class="nu">0</span>).fit(X_tr, rf.predict(X_tr))
+fidelity = (sur.predict(X_te) == rf.predict(X_te)).mean()
+<span class="fn">print</span>(<span class="st">f"surrogate agrees with the forest on {fidelity:.1%} of test rows"</span>)
+<span class="fn">print</span>(export_text(sur, feature_names=feats, decimals=<span class="nu">2</span>))
+
+<span class="cm"># Counterfactual: smallest single-feature move (in std units) that flips a malignant call to benign</span>
+proba = rf.predict_proba(X_te)[:, <span class="nu">1</span>]
+i = <span class="fn">int</span>(np.argmin(np.abs(proba - <span class="nu">0.3</span>)))                   <span class="cm"># a clearly-malignant call, but not hopeless</span>
+x0 = X_te.iloc[[i]].copy(); <span class="fn">print</span>(<span class="st">f"\nrow {i}: P(benign) = {proba[i]:.3f} -&gt; predicted malignant"</span>)
+best = <span class="kw">None</span>
+<span class="kw">for</span> f <span class="kw">in</span> feats:
+    <span class="kw">for</span> step <span class="kw">in</span> np.linspace(-<span class="nu">3</span>, <span class="nu">3</span>, <span class="nu">61</span>):
+        x = x0.copy(); x[f] = x0[f].values[<span class="nu">0</span>] + step * X_tr[f].std()
+        <span class="kw">if</span> rf.predict_proba(x)[<span class="nu">0</span>, <span class="nu">1</span>] &gt;= <span class="nu">0.5</span> <span class="kw">and</span> (best <span class="kw">is</span> <span class="kw">None</span> <span class="kw">or</span> <span class="fn">abs</span>(step) &lt; <span class="fn">abs</span>(best[<span class="nu">1</span>])):
+            best = (f, step, x[f].values[<span class="nu">0</span>])
+<span class="fn">print</span>(<span class="st">f"counterfactual: move '{best[0]}' from {x0[best[0]].values[0]:.3f} to {best[2]:.3f} ({best[1]:+.1f} std) -&gt; benign"</span>)
+<span class="out"># surrogate agrees with the forest on 93.6% of test rows</span>
+<span class="out"># |--- mean concave points &lt;= 0.06</span>
+<span class="out"># |   |--- mean radius &lt;= 15.05</span>
+<span class="out"># |   |   |--- class: 1</span>
+<span class="out"># |   |--- mean radius &gt;  15.05</span>
+<span class="out"># |   |   |--- class: 0</span>
+<span class="out"># |--- mean concave points &gt;  0.06</span>
+<span class="out"># |   |--- mean texture &lt;= 14.12</span>
+<span class="out"># |   |   |--- class: 1</span>
+<span class="out"># |   |--- mean texture &gt;  14.12</span>
+<span class="out"># |   |   |--- class: 0</span>
+<span class="out">#</span>
+<span class="out"># row 30: P(benign) = 0.290 -&gt; predicted malignant</span>
+<span class="out"># counterfactual: move 'mean concave points' from 0.062 to 0.054 (-0.2 std) -&gt; benign</span></code></pre>
+
+<p>A four-leaf tree reproduces 94% of a 300-tree forest's decisions — that is the sentence to put on the slide, with the tree beside it. And the counterfactual makes the surrogate's first split concrete: this tumour sits just above the 0.06 concave-points threshold, and a change of 0.2 standard deviations flips the call. For a medical model that is a warning ("this decision is fragile, get a second opinion"); for a lending model the equivalent sentence is the adverse-action reason and the path to approval in one.</p>
+
+<!-- ============================================================ -->
+<h2 id="s8">8. Caveats: when explanations lie</h2>
+
+<p>Explanation tools are tools for understanding a <em>model</em>. They are not tools for understanding the <em>world</em>, and confusing the two is the most common expert-level mistake in this field.</p>
+
+<div class="grid3">
+  <div class="card bad"><h4>A bad model explains itself confidently</h4><p>SHAP values of a model with AUC 0.55 add up perfectly, look beautiful in a beeswarm, and mean nothing. Explanation quality is capped by model quality. Validate first (Chapter 13); explain second. If the validation score is poor, the explanation is a description of noise.</p></div>
+  <div class="card bad"><h4>Correlated features spread credit</h4><p>When <code>worst radius</code>, <code>worst perimeter</code> and <code>worst area</code> are near-duplicates, SHAP splits their credit (symmetry axiom), permutation importance under-counts each of them, and PDPs extrapolate into impossible combinations. Group correlated features and explain the group, or drop the duplicates before training.</p></div>
+  <div class="card bad"><h4>No causal claims</h4><p>"Utilisation has the biggest SHAP value" means the model leans on it, not that lowering utilisation causes repayment. The model may be reading a proxy for something unmeasured. Causal questions need causal methods — Chapter 22 — and usually an experiment.</p></div>
+</div>
+
+<p>Two more subtle traps. First, <strong>the background matters</strong>: SHAP's base value and every φ<sub>ij</sub> depend on what "absent" means, i.e. which background rows fill in the missing features. Explaining a rejected applicant against a background of all applicants gives different numbers than against a background of approved ones — both are legitimate, but they answer different questions ("why not average?" versus "why not approved?"). Say which one you used. Second, <strong>explanations can be gamed</strong>: research has shown that a model can be built to look innocuous under LIME and SHAP while relying on a protected attribute, by behaving differently on the off-manifold perturbed points those methods generate. If someone has an incentive to hide what a model does, an explanation plot is not an audit. Fairness metrics on real outcomes (next section) are.</p>
+
+<div class="callout key"><div class="title">Key idea</div>
+<p>An explanation describes the model's <em>function</em>, faithfully. Whether that function is good, fair, or causally meaningful are three separate questions that need validation metrics, fairness metrics and causal methods respectively. SHAP tells you <em>what the model does</em>. It never tells you whether the model <em>should</em>.</p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s9">9. Fairness &amp; bias</h2>
+
+<p>Back to the lender. The model does not use gender, ethnicity or age as features — legal insisted. Then someone computes the approval rate by group and finds it is 58% for group A and 44% for group B. How, if the model never saw group membership? Because it saw <strong>proxies</strong>: postcode, first name, shopping categories, the device used to apply. Any feature correlated with a protected attribute lets the model reconstruct it. Removing the protected column is called <em>fairness through unawareness</em>, and it does not work. The only way to know whether a model treats groups differently is to <strong>keep the protected attribute out of the features, keep it in the evaluation data, and measure</strong>.</p>
+
+<div class="callout eli9"><div class="title">Explain it like I'm 9</div>
+<p>Suppose a teacher promises not to look at whether you're a boy or a girl when marking, so she covers the name on each test. But she can still see the handwriting and the colour of the pen — and if girls in that class tend to use purple pens, she might, without meaning to, mark purple-pen tests differently. Hiding the name didn't hide the information. The honest check is simpler: after marking, compare the boys' and girls' scores and see if the difference makes sense.</p>
+</div>
+
+<h3>Three definitions of "fair"</h3>
+<p>Take a binary decision ŷ (approve = 1), the true outcome y (would repay = 1) and a group attribute G ∈ {A, B}. The three metrics most used in practice each fix a different quantity to be equal across groups:</p>
+
+<div class="tbl-wrap">
+<table class="tbl">
+<thead><tr><th>Criterion</th><th>Requires, for every group g</th><th>In words</th><th>Reasonable when…</th></tr></thead>
+<tbody>
+<tr><td><strong>Demographic parity</strong> (statistical parity)</td><td>P(ŷ = 1 | G = g) equal</td><td>The same fraction of each group is approved, regardless of outcomes.</td><td>Historical outcomes themselves are distrusted (e.g. biased past hiring); you want equal access.</td></tr>
+<tr><td><strong>Equal opportunity</strong></td><td>P(ŷ = 1 | y = 1, G = g) equal (equal TPR)</td><td>Among people who <em>would</em> repay, each group is approved at the same rate.</td><td>The cost of a false negative (denying a good customer) is the harm you care about most.</td></tr>
+<tr><td><strong>Equalized odds</strong></td><td>TPR <em>and</em> FPR equal across groups</td><td>Equal opportunity plus: among people who would default, each group is (wrongly) approved at the same rate.</td><td>Both error types matter and the labels are trusted.</td></tr>
+<tr><td><em>Calibration by group</em></td><td>P(y = 1 | score = s, G = g) equal for all s</td><td>A score of 0.7 means 70% for everyone.</td><td>The score itself is shown or used downstream by humans.</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="callout math"><div class="title">The math (optional)</div>
+<div class="formula">Disparate impact ratio = P(ŷ = 1 | G = B) / P(ŷ = 1 | G = A) &nbsp;&nbsp;·&nbsp;&nbsp; Equal-opportunity gap = TPR<sub>A</sub> − TPR<sub>B</sub></div>
+<p>ŷ is the decision, G the group, TPR<sub>g</sub> = P(ŷ = 1 | y = 1, G = g) the true-positive rate within group g. The US "four-fifths rule" (from employment law, widely borrowed) flags a disparate impact ratio below 0.80 as evidence of adverse impact. Gaps in TPR/FPR have no legal threshold; teams typically set an internal tolerance such as |gap| ≤ 0.05 and monitor it.</p>
+</div>
+
+<p><strong>You cannot have all of them.</strong> A theorem from 2016 (Kleinberg, Mullainathan &amp; Raghavan; Chouldechova) shows that if the base rates P(y = 1 | G) differ between groups — and they nearly always do — no classifier short of a perfect one can be calibrated by group <em>and</em> satisfy equalized odds. Demographic parity conflicts with both whenever base rates differ. This is not a technical limitation waiting for a better algorithm; it is arithmetic. So "make the model fair" is not a specification. The team, with legal and the business, must choose <em>which</em> criterion matters for this decision, write it down, and accept that the others will be violated. That choice is a policy decision, and it should be made before anyone looks at the numbers.</p>
+
+<figure class="fig">
+<svg viewBox="0 0 780 300" role="img" aria-label="Left: score distributions for group A and group B with one shared threshold, giving group B a lower approval rate. Right: the same distributions with a separate, lower threshold for group B that equalises true-positive rates">
+  <text x="220" y="22" text-anchor="middle" class="lbl-strong" font-size="14">One threshold for everyone</text>
+  <line x1="60" y1="230" x2="380" y2="230" class="axis"/>
+  <text x="220" y="250" text-anchor="middle" class="lbl">model score</text>
+  <path d="M60.0,229.8 L65.4,229.7 L70.8,229.6 L76.3,229.4 L81.7,229.1 L87.1,228.8 L92.5,228.3 L98.0,227.7 L103.4,226.8 L108.8,225.8 L114.2,224.4 L119.7,222.7 L125.1,220.6 L130.5,218.0 L135.9,214.9 L141.4,211.1 L146.8,206.7 L152.2,201.6 L157.6,195.7 L163.1,189.1 L168.5,181.8 L173.9,173.7 L179.3,165.1 L184.7,156.0 L190.2,146.5 L195.6,136.9 L201.0,127.3 L206.4,118.0 L211.9,109.3 L217.3,101.3 L222.7,94.3 L228.1,88.5 L233.6,84.1 L239.0,81.2 L244.4,80.0 L249.8,80.5 L255.3,82.6 L260.7,86.4 L266.1,91.6 L271.5,98.0 L276.9,105.6 L282.4,114.1 L287.8,123.2 L293.2,132.7 L298.6,142.3 L304.1,151.9 L309.5,161.1 L314.9,170.0 L320.3,178.3 L325.8,186.0 L331.2,192.9 L336.6,199.1 L342.0,204.5 L347.5,209.3 L352.9,213.3 L358.3,216.7 L363.7,219.5 L369.2,221.8 L374.6,223.7 L380.0,225.2" fill="var(--s1)" fill-opacity=".15" stroke="var(--s1)" stroke-width="2"/>
+  <path d="M60.0,226.6 L65.4,225.5 L70.8,224.0 L76.3,222.2 L81.7,220.0 L87.1,217.2 L92.5,214.0 L98.0,210.0 L103.4,205.4 L108.8,200.1 L114.2,194.1 L119.7,187.3 L125.1,179.7 L130.5,171.5 L135.9,162.8 L141.4,153.5 L146.8,144.0 L152.2,134.4 L157.6,124.9 L163.1,115.7 L168.5,107.1 L173.9,99.3 L179.3,92.6 L184.7,87.2 L190.2,83.2 L195.6,80.8 L201.0,80.0 L206.4,80.9 L211.9,83.5 L217.3,87.6 L222.7,93.1 L228.1,99.9 L233.6,107.8 L239.0,116.4 L244.4,125.6 L249.8,135.2 L255.3,144.8 L260.7,154.3 L266.1,163.5 L271.5,172.2 L276.9,180.4 L282.4,187.8 L287.8,194.6 L293.2,200.6 L298.6,205.8 L304.1,210.4 L309.5,214.2 L314.9,217.5 L320.3,220.2 L325.8,222.4 L331.2,224.1 L336.6,225.6 L342.0,226.7 L347.5,227.5 L352.9,228.2 L358.3,228.7 L363.7,229.1 L369.2,229.3 L374.6,229.5 L380.0,229.7" fill="var(--s2)" fill-opacity=".15" stroke="var(--s2)" stroke-width="2"/>
+  <line x1="220" y1="60" x2="220" y2="232" stroke="var(--s7)" stroke-width="2.5" stroke-dasharray="6 3"/>
+  <text x="226" y="70" class="lbl-strong" fill="var(--s7)" font-size="11">threshold 0.50</text>
+  <text x="300" y="120" class="lbl" fill="var(--s1)" font-weight="700">group A</text>
+  <text x="80" y="120" class="lbl" fill="var(--s2)" font-weight="700">group B</text>
+  <text x="220" y="272" text-anchor="middle" class="lbl">approval: A 58% · B 44% → ratio 0.76 (fails 4/5 rule)</text>
+  <text x="220" y="290" text-anchor="middle" class="lbl">TPR: A 0.79 · B 0.68 → gap 0.11</text>
+
+  <text x="580" y="22" text-anchor="middle" class="lbl-strong" font-size="14">A threshold per group (post-processing)</text>
+  <line x1="420" y1="230" x2="740" y2="230" class="axis"/>
+  <text x="580" y="250" text-anchor="middle" class="lbl">model score</text>
+  <path d="M420.0,229.8 L425.4,229.7 L430.8,229.6 L436.3,229.4 L441.7,229.1 L447.1,228.8 L452.5,228.3 L458.0,227.7 L463.4,226.8 L468.8,225.8 L474.2,224.4 L479.7,222.7 L485.1,220.6 L490.5,218.0 L495.9,214.9 L501.4,211.1 L506.8,206.7 L512.2,201.6 L517.6,195.7 L523.1,189.1 L528.5,181.8 L533.9,173.7 L539.3,165.1 L544.7,156.0 L550.2,146.5 L555.6,136.9 L561.0,127.3 L566.4,118.0 L571.9,109.3 L577.3,101.3 L582.7,94.3 L588.1,88.5 L593.6,84.1 L599.0,81.2 L604.4,80.0 L609.8,80.5 L615.3,82.6 L620.7,86.4 L626.1,91.6 L631.5,98.0 L636.9,105.6 L642.4,114.1 L647.8,123.2 L653.2,132.7 L658.6,142.3 L664.1,151.9 L669.5,161.1 L674.9,170.0 L680.3,178.3 L685.8,186.0 L691.2,192.9 L696.6,199.1 L702.0,204.5 L707.5,209.3 L712.9,213.3 L718.3,216.7 L723.7,219.5 L729.2,221.8 L734.6,223.7 L740.0,225.2" fill="var(--s1)" fill-opacity=".15" stroke="var(--s1)" stroke-width="2"/>
+  <path d="M420.0,226.6 L425.4,225.5 L430.8,224.0 L436.3,222.2 L441.7,220.0 L447.1,217.2 L452.5,214.0 L458.0,210.0 L463.4,205.4 L468.8,200.1 L474.2,194.1 L479.7,187.3 L485.1,179.7 L490.5,171.5 L495.9,162.8 L501.4,153.5 L506.8,144.0 L512.2,134.4 L517.6,124.9 L523.1,115.7 L528.5,107.1 L533.9,99.3 L539.3,92.6 L544.7,87.2 L550.2,83.2 L555.6,80.8 L561.0,80.0 L566.4,80.9 L571.9,83.5 L577.3,87.6 L582.7,93.1 L588.1,99.9 L593.6,107.8 L599.0,116.4 L604.4,125.6 L609.8,135.2 L615.3,144.8 L620.7,154.3 L626.1,163.5 L631.5,172.2 L636.9,180.4 L642.4,187.8 L647.8,194.6 L653.2,200.6 L658.6,205.8 L664.1,210.4 L669.5,214.2 L674.9,217.5 L680.3,220.2 L685.8,222.4 L691.2,224.1 L696.6,225.6 L702.0,226.7 L707.5,227.5 L712.9,228.2 L718.3,228.7 L723.7,229.1 L729.2,229.3 L734.6,229.5 L740.0,229.7" fill="var(--s2)" fill-opacity=".15" stroke="var(--s2)" stroke-width="2"/>
+  <line x1="580" y1="60" x2="580" y2="232" stroke="var(--s1)" stroke-width="2.5" stroke-dasharray="6 3"/>
+  <text x="586" y="70" class="lbl-strong" fill="var(--s1)" font-size="11">A: 0.50</text>
+  <line x1="548" y1="90" x2="548" y2="232" stroke="var(--s2)" stroke-width="2.5" stroke-dasharray="6 3"/>
+  <text x="542" y="100" text-anchor="end" class="lbl-strong" fill="var(--s2)" font-size="11">B: 0.40</text>
+  <text x="580" y="272" text-anchor="middle" class="lbl">approval: A 58% · B 55% → ratio 0.95</text>
+  <text x="580" y="290" text-anchor="middle" class="lbl">TPR: A 0.79 · B 0.79 → gap 0.00, but FPR<tspan font-size="9" dy="3">B</tspan><tspan dy="-3"> rises 0.23 → 0.34</tspan></text>
+</svg>
+<figcaption><strong>Figure 20.8 — Fairness is a threshold decision as much as a modelling decision.</strong> The same scores, shifted for group B (because its proxies pull scores down), produce a 14-point approval gap under one threshold. A per-group threshold equalises opportunity — at the price of a higher false-positive rate for group B and a policy that is itself legally contested in some jurisdictions. There is no free lunch; there is only an explicit choice.</figcaption>
+</figure>
+
+<pre class="code" data-lang="python"><code><span class="cm"># Group fairness metrics on a synthetic loan dataset with a biased proxy feature</span>
+<span class="kw">import</span> numpy <span class="kw">as</span> np, pandas <span class="kw">as</span> pd
+<span class="kw">from</span> sklearn.linear_model <span class="kw">import</span> LogisticRegression
+<span class="kw">from</span> sklearn.model_selection <span class="kw">import</span> train_test_split
+
+rng = np.random.default_rng(<span class="nu">42</span>)
+n = <span class="nu">6000</span>
+group = rng.integers(<span class="nu">0</span>, <span class="nu">2</span>, n)                        <span class="cm"># protected attribute: 0 = group A, 1 = group B</span>
+income = rng.normal(<span class="nu">50</span> - <span class="nu">8</span> * group, <span class="nu">12</span>, n)           <span class="cm"># group B has lower income on average (historical inequity)</span>
+zip_score = <span class="nu">0.7</span> * group + rng.normal(<span class="nu">0</span>, <span class="nu">0.5</span>, n)      <span class="cm"># a "neighbourhood" feature that PROXIES the group</span>
+credit = rng.normal(<span class="nu">0</span>, <span class="nu">1</span>, n)
+<span class="cm"># true repayment depends on income and credit only, NOT on group</span>
+p_repay = <span class="nu">1</span> / (<span class="nu">1</span> + np.exp(-(<span class="nu">0.06</span> * (income - <span class="nu">46</span>) + <span class="nu">1.2</span> * credit)))
+y = (rng.random(n) &lt; p_repay).astype(<span class="fn">int</span>)
+X = pd.DataFrame({<span class="st">"income"</span>: income, <span class="st">"zip_score"</span>: zip_score, <span class="st">"credit"</span>: credit})   <span class="cm"># group itself is NOT a feature</span>
+
+X_tr, X_te, y_tr, y_te, g_tr, g_te = train_test_split(X, y, group, test_size=<span class="nu">0.4</span>, random_state=<span class="nu">0</span>)
+clf = LogisticRegression(max_iter=<span class="nu">1000</span>).fit(X_tr, y_tr)
+scores = clf.predict_proba(X_te)[:, <span class="nu">1</span>]
+
+<span class="kw">def</span> <span class="fn">group_metrics</span>(y, s, g, thr):
+    out = {}
+    <span class="kw">for</span> name, m <span class="kw">in</span> [(<span class="st">"A"</span>, g == <span class="nu">0</span>), (<span class="st">"B"</span>, g == <span class="nu">1</span>)]:
+        t = thr[m] <span class="kw">if</span> np.ndim(thr) <span class="kw">else</span> thr                <span class="cm"># thr may be one number or one per row</span>
+        yh = (s[m] &gt;= t).astype(<span class="fn">int</span>); yt = y[m]
+        out[name] = {<span class="st">"approval rate"</span>: yh.mean(),
+                     <span class="st">"TPR (equal opportunity)"</span>: yh[yt == <span class="nu">1</span>].mean(),
+                     <span class="st">"FPR"</span>: yh[yt == <span class="nu">0</span>].mean(),
+                     <span class="st">"precision"</span>: yt[yh == <span class="nu">1</span>].mean()}
+    <span class="kw">return</span> pd.DataFrame(out).round(<span class="nu">3</span>)
+
+m = group_metrics(y_te, scores, g_te, thr=<span class="nu">0.5</span>)
+<span class="fn">print</span>(m)
+<span class="fn">print</span>(<span class="st">f"\ndisparate impact ratio (B/A approval) = {m.loc['approval rate','B'] / m.loc['approval rate','A']:.2f}  (4/5 rule wants &gt;= 0.80)"</span>)
+<span class="fn">print</span>(<span class="st">f"equal-opportunity gap (TPR A - TPR B)  = {m.loc['TPR (equal opportunity)','A'] - m.loc['TPR (equal opportunity)','B']:.3f}"</span>)
+
+<span class="cm"># Mitigation by post-processing: a separate threshold per group that equalises TPR</span>
+thr_b = np.quantile(scores[(g_te == <span class="nu">1</span>) &amp; (y_te == <span class="nu">1</span>)], <span class="nu">1</span> - m.loc[<span class="st">'TPR (equal opportunity)'</span>, <span class="st">'A'</span>])
+m2 = group_metrics(y_te, scores, g_te, thr=np.where(g_te == <span class="nu">1</span>, thr_b, <span class="nu">0.5</span>))
+<span class="fn">print</span>(<span class="st">f"\nper-group threshold for B = {thr_b:.3f}"</span>)
+<span class="fn">print</span>(m2.loc[[<span class="st">"approval rate"</span>, <span class="st">"TPR (equal opportunity)"</span>, <span class="st">"FPR"</span>]])
+<span class="out">#                              A      B</span>
+<span class="out"># approval rate            0.579  0.441</span>
+<span class="out"># TPR (equal opportunity)  0.790  0.680</span>
+<span class="out"># FPR                      0.311  0.231</span>
+<span class="out"># precision                0.763  0.721</span>
+<span class="out">#</span>
+<span class="out"># disparate impact ratio (B/A approval) = 0.76  (4/5 rule wants &gt;= 0.80)</span>
+<span class="out"># equal-opportunity gap (TPR A - TPR B)  = 0.110</span>
+<span class="out">#</span>
+<span class="out"># per-group threshold for B = 0.400</span>
+<span class="out">#                              A      B</span>
+<span class="out"># approval rate            0.579  0.549</span>
+<span class="out"># TPR (equal opportunity)  0.790  0.789</span>
+<span class="out"># FPR                      0.311  0.338</span></code></pre>
+
+<p>Notice what the synthetic data was built to show. Repayment truly depends only on income and credit — the "world" is not biased against group B given those. But group B has lower income on average (an inherited inequity) <em>and</em> the model has a proxy (<code>zip_score</code>) that lets it learn the group. Result: a 0.76 disparate impact ratio and an 11-point TPR gap, from a model that never saw the group column. The per-group threshold repairs equal opportunity (0.790 vs 0.789) but pushes group B's FPR up from 0.23 to 0.34 — the impossibility theorem in one table.</p>
+
+<h3>Mitigation: four places to intervene</h3>
+<ol class="steps">
+  <li><strong>Data.</strong> Collect more and better-labelled data for the under-represented group; audit the labels themselves (a "default" label from a biased collections process is a biased label); remove or transform proxy features that have no business justification.</li>
+  <li><strong>Reweighing / in-processing.</strong> Weight training rows so that each (group, label) combination has equal total weight, or add a fairness penalty to the loss (the <code>fairlearn</code> package's <code>ExponentiatedGradient</code> does this for any sklearn classifier). This usually costs a little accuracy and moves the model toward the chosen criterion.</li>
+  <li><strong>Thresholds per group / post-processing.</strong> Keep the scores, choose decision thresholds per group to satisfy the criterion (as above; <code>fairlearn.postprocessing.ThresholdOptimizer</code>). Simple and effective, but it uses the protected attribute at decision time, which is illegal in some domains (US credit, for one) — check with legal first.</li>
+  <li><strong>Monitoring.</strong> Fairness is not a property you verify once. Compute the chosen metrics per group on every batch of production decisions, alert when a gap crosses the tolerance, and include them in the model card. Chapter 21 shows where these checks live in the pipeline.</li>
+</ol>
+
+<div class="callout warn"><div class="title">Common mistake</div>
+<p><strong>Reporting fairness on the model's training distribution only.</strong> A model can be fair on last year's applicants and unfair on this year's, because the mix of groups, their proxies, or the base rates shifted. Fairness metrics are monitoring metrics, computed on production data with a lag for labels — the same way as accuracy. And <strong>never</strong> compute them on a test set so small that a 5-point gap is inside the noise: with 200 people in group B a TPR "gap" of 0.05 has a standard error of about 0.04. Report confidence intervals.</p>
+</div>
+
+<div class="callout pro"><div class="title">At work: the fairness conversation</div>
+<p>Do not walk into the room with "the model is biased." Walk in with: the criterion you propose and why it fits this decision, the measured gap with its confidence interval, the three mitigation options with their accuracy cost, and a recommendation. Fairness decisions are made by product, legal and the business; your job is to make the trade-off visible and quantified. And if the mitigation you need is illegal in your jurisdiction, say so early — it changes the whole plan.</p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s10">10. Model cards &amp; the stakeholder recipe</h2>
+
+<h3>The model card</h3>
+<p>A <strong>model card</strong> is a one-to-three-page document that travels with the model: what it is for, what it was trained on, how it performs — overall and per group — where it must not be used, and how it was explained. Proposed by Mitchell et al. in 2019 and now expected by most AI-governance frameworks (and by the EU AI Act for high-risk systems). The minimal card:</p>
+
+<div class="tbl-wrap">
+<table class="tbl">
+<thead><tr><th>Section</th><th>What goes in it</th></tr></thead>
+<tbody>
+<tr><td><strong>Model details</strong></td><td>Owner, version, date, algorithm, features (with sources), training-data window, license/approval status.</td></tr>
+<tr><td><strong>Intended use</strong></td><td>The decision it supports, the users, and explicit <em>out-of-scope</em> uses ("not for applicants under 21; not for business loans").</td></tr>
+<tr><td><strong>Data</strong></td><td>Where the labels come from, known gaps, how the protected attributes were handled (held out of features, kept for evaluation).</td></tr>
+<tr><td><strong>Performance</strong></td><td>Primary metric on validation and test, with confidence intervals; performance sliced by group, region, time period; the accuracy cost of the interpretability/fairness choices made.</td></tr>
+<tr><td><strong>Explanations</strong></td><td>Global importance (permutation + mean |SHAP|), the PDP/ICE for the top features, the background dataset used, the reason-code mapping for local explanations.</td></tr>
+<tr><td><strong>Fairness</strong></td><td>The criterion chosen and why, the measured gaps with intervals, mitigations applied, the monitoring plan.</td></tr>
+<tr><td><strong>Limitations &amp; risks</strong></td><td>Known failure modes (found by ICE, counterfactuals, error analysis), drift risks, what to do when the model is uncertain.</td></tr>
+</tbody>
+</table>
+</div>
+
+<h3>The "explain it to a stakeholder" recipe</h3>
+<p>You have thirty minutes with the head of credit. She does not want a beeswarm. Here is what has worked for me, repeatedly, across industries:</p>
+
+<figure class="fig">
+<svg viewBox="0 0 780 380" role="img" aria-label="A one-page stakeholder explanation layout: a global importance bar chart top-left, three small partial dependence curves top-right, two waterfall plots for individual decisions bottom-left, and a fairness and limitations panel bottom-right">
+  <defs><marker id="arr-f9" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+  <rect x="20" y="16" width="740" height="350" rx="10" fill="var(--surface-2)" stroke="var(--border)"/>
+  <text x="390" y="40" text-anchor="middle" class="lbl-strong" font-size="14">The one-page explanation pack (in this order)</text>
+  <!-- panel 1: global bar -->
+  <rect x="36" y="54" width="300" height="140" rx="6" fill="var(--surface)" stroke="var(--s1)" stroke-width="1.5"/>
+  <text x="46" y="72" class="lbl-strong" font-size="12">① "What does it look at?" — top-8 permutation importance</text>
+  <g class="lbl" font-size="10">
+    <text x="130" y="92" text-anchor="end">utilisation</text><rect x="136" y="84" width="180" height="9" fill="var(--s1)"/>
+    <text x="130" y="106" text-anchor="end">months on book</text><rect x="136" y="98" width="130" height="9" fill="var(--s1)"/>
+    <text x="130" y="120" text-anchor="end">income</text><rect x="136" y="112" width="100" height="9" fill="var(--s1)"/>
+    <text x="130" y="134" text-anchor="end">late payments 12m</text><rect x="136" y="126" width="80" height="9" fill="var(--s1)"/>
+    <text x="130" y="148" text-anchor="end"># open loans</text><rect x="136" y="140" width="55" height="9" fill="var(--s1)"/>
+    <text x="130" y="162" text-anchor="end">age of oldest line</text><rect x="136" y="154" width="40" height="9" fill="var(--s1)"/>
+    <text x="130" y="176" text-anchor="end">…</text><rect x="136" y="168" width="25" height="9" fill="var(--s1)"/>
+  </g>
+  <text x="330" y="190" text-anchor="end" class="lbl" font-size="10" fill="var(--s1)">"matches lending intuition ✓"</text>
+  <!-- panel 2: three PDPs -->
+  <rect x="352" y="54" width="392" height="140" rx="6" fill="var(--surface)" stroke="var(--s2)" stroke-width="1.5"/>
+  <text x="362" y="72" class="lbl-strong" font-size="12">② "How does it react?" — PDP + ICE for the top 3 features</text>
+  <g>
+    <line x1="372" y1="176" x2="480" y2="176" class="axis"/><line x1="372" y1="176" x2="372" y2="86" class="axis"/>
+    <path d="M375,170 C400,168 420,150 440,120 C455,100 470,92 478,90" fill="none" stroke="var(--s2)" stroke-width="2.5"/>
+    <path d="M375,172 C400,171 425,155 440,128 C455,110 470,100 478,98" fill="none" stroke="var(--s1)" stroke-opacity=".5"/>
+    <path d="M375,166 C400,164 420,145 440,112 C455,94 470,86 478,84" fill="none" stroke="var(--s1)" stroke-opacity=".5"/>
+    <text x="426" y="190" text-anchor="middle" class="lbl" font-size="10">utilisation</text>
+    <line x1="500" y1="176" x2="608" y2="176" class="axis"/><line x1="500" y1="176" x2="500" y2="86" class="axis"/>
+    <path d="M503,96 C520,100 530,150 560,160 C580,168 600,170 606,170" fill="none" stroke="var(--s2)" stroke-width="2.5"/>
+    <path d="M503,90 C520,94 530,142 560,152 C580,160 600,162 606,162" fill="none" stroke="var(--s1)" stroke-opacity=".5"/>
+    <path d="M503,102 C520,106 530,158 560,168 C580,174 600,176 606,176" fill="none" stroke="var(--s1)" stroke-opacity=".5"/>
+    <text x="554" y="190" text-anchor="middle" class="lbl" font-size="10">months on book</text>
+    <line x1="628" y1="176" x2="736" y2="176" class="axis"/><line x1="628" y1="176" x2="628" y2="86" class="axis"/>
+    <path d="M631,160 C650,150 670,120 690,110 C705,104 725,106 734,112" fill="none" stroke="var(--s2)" stroke-width="2.5"/>
+    <path d="M631,166 C650,156 670,128 690,118 C705,112 725,114 734,120" fill="none" stroke="var(--s1)" stroke-opacity=".5"/>
+    <path d="M631,154 C650,144 670,112 690,102 C705,96 725,98 734,104" fill="none" stroke="var(--s1)" stroke-opacity=".5"/>
+    <circle cx="720" cy="108" r="8" fill="none" stroke="var(--critical)" stroke-width="2"/>
+    <text x="682" y="190" text-anchor="middle" class="lbl" font-size="10">income (bump = data artefact!)</text>
+  </g>
+  <!-- panel 3: two waterfalls -->
+  <rect x="36" y="206" width="392" height="146" rx="6" fill="var(--surface)" stroke="var(--s7)" stroke-width="1.5"/>
+  <text x="46" y="224" class="lbl-strong" font-size="12">③ "Why this person?" — two waterfalls: one approved, one declined</text>
+  <g class="lbl" font-size="10">
+    <text x="56" y="246">approved · P = 0.91</text>
+    <line x1="130" y1="252" x2="130" y2="330" stroke="var(--ink-3)" stroke-dasharray="3 2"/>
+    <rect x="130" y="256" width="60" height="9" fill="var(--s2)"/><text x="194" y="264">low utilisation</text>
+    <rect x="130" y="270" width="40" height="9" fill="var(--s2)"/><text x="174" y="278">10 yrs on book</text>
+    <rect x="108" y="284" width="22" height="9" fill="var(--s1)"/><text x="60" y="292">2 open loans</text>
+    <rect x="130" y="298" width="18" height="9" fill="var(--s2)"/><text x="152" y="306">other</text>
+    <text x="250" y="246">declined · P = 0.22</text>
+    <line x1="330" y1="252" x2="330" y2="330" stroke="var(--ink-3)" stroke-dasharray="3 2"/>
+    <rect x="252" y="256" width="78" height="9" fill="var(--s1)"/><text x="196" y="264" text-anchor="start">utilisation 82%</text>
+    <rect x="286" y="270" width="44" height="9" fill="var(--s1)"/><text x="230" y="278">3 late pays</text>
+    <rect x="330" y="284" width="30" height="9" fill="var(--s2)"/><text x="364" y="292">income</text>
+    <rect x="316" y="298" width="14" height="9" fill="var(--s1)"/><text x="364" y="306">other</text>
+  </g>
+  <text x="56" y="342" class="lbl" font-size="10" fill="var(--s7)">reason codes: "utilisation above 80%" · "3 late payments in 12 months" → counterfactual: "below 60% → approve"</text>
+  <!-- panel 4: fairness & limits -->
+  <rect x="444" y="206" width="300" height="146" rx="6" fill="var(--surface)" stroke="var(--s3)" stroke-width="1.5"/>
+  <text x="454" y="224" class="lbl-strong" font-size="12">④ "Is it fair, and where does it fail?"</text>
+  <g class="lbl" font-size="10">
+    <text x="454" y="246">• Equal-opportunity gap: 0.03 (CI ±0.04) ✓</text>
+    <text x="454" y="262">• Disparate impact ratio: 0.88 ✓ (4/5 rule)</text>
+    <text x="454" y="278">• Accuracy cost vs unconstrained model: −0.4 AUC pt</text>
+    <text x="454" y="294">• Known weak spot: applicants &lt; 12 months on book</text>
+    <text x="454" y="310">• Not for: business loans, applicants &lt; 21</text>
+    <text x="454" y="326">• Surrogate tree fidelity: 91% (appendix)</text>
+    <text x="454" y="342">• Full model card: link</text>
+  </g>
+</svg>
+<figcaption><strong>Figure 20.9 — The stakeholder pack: one global bar, three PDPs, two waterfalls, one fairness panel.</strong> Ordered to answer the questions in the order people ask them: what does it look at, how does it react, why this person, can we trust it. The income bump circled in ② is the kind of thing this pack exists to catch <em>before</em> the meeting.</figcaption>
+</figure>
+
+<ol class="steps">
+  <li><strong>One global bar chart (permutation importance, top 8).</strong> Ask: "does this match your intuition?" If the top feature surprises the domain expert, stop and investigate — you have either found leakage or found something valuable, and you need to know which before going further.</li>
+  <li><strong>Three PDP+ICE plots for the top three features.</strong> Show <em>direction</em> and <em>shape</em>. This is where "risk falls as utilisation rises above 90%" gets caught as an artefact of the 40 rows in that range. Mark the data density.</li>
+  <li><strong>Two waterfalls: a clear approval and a clear decline.</strong> Translate each bar into a reason code. Then show the counterfactual for the decline. This is the moment the room starts trusting the model, because it is reasoning the way they do.</li>
+  <li><strong>One fairness panel and one limitations list.</strong> Gaps with confidence intervals, the accuracy cost of constraints, the out-of-scope uses, and the known weak segments.</li>
+  <li><strong>Leave the beeswarm and the interaction values in the appendix.</strong> They are for you and the reviewers, not for the decision-maker. If she asks a question they answer, pull them out.</li>
+</ol>
+
+<div class="callout eli9"><div class="title">Explain it like I'm 9</div>
+<p>When you show your parents a science project, you don't start with the messy notebook. You show them: what you were trying to find out, the one chart that answers it, an example that makes it real, and the part that didn't work. The notebook is there if they ask. Explaining a model is the same: lead with the answer to the question they have, keep the evidence one page behind it.</p>
+</div>
+
+<div class="callout pro"><div class="title">At work</div>
+<p>Build the explanation pack as code, not as screenshots. A script that regenerates the four panels from the current model and a fixed background set takes an afternoon, and it means every retrain (Chapter 21) automatically produces an updated pack — and a diff against the previous one. "The top feature changed from utilisation to income between v3 and v4" is exactly the sentence a model-risk reviewer wants to see, and the one that catches a broken pipeline before the customers do.</p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="quiz">Quiz</h2>
+<div class="quiz">
+  <h3>Check your understanding</h3>
+
+  <div class="q">
+    <p class="question">1. Impurity-based feature importance from a random forest ranks a random ID column as the third most important feature. What is the most likely explanation?</p>
+    <ul class="opts">
+      <li><button>The ID column is leaking the label</button></li>
+      <li><button data-correct>Impurity importance is biased toward high-cardinality features that offer many split points</button></li>
+      <li><button>The forest is underfit</button></li>
+      <li><button>Permutation importance would show the same result</button></li>
+    </ul>
+    <div class="explain">A column with thousands of unique values can always reduce impurity somewhere by chance on the training data, so impurity importance over-credits it. Permutation importance on validation data would show it near zero. (Leakage is possible but would show up in permutation importance too.)</div>
+  </div>
+
+  <div class="q">
+    <p class="question">2. A PDP for "hours of exercise" is flat, but the ICE curves fan out: half rise steeply and half fall. What should you conclude?</p>
+    <ul class="opts">
+      <li><button>Exercise has no effect in the model</button></li>
+      <li><button data-correct>Exercise has a strong effect that depends on another feature — an interaction the average hides</button></li>
+      <li><button>The model is overfit</button></li>
+      <li><button>The PDP was computed on training data by mistake</button></li>
+    </ul>
+    <div class="explain">A flat average of strongly non-flat individual curves is the signature of an interaction. Find the partner feature with a 2-D PDP or a coloured SHAP dependence plot.</div>
+  </div>
+
+  <div class="q">
+    <p class="question">3. In the taxi game, v(A)=6, v(B)=12, v(C)=42 and every coalition containing C costs 42. Which axiom guarantees that the Shapley shares 2 + 5 + 35 sum to exactly 42?</p>
+    <ul class="opts">
+      <li><button>Symmetry</button></li>
+      <li><button>Dummy player</button></li>
+      <li><button data-correct>Efficiency</button></li>
+      <li><button>Additivity</button></li>
+    </ul>
+    <div class="explain">Efficiency: the shares always sum to v(N) − v(∅). For a model this becomes base value + ∑ SHAP = prediction — the property that makes waterfall plots exact.</div>
+  </div>
+
+  <div class="q">
+    <p class="question">4. TreeSHAP on a LightGBM classifier gives a feature a SHAP value of +1.1 for one customer. What does that mean?</p>
+    <ul class="opts">
+      <li><button>The feature raised the predicted probability by 110 percentage points</button></li>
+      <li><button data-correct>The feature raised the log-odds by 1.1, i.e. multiplied the odds by about 3</button></li>
+      <li><button>The feature is the most important feature globally</button></li>
+      <li><button>The feature has a causal effect of 1.1 on the outcome</button></li>
+    </ul>
+    <div class="explain">Gradient-boosting classifiers are explained in their raw margin space, log-odds. e<sup>1.1</sup> ≈ 3.0, so the odds tripled. It says nothing about global importance and nothing causal.</div>
+  </div>
+
+  <div class="q">
+    <p class="question">5. A lender's model never uses gender as a feature, yet the approval rate is 20 points lower for women. Which statement is correct?</p>
+    <ul class="opts">
+      <li><button>The model cannot be biased because it never saw gender</button></li>
+      <li><button data-correct>Proxy features let the model reconstruct gender; the only way to know is to measure outcomes per group</button></li>
+      <li><button>Adding gender as a feature would fix the problem</button></li>
+      <li><button>Equalizing the approval rate would satisfy equalized odds too</button></li>
+    </ul>
+    <div class="explain">"Fairness through unawareness" fails because of proxies. Keep the protected attribute out of the features but in the evaluation data, and measure. Equalizing approval rates (demographic parity) generally conflicts with equalized odds when base rates differ.</div>
+  </div>
+
+  <div class="q">
+    <p class="question">6. A declined applicant asks what they could do to be approved. Which explanation format is most appropriate?</p>
+    <ul class="opts">
+      <li><button>The global permutation importance ranking</button></li>
+      <li><button>The beeswarm plot</button></li>
+      <li><button data-correct>A counterfactual: the smallest actionable change that flips the decision</button></li>
+      <li><button>The surrogate decision tree</button></li>
+    </ul>
+    <div class="explain">A counterfactual ("reduce utilisation below 60%") is local, actionable and easy to understand. It must be restricted to features the person can actually change and must never suggest changing a protected attribute.</div>
+  </div>
+</div>
+
+<h2 id="exercises">Exercises</h2>
+
+<div class="exercise"><div class="title">Exercise 20.1 — Break impurity importance</div>
+<p>Take the first code block. Add a column <code>noise_id = np.arange(len(X))</code> (a unique integer per row) to <code>X</code> before splitting, retrain the GBM, and print both importance rankings again. Where does <code>noise_id</code> land in each ranking? Then replace it with a <em>binary</em> noise column (<code>rng.integers(0, 2, len(X))</code>) and repeat. Explain the difference.</p>
+<details class="answer"><summary>Show answer</summary>
+<p>The unique-integer column typically appears in the impurity top-10 (many split points let it reduce impurity on training rows) while its permutation importance is ≈ 0 ± noise on validation data. The binary noise column ranks near the bottom of both: with only one possible split it cannot fit noise. This is the cardinality bias in action. Bonus: check the validation accuracy — it barely changes, because the GBM's learning rate and depth limit how much noise it can memorise.</p>
+</details>
+</div>
+
+<div class="exercise"><div class="title">Exercise 20.2 — A positive interaction in the taxi</div>
+<p>Change the game so that Anna and Ben together are worth <em>more</em> than the sum of their solo values: keep v(A)=6, v(B)=12, but set v(AB)=30 (they carpool to a shared destination), and keep all coalitions with C at 42. Compute the Shapley values by hand using the ordering table, check with the widget, and then explain in one sentence why C's share fell even though nothing about C changed.</p>
+<details class="answer"><summary>Show answer</summary>
+<p>Orderings — A: (6, 6, 18, 0, 0, 0)/6 = 5; B: (24, 0, 12, 12, 0, 0)/6 = 8; C: (12, 36, 12, 30, 42, 42)/6 = 29. Sum = 42 ✓. C's share fell because in the orderings where A and B arrive first, the coalition {A,B} already covers 30 of the 42, so C's marginal contribution there drops from 30 to 12. Shapley values are about <em>marginal</em> contributions, so raising what others achieve without you lowers your credit — the same reason a feature's SHAP value shrinks when a correlated feature is added.</p>
+</details>
+</div>
+
+<div class="exercise"><div class="title">Exercise 20.3 — Build the pack for a model at work</div>
+<p>Take a model you or your team have in production (or the best model from your Chapter 13 tuning). Produce the four-panel pack of Figure 20.9: permutation importance (validation data, 20 repeats, with error bars), PDP+ICE for the top three features with a rug of data density, two SHAP waterfalls (one clear positive, one clear negative) translated into plain-language reasons, and the fairness table for one protected attribute or a plausible proxy (region, age band). Present it to a colleague who does not know the model and write down every question they ask that the pack could not answer. Those questions are the next version.</p>
+<details class="answer"><summary>Show answer</summary>
+<p>There is no single answer, but check yourself against the failure modes in this chapter: Did you compute importance on validation data? Did you draw ICE under the PDP and mark where the data is thin? Are the waterfall units log-odds, and did you translate them? Did you state the background dataset? Did you report the fairness gap with a confidence interval and name the criterion? If the top feature surprised the domain expert, did you treat it as a leakage suspect before treating it as an insight?</p>
+</details>
+</div>
+
+<div class="summary">
+  <h3>Chapter summary</h3>
+  <ul class="checklist">
+    <li>Explanations answer specific questions: global ("what does it rely on?"), local ("why this one?"), counterfactual ("what would flip it?"), fairness ("does it treat groups differently?"). Name the question first.</li>
+    <li>Impurity importance is free and biased (cardinality, training data, correlated features). Permutation importance on validation data with your real metric, 20+ repeats and error bars, is the honest default.</li>
+    <li>PDPs are averages of ICE curves; always draw both. Fanning ICE curves mean an interaction. Mark data density — the PDP extrapolates.</li>
+    <li>Shapley values split credit fairly by averaging marginal contributions over all orderings; efficiency guarantees base + ∑SHAP = prediction. Exact is exponential; TreeSHAP is exact and fast for trees, KernelSHAP is slow and model-agnostic.</li>
+    <li>Beeswarm = importance + spread + direction; bar = importance only; waterfall = one prediction; dependence plot = PDP's honest cousin. Classifier SHAP is in log-odds.</li>
+    <li>LIME is a local linear surrogate and is unstable; counterfactuals are the most actionable customer-facing explanation; surrogate trees need a fidelity number.</li>
+    <li>Explanations of a bad model are confidently wrong; correlated features spread credit; nothing here is causal.</li>
+    <li>Fairness through unawareness fails because of proxies. Choose demographic parity, equal opportunity or equalized odds deliberately — you cannot have them all when base rates differ — mitigate in data, training, thresholds or post-processing, and monitor.</li>
+    <li>Ship a model card and a four-panel stakeholder pack, regenerated by code on every retrain.</li>
+  </ul>
+</div>
+
+<div class="mark-done"></div>
+<nav class="pager"></nav>
+
+</div></main>
+</div>
+
+<script src="../assets/chapters.js"></script>
+<script src="../assets/app.js"></script>
+<script>
+/* Widget 1: Shapley calculator */
+(function () {
+  var ids = ["sh-a", "sh-b", "sh-c", "sh-ab", "sh-ac", "sh-bc", "sh-abc"];
+  var el = {}; ids.forEach(function (i) { el[i] = document.getElementById(i); });
+  var tbl = document.getElementById("sh-table"), svg = document.getElementById("sh-svg");
+  if (!tbl || !svg) return;
+  var players = ["A", "B", "C"];
+  var orders = [["A","B","C"],["A","C","B"],["B","A","C"],["B","C","A"],["C","A","B"],["C","B","A"]];
+  function val(S) {
+    var k = S.slice().sort().join("");
+    if (k === "") return 0;
+    return +el["sh-" + k.toLowerCase()].value;
+  }
+  function render() {
+    var phi = { A: 0, B: 0, C: 0 }, rows = "";
+    orders.forEach(function (o) {
+      var seen = [], mc = { A: 0, B: 0, C: 0 };
+      o.forEach(function (p) { mc[p] = val(seen.concat([p])) - val(seen); seen.push(p); });
+      players.forEach(function (p) { phi[p] += mc[p]; });
+      rows += "<tr><td>" + o.join(" → ") + "</td><td class='num'>" + mc.A + "</td><td class='num'>" + mc.B + "</td><td class='num'>" + mc.C + "</td></tr>";
+    });
+    players.forEach(function (p) { phi[p] /= 6; });
+    var total = phi.A + phi.B + phi.C;
+    rows += "<tr><td><strong>Shapley value φ (average)</strong></td><td class='num'><strong>" + phi.A.toFixed(2) + "</strong></td><td class='num'><strong>" + phi.B.toFixed(2) + "</strong></td><td class='num'><strong>" + phi.C.toFixed(2) + "</strong></td></tr>";
+    tbl.innerHTML = "<table class='tbl' style='margin:6px 0 10px;font-size:.85rem'><thead><tr><th>Order of arrival</th><th>A adds</th><th>B adds</th><th>C adds</th></tr></thead><tbody>" + rows + "</tbody></table>";
+    var maxv = Math.max(1, Math.abs(phi.A), Math.abs(phi.B), Math.abs(phi.C), 1);
+    var s = '<text x="20" y="18" font-size="12" font-weight="700">Fair split (sum = ' + total.toFixed(2) + ' = v(ABC) = ' + val(players) + ')</text>';
+    var cols = ["var(--s1)", "var(--s2)", "var(--s3)"];
+    players.forEach(function (p, i) {
+      var y = 34 + i * 36, w = Math.abs(phi[p]) / maxv * 480, x0 = 120;
+      s += '<text x="110" y="' + (y + 15) + '" text-anchor="end" font-size="12">' + p + '</text>';
+      s += '<rect x="' + (phi[p] >= 0 ? x0 : x0 - w) + '" y="' + y + '" width="' + w + '" height="22" rx="4" fill="' + cols[i] + '"/>';
+      s += '<text x="' + (x0 + (phi[p] >= 0 ? w : 0) + 8) + '" y="' + (y + 15) + '" font-size="12" font-weight="700">' + phi[p].toFixed(2) + '</text>';
+    });
+    svg.innerHTML = s;
+  }
+  ids.forEach(function (i) { el[i].addEventListener("input", render); });
+  render();
+})();
+
+/* Widget 2: PDP / ICE explorer */
+(function () {
+  var svg = document.getElementById("pdp-svg"), slider = document.getElementById("pdp-x"), rd = document.getElementById("pdp-r");
+  if (!svg || !slider) return;
+  var bg = [[-2, -2, -2.2], [-1.2, 1.5, -1.4], [-0.4, -0.8, -0.6], [0.3, 2.2, 0.2], [0.9, -1.6, 0.9], [1.5, 0.6, 1.6], [2.1, -2.4, 2.3], [2.6, 1.1, -0.9]];
+  var names = ["x₁", "x₂", "x₃"], feat = 0;
+  function f(x) { return 3 * Math.tanh(x[0]) + x[1] * x[2] + 0.4 * x[2] * x[2]; }
+  var X0 = 60, X1 = 660, Y0 = 250, Y1 = 30, YMIN = -8, YMAX = 8;
+  function px(v) { return X0 + (v + 3) / 6 * (X1 - X0); }
+  function py(v) { return Y0 - (Math.max(YMIN, Math.min(YMAX, v)) - YMIN) / (YMAX - YMIN) * (Y0 - Y1); }
+  function ice(row, v) { var r = row.slice(); r[feat] = v; return f(r); }
+  function render() {
+    var xv = +slider.value, s = "";
+    s += '<line x1="' + X0 + '" y1="' + Y0 + '" x2="' + X1 + '" y2="' + Y0 + '" stroke="currentColor" stroke-opacity=".5"/>';
+    s += '<line x1="' + X0 + '" y1="' + Y0 + '" x2="' + X0 + '" y2="' + Y1 + '" stroke="currentColor" stroke-opacity=".5"/>';
+    for (var t = -3; t <= 3; t++) s += '<text x="' + px(t) + '" y="' + (Y0 + 16) + '" text-anchor="middle" font-size="11">' + t + '</text>';
+    for (var yv = YMIN; yv <= YMAX; yv += 4) s += '<text x="' + (X0 - 8) + '" y="' + (py(yv) + 4) + '" text-anchor="end" font-size="11">' + yv + '</text>';
+    s += '<text x="' + ((X0 + X1) / 2) + '" y="' + (Y0 + 36) + '" text-anchor="middle" font-size="12">' + names[feat] + ' (all other features held at each row\'s own values)</text>';
+    s += '<text x="18" y="140" text-anchor="middle" font-size="12" transform="rotate(-90 18 140)">model output f</text>';
+    var grid = [], pd = [];
+    for (var g = -3; g <= 3.001; g += 0.1) grid.push(g);
+    grid.forEach(function () { pd.push(0); });
+    bg.forEach(function (row) {
+      var d = "";
+      grid.forEach(function (g, k) { var v = ice(row, g); pd[k] += v / bg.length; d += (k ? " L" : "M") + px(g).toFixed(1) + "," + py(v).toFixed(1); });
+      s += '<path d="' + d + '" fill="none" stroke="var(--s1)" stroke-width="1.5" stroke-opacity=".55"/>';
+      s += '<circle cx="' + px(xv) + '" cy="' + py(ice(row, xv)) + '" r="3.5" fill="var(--s1)"/>';
+    });
+    var dp = "";
+    grid.forEach(function (g, k) { dp += (k ? " L" : "M") + px(g).toFixed(1) + "," + py(pd[k]).toFixed(1); });
+    s += '<path d="' + dp + '" fill="none" stroke="var(--s2)" stroke-width="4"/>';
+    var pdv = 0; bg.forEach(function (row) { pdv += ice(row, xv) / bg.length; });
+    s += '<line x1="' + px(xv) + '" y1="' + Y1 + '" x2="' + px(xv) + '" y2="' + Y0 + '" stroke="var(--s7)" stroke-dasharray="5 3"/>';
+    s += '<circle cx="' + px(xv) + '" cy="' + py(pdv) + '" r="7" fill="var(--s2)" stroke="var(--surface)" stroke-width="2"/>';
+    s += '<text x="' + (X1 - 4) + '" y="' + (Y1 + 12) + '" text-anchor="end" font-size="11" fill="var(--s2)" font-weight="700">orange = PDP (mean of 8 ICE curves)</text>';
+    s += '<text x="' + (X1 - 4) + '" y="' + (Y1 + 28) + '" text-anchor="end" font-size="11" fill="var(--s1)" font-weight="700">blue = ICE, one per background row</text>';
+    svg.innerHTML = s;
+    rd.textContent = pdv.toFixed(2);
+    [0, 1, 2].forEach(function (i) { var b = document.getElementById("pdp-b" + i); if (b) b.classList.toggle("primary", i === feat); });
+  }
+  [0, 1, 2].forEach(function (i) { var b = document.getElementById("pdp-b" + i); if (b) b.addEventListener("click", function () { feat = i; render(); }); });
+  slider.addEventListener("input", render);
+  render();
+})();
+</script>
+</body>
+</html>
