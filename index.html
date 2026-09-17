@@ -6,7 +6,10 @@
 <title>Machine Learning: Zero to Expert — An Interactive HTML Textbook</title>
 <link rel="stylesheet" href="assets/style.css">
 <style>
-  .hero { padding: 36px 0 24px; }
+  .hero { padding: 36px 28px 24px; margin: 0 -28px; border-radius: 16px;
+          background: radial-gradient(70% 90% at 0% 0%, color-mix(in srgb, var(--accent) 12%, transparent), transparent 70%); }
+  .stat .n { color: var(--accent); font-variant-numeric: tabular-nums; }
+  @media (max-width: 960px) { .hero { margin: 0; padding: 24px 16px 20px; } }
   .hero h1 { font-size: 2.8rem; letter-spacing: -.03em; margin-bottom: 10px; }
   .hero .sub { font-size: 1.25rem; color: var(--ink-2); max-width: 64ch; }
   .hero .cta { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 20px; }

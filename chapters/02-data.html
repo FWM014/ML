@@ -804,17 +804,18 @@ right = cross_val_score(pipe, X, y, cv=cv).mean()
     <rect x="621" y="90" width="34" height="3"/><rect x="621" y="140" width="34" height="3"/><rect x="621" y="175" width="34" height="3"/>
     <rect x="507" y="130" width="34" height="3"/><rect x="507" y="185" width="34" height="3"/>
   </g>
-  <path d="M700,78 L665,78" class="arrow" marker-end="url(#arr-f8)"/>
-  <text x="675" y="66" class="lbl" font-size="10">spend missing for</text>
-  <text x="675" y="92" class="lbl" font-size="10">30% of rows, all in</text>
-  <text x="675" y="105" class="lbl" font-size="10">one block: not random</text>
-  <text x="431" y="222" class="lbl" font-size="11">Orange = missing. A block means missingness depends on</text>
-  <text x="431" y="237" class="lbl" font-size="11">something (here: basic plan has no spend record). Specks are benign.</text>
+  <path d="M700,104 L665,104" class="arrow" marker-end="url(#arr-f8)"/>
+  <text x="672" y="64" class="lbl" font-size="10">spend missing for</text>
+  <text x="672" y="77" class="lbl" font-size="10">30% of rows, all in</text>
+  <text x="672" y="90" class="lbl" font-size="10">one block: not random</text>
+  <text x="431" y="218" class="lbl" font-size="10">Orange = missing. A block means the missingness depends on</text>
+  <text x="431" y="231" class="lbl" font-size="10">something (here: the basic plan has no spend record).</text>
+  <text x="431" y="244" class="lbl" font-size="10">Random specks are benign.</text>
   <!-- class balance -->
   <text x="431" y="262" class="lbl-strong" font-size="11">Class balance:</text>
   <rect x="520" y="252" width="190" height="14" fill="var(--s1)"/><rect x="710" y="252" width="66" height="14" fill="var(--s2)"/>
   <text x="615" y="263" text-anchor="middle" font-size="10" font-weight="700" fill="#fff">stayed 74%</text><text x="743" y="263" text-anchor="middle" font-size="10" font-weight="700" fill="#fff">26%</text>
-  <text x="431" y="286" class="lbl" font-size="11">"Always predict stayed" already scores 74%. That is your baseline, not 0.</text>
+  <text x="431" y="286" class="lbl" font-size="10">"Always predict stayed" already scores 74%: that is your baseline.</text>
 </svg>
 <figcaption><strong>Figure 2.8 — Three EDA views that change decisions.</strong> The target-vs-feature bars confirm a strong, monotone relationship (a linear model will capture it). The missingness matrix shows <em>structured</em> missingness, which needs a "missing" indicator rather than a silent mean fill. The balance bar sets the accuracy baseline you must beat.</figcaption>
 </figure>

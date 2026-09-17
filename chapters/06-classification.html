@@ -291,7 +291,7 @@ pred  = (proba &gt;= <span class="nu">0.5</span>).astype(int)<span class="cm">  
 <p>Everything in classification evaluation starts with four counts. Take our 1,000 transactions (50 fraud, 950 legit), run the model with threshold 0.5, and sort every transaction into one of four buckets by <em>what it really was</em> and <em>what we said</em>.</p>
 
 <figure class="fig">
-<svg viewBox="0 0 760 360" role="img" aria-label="A two-by-two confusion matrix for 1000 transactions with 50 fraud: 35 true positives, 15 false negatives, 20 false positives, 930 true negatives, with recall computed along the fraud row and precision down the flagged column">
+<svg viewBox="0 0 790 360" role="img" aria-label="A two-by-two confusion matrix for 1000 transactions with 50 fraud: 35 true positives, 15 false negatives, 20 false positives, 930 true negatives, with recall computed along the fraud row and precision down the flagged column">
   <defs><marker id="arr-f5" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
   <text x="400" y="26" text-anchor="middle" class="lbl-strong" font-size="14">Predicted</text>
   <text x="300" y="56" text-anchor="middle" class="lbl-strong">flagged as fraud (55)</text>
@@ -561,7 +561,7 @@ pred  = (proba &gt;= <span class="nu">0.5</span>).astype(int)<span class="cm">  
   <text x="440" y="262" class="lbl" fill="var(--ink-3)">no-skill = base rate 0.05</text>
   <path d="M430,50 L458,73 L514,96 L570,142 L598,176.5 L626,199.5 L654,222.5 L682,245.5 L704.4,257 L710,268.5" fill="none" stroke="var(--s2)" stroke-width="3"/>
   <polygon points="430,50 458,73 514,96 570,142 598,176.5 626,199.5 654,222.5 682,245.5 704.4,257 710,268.5 710,280 430,280" fill="var(--s2)" fill-opacity=".10"/>
-  <text x="520" y="230" text-anchor="middle" class="lbl-strong" fill="var(--s2)">AP = 0.45</text>
+  <text x="500" y="140" text-anchor="middle" class="lbl-strong" fill="var(--s2)">AP = 0.45</text>
   <circle cx="704.4" cy="248" r="5" fill="var(--s7)"/>
   <text x="440" y="190" class="lbl" fill="var(--s7)">…same point here:</text>
   <text x="440" y="206" class="lbl" fill="var(--s7)">precision 0.14, so 6 of 7</text>
