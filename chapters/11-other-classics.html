@@ -525,7 +525,7 @@ words = vec.get_feature_names_out()
 <p>This table is the one to bookmark. It collects the models from Chapters 6, 9, 10 and 11 along the axes that matter when you sit down with a real dataset.</p>
 
 <div class="tbl-wrap">
-<table class="tbl">
+<table class="tbl" style="font-size:.8rem">
 <thead><tr><th>Model</th><th>Assumptions</th><th>Scaling needed?</th><th>Categoricals</th><th>Interpretability</th><th>Train / predict speed</th><th>Data-size sweet spot</th><th>Key hyperparameters</th></tr></thead>
 <tbody>
 <tr><td><strong>Logistic regression</strong></td><td>Linear log-odds; additive effects</td><td>Yes (for regularization &amp; convergence)</td><td>One-hot</td><td>Excellent: coefficients</td><td>Fast / very fast</td><td>Any; best with n ≫ p or sparse p ≫ n</td><td>C (regularization), penalty</td></tr>

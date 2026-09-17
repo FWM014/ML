@@ -1,0 +1,1359 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>22 · Recommenders, Anomalies, Causality &amp; RL — ML: Zero to Expert</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body data-chapter="22">
+<header class="topbar"></header>
+<div class="progress-track"><div></div></div>
+<div class="shell">
+<nav class="sidebar"></nav>
+<main class="content"><div class="container">
+
+<header class="ch-header">
+  <div class="kicker">Part IV · Expert &amp; Production · Chapter 22</div>
+  <h1>Recommenders, Anomalies, Causality &amp; RL</h1>
+  <p class="lede">Four problem families that do not fit the "predict a label from a table" mould, yet show up constantly at work: what should we show this user, which of these events is weird, what would actually change if we intervened, and how do we learn from our own decisions. Each gets the same treatment: the mechanism in pictures, the math, working code, and an opinion about when to reach for it.</p>
+  <div class="meta"><span class="level expert">Expert</span> <span>⏱ 90 min read</span> <span>·</span> <span>Prereqs: Ch 10, 12, 13</span></div>
+</header>
+
+<div class="objectives">
+  <h3>By the end of this chapter you will be able to</h3>
+  <ul>
+    <li>Build and evaluate a recommender (neighbourhood and matrix-factorization) and explain why offline precision@k does not guarantee online lift.</li>
+    <li>Choose an anomaly detector for a given data shape, set its threshold, and evaluate it honestly with few or no labels.</li>
+    <li>Tell a correlation from a causal effect, run a clean A/B test, adjust an observational comparison for confounding, and build an uplift model that says <em>whom to treat</em>.</li>
+    <li>Explain the reinforcement-learning loop, implement a bandit and tabular Q-learning, and say why full RL rarely reaches production.</li>
+    <li>Recognize a survival, graph, AutoML or active-learning problem when you meet one, and know where to look next.</li>
+  </ul>
+</div>
+
+<div class="toc-inline"><strong>In this chapter</strong>
+<ol>
+  <li><a href="#s1">Recommender systems: the user × item matrix</a></li>
+  <li><a href="#s2">Matrix factorization, cold start and evaluation</a></li>
+  <li><a href="#s3">Anomaly detection: what "weird" means</a></li>
+  <li><a href="#s4">Anomaly detectors, thresholds and evaluation</a></li>
+  <li><a href="#s5">Causal inference: correlation is not a lever</a></li>
+  <li><a href="#s6">Uplift modeling: whom to treat</a></li>
+  <li><a href="#s7">Reinforcement learning primer &amp; bandits</a></li>
+  <li><a href="#s8">Q-learning on a gridworld</a></li>
+  <li><a href="#s9">Which advanced topic, when — and honorable mentions</a></li>
+  <li><a href="#quiz">Quiz &amp; exercises</a></li>
+</ol></div>
+
+<!-- ============================================================ -->
+<h2 id="s1">1. Recommender systems: the user × item matrix</h2>
+
+<p>Every recommender starts from the same object: a matrix with one row per <strong>user</strong>, one column per <strong>item</strong>, and a cell that says how the user felt about the item. Sometimes the cell is a star rating (<strong>explicit feedback</strong>); far more often it is a click, a purchase, a watch-time, a skip (<strong>implicit feedback</strong>). The defining feature of this matrix is that it is almost entirely empty. A streaming service with 10 million users and 20,000 titles has 2 × 10<sup>11</sup> cells; a typical user has touched a few hundred. Sparsity above 99% is normal.</p>
+
+<figure class="fig">
+<svg viewBox="0 0 800 300" role="img" aria-label="A user-by-item rating matrix with most cells empty; a highlighted empty cell is the prediction target; row and column sums show which users and items are data-rich">
+  <text x="20" y="24" class="lbl-strong" font-size="14">R: users × items — the cell we want to fill is the one nobody has filled</text>
+  <!-- column headers -->
+  <g class="lbl" font-size="11" text-anchor="middle">
+    <text x="130" y="58">Dune</text><text x="190" y="58">Heat</text><text x="250" y="58">Up</text><text x="310" y="58">Alien</text><text x="370" y="58">Coco</text><text x="430" y="58">…</text>
+  </g>
+  <!-- row headers -->
+  <g class="lbl" font-size="11" text-anchor="end">
+    <text x="92" y="86">Ana</text><text x="92" y="116">Ben</text><text x="92" y="146">Cy</text><text x="92" y="176">Dee</text><text x="92" y="206">Eli</text><text x="92" y="236">Fay</text><text x="92" y="266">…</text>
+  </g>
+  <!-- cells: value-coloured with s1 opacity; empty = surface-2 -->
+  <g stroke="var(--border)">
+    <!-- Ana 5 4 . 5 1 -->
+    <rect x="100" y="66" width="60" height="28" fill="var(--s1)" fill-opacity=".9"/><rect x="160" y="66" width="60" height="28" fill="var(--s1)" fill-opacity=".7"/><rect x="220" y="66" width="60" height="28" fill="var(--s7)" fill-opacity=".25" stroke="var(--s7)" stroke-width="2.5"/><rect x="280" y="66" width="60" height="28" fill="var(--s1)" fill-opacity=".9"/><rect x="340" y="66" width="60" height="28" fill="var(--s1)" fill-opacity=".15"/><rect x="400" y="66" width="60" height="28" fill="var(--surface-2)"/>
+    <!-- Ben 4 . 1 4 . -->
+    <rect x="100" y="96" width="60" height="28" fill="var(--s1)" fill-opacity=".7"/><rect x="160" y="96" width="60" height="28" fill="var(--surface-2)"/><rect x="220" y="96" width="60" height="28" fill="var(--s1)" fill-opacity=".15"/><rect x="280" y="96" width="60" height="28" fill="var(--s1)" fill-opacity=".7"/><rect x="340" y="96" width="60" height="28" fill="var(--surface-2)"/><rect x="400" y="96" width="60" height="28" fill="var(--surface-2)"/>
+    <!-- Cy 1 1 5 . 4 -->
+    <rect x="100" y="126" width="60" height="28" fill="var(--s1)" fill-opacity=".15"/><rect x="160" y="126" width="60" height="28" fill="var(--s1)" fill-opacity=".15"/><rect x="220" y="126" width="60" height="28" fill="var(--s1)" fill-opacity=".9"/><rect x="280" y="126" width="60" height="28" fill="var(--surface-2)"/><rect x="340" y="126" width="60" height="28" fill="var(--s1)" fill-opacity=".7"/><rect x="400" y="126" width="60" height="28" fill="var(--surface-2)"/>
+    <!-- Dee . 1 4 1 5 -->
+    <rect x="100" y="156" width="60" height="28" fill="var(--surface-2)"/><rect x="160" y="156" width="60" height="28" fill="var(--s1)" fill-opacity=".15"/><rect x="220" y="156" width="60" height="28" fill="var(--s1)" fill-opacity=".7"/><rect x="280" y="156" width="60" height="28" fill="var(--s1)" fill-opacity=".15"/><rect x="340" y="156" width="60" height="28" fill="var(--s1)" fill-opacity=".9"/><rect x="400" y="156" width="60" height="28" fill="var(--surface-2)"/>
+    <!-- Eli 5 5 . 4 . -->
+    <rect x="100" y="186" width="60" height="28" fill="var(--s1)" fill-opacity=".9"/><rect x="160" y="186" width="60" height="28" fill="var(--s1)" fill-opacity=".9"/><rect x="220" y="186" width="60" height="28" fill="var(--surface-2)"/><rect x="280" y="186" width="60" height="28" fill="var(--s1)" fill-opacity=".7"/><rect x="340" y="186" width="60" height="28" fill="var(--surface-2)"/><rect x="400" y="186" width="60" height="28" fill="var(--surface-2)"/>
+    <!-- Fay . 2 5 1 . -->
+    <rect x="100" y="216" width="60" height="28" fill="var(--surface-2)"/><rect x="160" y="216" width="60" height="28" fill="var(--s1)" fill-opacity=".3"/><rect x="220" y="216" width="60" height="28" fill="var(--s1)" fill-opacity=".9"/><rect x="280" y="216" width="60" height="28" fill="var(--s1)" fill-opacity=".15"/><rect x="340" y="216" width="60" height="28" fill="var(--surface-2)"/><rect x="400" y="216" width="60" height="28" fill="var(--surface-2)"/>
+    <rect x="100" y="246" width="360" height="28" fill="var(--surface-2)"/>
+  </g>
+  <g font-size="12" font-weight="700" text-anchor="middle" fill="var(--ink)">
+    <text x="130" y="85">5</text><text x="190" y="85">4</text><text x="250" y="85" fill="var(--s7)">?</text><text x="310" y="85">5</text><text x="370" y="85">1</text>
+    <text x="130" y="115">4</text><text x="250" y="115">1</text><text x="310" y="115">4</text>
+    <text x="130" y="145">1</text><text x="190" y="145">1</text><text x="250" y="145">5</text><text x="370" y="145">4</text>
+    <text x="190" y="175">1</text><text x="250" y="175">4</text><text x="310" y="175">1</text><text x="370" y="175">5</text>
+    <text x="130" y="205">5</text><text x="190" y="205">5</text><text x="310" y="205">4</text>
+    <text x="190" y="235">2</text><text x="250" y="235">5</text><text x="310" y="235">1</text>
+  </g>
+  <!-- right side: explanation -->
+  <rect x="500" y="66" width="280" height="208" rx="8" class="box"/>
+  <text x="515" y="90" class="lbl-strong">Two ways to fill the "?"</text>
+  <text x="515" y="112" class="lbl">1. Neighbourhood: Ana looks like Eli</text>
+  <text x="515" y="128" class="lbl">   (both love Dune/Heat/Alien) →</text>
+  <text x="515" y="144" class="lbl">   borrow Eli's opinion of Up.</text>
+  <text x="515" y="170" class="lbl">2. Factorization: compress R into a</text>
+  <text x="515" y="186" class="lbl">   few "taste" dimensions (sci-fi vs</text>
+  <text x="515" y="202" class="lbl">   animation) and read the cell off.</text>
+  <text x="515" y="232" class="lbl-strong" fill="var(--s7)">Real matrices: &gt; 99% empty.</text>
+  <text x="515" y="250" class="lbl">Blank cells are not "disliked";</text>
+  <text x="515" y="266" class="lbl">they are unknown (or unseen).</text>
+  <text x="20" y="292" class="lbl">Cell shade = rating strength. Grey = never rated.</text>
+</svg>
+<figcaption><strong>Figure 22.1 — The user × item matrix.</strong> Recommendation is matrix completion: predict the empty cells from the filled ones. Both classic approaches (neighbours and latent factors) exploit the same fact: people with similar rows tend to agree on the cells one of them has not filled yet.</figcaption>
+</figure>
+
+<div class="callout eli9"><div class="title">Explain it like I'm 9</div>
+<p>You have not read the new comic. Your friend Eli has, and Eli likes almost all the same comics you like. So you ask Eli. That's collaborative filtering: "people like me liked this." The other way is to look at the comic itself: it's a space adventure with robots, and you like space adventures with robots. That's content-based: "things like what I liked." The best systems do both.</p>
+</div>
+
+<h3>Content-based vs collaborative vs hybrid</h3>
+<p><strong>Content-based filtering</strong> describes items by their attributes (genre, price, text embedding, ingredients) and recommends items whose attributes match what the user liked before. It needs no other users, works from day one for a new item, and explains itself ("because you watched…"). Its weakness is that it can only recommend more of the same. <strong>Collaborative filtering (CF)</strong> ignores item attributes entirely and uses only the pattern of who-liked-what. It discovers surprising connections (people who buy camping gear also buy this specific book) but needs interaction history, so it is helpless for a brand-new user or item. <strong>Hybrid</strong> systems, which is nearly every production system, use content features to bootstrap and CF to refine.</p>
+
+<h3>Neighbourhood collaborative filtering</h3>
+<p>The simplest CF looks for neighbours. <strong>User-based</strong>: find the k users whose rating vectors are most similar to mine and average their ratings of the target item. <strong>Item-based</strong>: find the k items most similar to the target item (similar meaning "rated similarly by the same people") and average my ratings of those. Item-based won in practice (Amazon popularized it in the early 2000s) because item-item similarities are stable and can be precomputed offline: a product's neighbours change slowly, while a user's taste vector changes with every click.</p>
+
+<div class="callout math"><div class="title">The math (optional)</div>
+<p>Cosine similarity between two rating vectors <em>a</em> and <em>b</em> over the cells both have filled:</p>
+<div class="formula">sim(a, b) = (a · b) / (‖a‖ · ‖b‖) = ∑<sub>u</sub> a<sub>u</sub> b<sub>u</sub> / ( √∑<sub>u</sub> a<sub>u</sub><sup>2</sup> · √∑<sub>u</sub> b<sub>u</sub><sup>2</sup> )</div>
+<p><em>a</em><sub>u</sub> and <em>b</em><sub>u</sub> are the ratings user <em>u</em> gave to items <em>a</em> and <em>b</em>; the sums run only over users who rated both. The prediction for user <em>u</em> on item <em>i</em> is a similarity-weighted average of <em>u</em>'s ratings on the k nearest items:</p>
+<div class="formula">r̂<sub>ui</sub> = r̄<sub>u</sub> + ∑<sub>j∈N<sub>k</sub>(i)</sub> sim(i, j) · (r<sub>uj</sub> − r̄<sub>u</sub>) / ∑<sub>j∈N<sub>k</sub>(i)</sub> sim(i, j)</div>
+<p><em>r̄</em><sub>u</sub> is the user's average rating (subtracting it is the "adjusted cosine" trick: a 4 from a harsh grader is praise), and N<sub>k</sub>(i) is the set of the k most similar items the user has rated.</p>
+</div>
+
+<p>Here is the whole thing on the six-user matrix from Figure 22.1. Notice the two engineering details that separate a toy from something usable: similarity is computed only on <em>co-rated</em> cells, and ratings are centred per user before comparing.</p>
+
+<pre class="code" data-lang="python"><code><span class="cm"># A tiny explicit-ratings matrix (0 = not rated) and an item-item recommender</span>
+<span class="kw">import</span> numpy <span class="kw">as</span> np
+users = [<span class="st">&quot;Ana&quot;</span>, <span class="st">&quot;Ben&quot;</span>, <span class="st">&quot;Cy&quot;</span>, <span class="st">&quot;Dee&quot;</span>, <span class="st">&quot;Eli&quot;</span>, <span class="st">&quot;Fay&quot;</span>]
+items = [<span class="st">&quot;Dune&quot;</span>, <span class="st">&quot;Heat&quot;</span>, <span class="st">&quot;Up&quot;</span>, <span class="st">&quot;Alien&quot;</span>, <span class="st">&quot;Coco&quot;</span>]
+R = np.<span class="fn">array</span>([[<span class="nu">5</span>, <span class="nu">4</span>, <span class="nu">0</span>, <span class="nu">5</span>, <span class="nu">1</span>],
+              [<span class="nu">4</span>, <span class="nu">0</span>, <span class="nu">1</span>, <span class="nu">4</span>, <span class="nu">0</span>],
+              [<span class="nu">1</span>, <span class="nu">1</span>, <span class="nu">5</span>, <span class="nu">0</span>, <span class="nu">4</span>],
+              [<span class="nu">0</span>, <span class="nu">1</span>, <span class="nu">4</span>, <span class="nu">1</span>, <span class="nu">5</span>],
+              [<span class="nu">5</span>, <span class="nu">5</span>, <span class="nu">0</span>, <span class="nu">4</span>, <span class="nu">0</span>],
+              [<span class="nu">0</span>, <span class="nu">2</span>, <span class="nu">5</span>, <span class="nu">1</span>, <span class="nu">0</span>]], dtype=<span class="fn">float</span>)
+mask = R &gt; <span class="nu">0</span>
+<span class="fn">print</span>(<span class="st">&quot;sparsity:&quot;</span>, <span class="st">f&quot;{(~mask).mean():.0%} of cells are empty&quot;</span>)
+
+<span class="cm"># adjusted cosine: subtract each user&#x27;s mean first, so a &quot;4 from a tough grader&quot; counts as praise</span>
+user_mean = np.<span class="fn">nanmean</span>(np.<span class="fn">where</span>(mask, R, np.nan), axis=<span class="nu">1</span>, keepdims=<span class="kw">True</span>)
+C = np.<span class="fn">where</span>(mask, R - user_mean, <span class="nu">0.0</span>)              <span class="cm"># centered ratings, holes → 0</span>
+
+<span class="kw">def</span> <span class="fn">sim</span>(i, j):
+    co = mask[:, i] &amp; mask[:, j]                     <span class="cm"># users who rated BOTH items</span>
+    <span class="kw">if</span> co.<span class="fn">sum</span>() &lt; <span class="nu">2</span>:
+        <span class="kw">return</span> <span class="nu">0.0</span>
+    a, b = C[co, i], C[co, j]
+    <span class="kw">return</span> <span class="fn">float</span>(a @ b / (np.linalg.<span class="fn">norm</span>(a) * np.linalg.<span class="fn">norm</span>(b) + <span class="nu">1e-9</span>))
+
+S = np.<span class="fn">array</span>([[<span class="fn">sim</span>(i, j) <span class="kw">for</span> j <span class="kw">in</span> <span class="fn">range</span>(<span class="nu">5</span>)] <span class="kw">for</span> i <span class="kw">in</span> <span class="fn">range</span>(<span class="nu">5</span>)])
+np.<span class="fn">set_printoptions</span>(precision=<span class="nu">2</span>, suppress=<span class="kw">True</span>)
+<span class="fn">print</span>(<span class="st">&quot;item-item similarity (adjusted cosine):\n&quot;</span>, S)
+
+<span class="kw">def</span> <span class="fn">predict</span>(u, i, k=<span class="nu">2</span>):
+    <span class="st">&quot;&quot;&quot;user mean + weighted average of the user&#x27;s deviations on the k most similar items she rated.&quot;&quot;&quot;</span>
+    rated = np.<span class="fn">where</span>(mask[u])[<span class="nu">0</span>]
+    nbrs = rated[S[i, rated] &gt; <span class="nu">0</span>]                    <span class="cm"># only positively similar neighbours</span>
+    nbrs = nbrs[np.<span class="fn">argsort</span>(-S[i, nbrs])[:k]]
+    <span class="kw">if</span> <span class="fn">len</span>(nbrs) == <span class="nu">0</span>:
+        <span class="kw">return</span> <span class="fn">float</span>(user_mean[u, <span class="nu">0</span>])                <span class="cm"># nothing to go on → fall back to her average</span>
+    w = S[i, nbrs]
+    <span class="kw">return</span> <span class="fn">float</span>(user_mean[u, <span class="nu">0</span>] + (w @ C[u, nbrs]) / w.<span class="fn">sum</span>())
+
+<span class="kw">for</span> u, i <span class="kw">in</span> [(<span class="nu">0</span>, <span class="nu">2</span>), (<span class="nu">1</span>, <span class="nu">1</span>), (<span class="nu">4</span>, <span class="nu">2</span>), (<span class="nu">5</span>, <span class="nu">4</span>)]:
+    <span class="fn">print</span>(<span class="st">f&quot;{users[u]} → {items[i]:&lt;6} predicted {predict(u, i):.2f}&quot;</span>)
+<span class="out"># sparsity: 30% of cells are empty</span>
+<span class="out"># item-item similarity (adjusted cosine):</span>
+<span class="out">#  [[ 1.    0.89 -0.98  0.83 -0.87]</span>
+<span class="out">#  [ 0.89  1.   -0.86  0.79 -0.73]</span>
+<span class="out">#  [-0.98 -0.86  1.   -0.93  0.85]</span>
+<span class="out">#  [ 0.83  0.79 -0.93  1.   -0.97]</span>
+<span class="out">#  [-0.87 -0.73  0.85 -0.97  1.  ]]</span>
+<span class="out"># Ana → Up     predicted 1.00</span>
+<span class="out"># Ben → Heat   predicted 4.00</span>
+<span class="out"># Eli → Up     predicted 4.67</span>
+<span class="out"># Fay → Coco   predicted 5.00</span></code></pre>
+
+<p>The similarity matrix has the structure you would draw by hand: Dune, Heat and Alien form one block, Up and Coco another, and the blocks are strongly anti-correlated. Ana, who loved the first block, gets a predicted 1.0 for Up. Eli's case shows a real limitation: Eli rated only block-one films, none of which is positively similar to Up, so the model has nothing to go on and falls back to his mean. Raw cosine on positive ratings would have hidden this (every similarity comes out near 0.9 when all ratings are between 1 and 5), which is why centring matters.</p>
+
+<div class="callout warn"><div class="title">Common mistake</div>
+<p>Treating an empty cell as a zero rating. In explicit-feedback data a blank means "unknown", and filling it with 0 makes the model believe every user hates 99% of the catalogue. In implicit-feedback data a blank is weak evidence of disinterest (they <em>could</em> have clicked and did not), and the standard fix is to weight known positives by a confidence that grows with interaction count rather than to treat blanks as hard negatives. Know which regime you are in before writing a single line.</p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s2">2. Matrix factorization, cold start and evaluation</h2>
+
+<p>Neighbourhood methods do not scale gracefully (an item-item matrix for a million items has 10<sup>12</sup> entries) and they cannot generalize beyond direct co-ratings. <strong>Matrix factorization (MF)</strong> fixes both by assuming the rating matrix has low <em>rank</em>: every user is a short vector of tastes, every item is a short vector of traits, and a rating is just their dot product.</p>
+
+<figure class="fig">
+<svg viewBox="0 0 800 280" role="img" aria-label="A large sparse rating matrix R is approximated by the product of a tall thin user-factor matrix U and a wide short item-factor matrix V transposed; one cell of R equals the dot product of a user row and an item column">
+  <defs><marker id="arr-f22-2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+  <!-- R -->
+  <rect x="30" y="60" width="180" height="150" class="box"/>
+  <g fill="var(--s1)">
+    <rect x="45" y="70" width="14" height="14" fill-opacity=".9"/><rect x="95" y="70" width="14" height="14" fill-opacity=".4"/><rect x="160" y="70" width="14" height="14" fill-opacity=".8"/>
+    <rect x="70" y="95" width="14" height="14" fill-opacity=".6"/><rect x="185" y="95" width="14" height="14" fill-opacity=".3"/>
+    <rect x="45" y="120" width="14" height="14" fill-opacity=".2"/><rect x="120" y="120" width="14" height="14" fill-opacity=".9"/><rect x="145" y="120" width="14" height="14" fill-opacity=".7"/>
+    <rect x="95" y="145" width="14" height="14" fill-opacity=".8"/><rect x="185" y="145" width="14" height="14" fill-opacity=".9"/>
+    <rect x="70" y="170" width="14" height="14" fill-opacity=".5"/><rect x="160" y="170" width="14" height="14" fill-opacity=".4"/>
+    <rect x="120" y="190" width="14" height="14" fill-opacity=".9"/>
+  </g>
+  <rect x="120" y="95" width="14" height="14" fill="none" stroke="var(--s7)" stroke-width="2.5"/>
+  <text x="120" y="48" text-anchor="middle" class="lbl-strong" font-size="14">R  (users × items)</text>
+  <text x="120" y="230" text-anchor="middle" class="lbl">m = 10<tspan font-size="9" dy="-5">7</tspan><tspan dy="5"> users, n = 10</tspan><tspan font-size="9" dy="-5">4</tspan><tspan dy="5"> items, 99% empty</tspan></text>
+  <text x="240" y="140" text-anchor="middle" font-size="22" fill="var(--ink)">≈</text>
+  <!-- U -->
+  <rect x="270" y="60" width="50" height="150" fill="var(--s2)" fill-opacity=".25" stroke="var(--s2)" stroke-width="1.5" rx="4"/>
+  <rect x="270" y="95" width="50" height="14" fill="var(--s2)" fill-opacity=".6"/>
+  <text x="295" y="48" text-anchor="middle" class="lbl-strong" font-size="14">U</text>
+  <text x="295" y="230" text-anchor="middle" class="lbl">m × k</text>
+  <text x="340" y="140" text-anchor="middle" font-size="18" fill="var(--ink)">·</text>
+  <!-- V^T -->
+  <rect x="360" y="60" width="180" height="50" fill="var(--s3)" fill-opacity=".25" stroke="var(--s3)" stroke-width="1.5" rx="4"/>
+  <rect x="450" y="60" width="14" height="50" fill="var(--s3)" fill-opacity=".6"/>
+  <text x="450" y="48" text-anchor="middle" class="lbl-strong" font-size="14">Vᵀ</text>
+  <text x="450" y="130" text-anchor="middle" class="lbl">k × n</text>
+  <text x="450" y="150" text-anchor="middle" class="lbl">k ≈ 20–200 latent factors</text>
+  <!-- dot product explanation -->
+  <path d="M127,109 C127,250 380,250 380,215" class="arrow" fill="none" marker-end="url(#arr-f22-2)" stroke-dasharray="4 3"/>
+  <rect x="380" y="176" width="400" height="86" rx="8" class="box-accent"/>
+  <text x="395" y="198" class="lbl-strong">r̂<tspan font-size="9" dy="4">ui</tspan><tspan dy="-4"> = u</tspan><tspan font-size="9" dy="4">u</tspan><tspan dy="-4"> · v</tspan><tspan font-size="9" dy="4">i</tspan><tspan dy="-4">  =  (0.9, −0.3, 0.1) · (0.8, 0.2, −0.5)</tspan></text>
+  <text x="395" y="218" class="lbl">user taste vector  ·  item trait vector</text>
+  <text x="395" y="236" class="lbl">factor 1 ≈ "sci-fi vs animation", factor 2 ≈ "dark vs light",</text>
+  <text x="395" y="252" class="lbl">factor 3 ≈ whatever the data needs. Nobody names them; they emerge.</text>
+  <!-- legend -->
+  <text x="560" y="75" class="lbl">= one item's traits</text>
+  <text x="560" y="97" class="lbl">= one user's tastes (row of U)</text>
+  <line x1="320" y1="102" x2="555" y2="94" stroke="var(--s2)" stroke-width="1" stroke-dasharray="3 2"/>
+  <line x1="464" y1="72" x2="555" y2="72" stroke="var(--s3)" stroke-width="1" stroke-dasharray="3 2"/>
+</svg>
+<figcaption><strong>Figure 22.2 — Matrix factorization: R ≈ U·Vᵀ.</strong> Instead of storing 10<sup>11</sup> cells we store k numbers per user and k per item. A predicted rating is a dot product. The factors are learned so the product matches the <em>known</em> cells; the unknown cells then come for free.</figcaption>
+</figure>
+
+<div class="callout math"><div class="title">The math (optional)</div>
+<p>Learn user vectors u<sub>u</sub> ∈ ℝ<sup>k</sup> and item vectors v<sub>i</sub> ∈ ℝ<sup>k</sup> by minimizing the squared error on the observed cells Ω, with a penalty that keeps the vectors small:</p>
+<div class="formula">min<sub>U,V</sub> ∑<sub>(u,i)∈Ω</sub> ( r<sub>ui</sub> − μ − b<sub>u</sub> − b<sub>i</sub> − u<sub>u</sub>·v<sub>i</sub> )<sup>2</sup> + λ ( ‖u<sub>u</sub>‖<sup>2</sup> + ‖v<sub>i</sub>‖<sup>2</sup> + b<sub>u</sub><sup>2</sup> + b<sub>i</sub><sup>2</sup> )</div>
+<p>μ is the global mean rating, b<sub>u</sub> and b<sub>i</sub> are user and item biases (some people rate high, some films are universally loved), λ is the regularization strength that stops the factors from memorizing the sparse training cells. The sum runs <em>only</em> over observed cells, which is what makes this different from a plain SVD. Two ways to solve it: stochastic gradient descent one cell at a time (the "Funk SVD" of Netflix-Prize fame), or <strong>ALS (alternating least squares)</strong>: fix V and solve for U (an ordinary least-squares problem per user), then fix U and solve for V, repeat. ALS parallelizes beautifully and is the standard for implicit feedback (Spark's <code>ALS</code>, the <code>implicit</code> library).</p>
+</div>
+
+<p>With a tiny matrix we can cheat and use a plain truncated SVD after filling the holes with the global mean; it shows the rank idea perfectly and is what the widget below animates.</p>
+
+<pre class="code" data-lang="python"><code><span class="cm"># Matrix factorization with truncated SVD: R ≈ U · V^T with k latent factors</span>
+<span class="kw">import</span> numpy <span class="kw">as</span> np
+R = np.<span class="fn">array</span>([[<span class="nu">5</span>,<span class="nu">4</span>,<span class="nu">0</span>,<span class="nu">5</span>,<span class="nu">1</span>],[<span class="nu">4</span>,<span class="nu">0</span>,<span class="nu">1</span>,<span class="nu">4</span>,<span class="nu">0</span>],[<span class="nu">1</span>,<span class="nu">1</span>,<span class="nu">5</span>,<span class="nu">0</span>,<span class="nu">4</span>],[<span class="nu">0</span>,<span class="nu">1</span>,<span class="nu">4</span>,<span class="nu">1</span>,<span class="nu">5</span>],[<span class="nu">5</span>,<span class="nu">5</span>,<span class="nu">0</span>,<span class="nu">4</span>,<span class="nu">0</span>],[<span class="nu">0</span>,<span class="nu">2</span>,<span class="nu">5</span>,<span class="nu">1</span>,<span class="nu">0</span>]], <span class="fn">float</span>)
+mask = R &gt; <span class="nu">0</span>
+mu = R[mask].<span class="fn">mean</span>()                       <span class="cm"># global mean fills the holes to start</span>
+R_filled = np.<span class="fn">where</span>(mask, R, mu)
+
+<span class="kw">def</span> <span class="fn">factorize</span>(M, k):
+    U, s, Vt = np.linalg.<span class="fn">svd</span>(M, full_matrices=<span class="kw">False</span>)
+    <span class="kw">return</span> (U[:, :k] * s[:k]) @ Vt[:k, :]       <span class="cm"># rank-k reconstruction</span>
+
+np.<span class="fn">set_printoptions</span>(precision=<span class="nu">2</span>, suppress=<span class="kw">True</span>)
+<span class="kw">for</span> k <span class="kw">in</span> [<span class="nu">1</span>, <span class="nu">2</span>, <span class="nu">3</span>, <span class="nu">5</span>]:
+    R_hat = <span class="fn">factorize</span>(R_filled, k)
+    rmse = np.<span class="fn">sqrt</span>(((R_hat - R)[mask] ** <span class="nu">2</span>).<span class="fn">mean</span>())   <span class="cm"># error on the KNOWN cells</span>
+    <span class="fn">print</span>(<span class="st">f&quot;rank {k}: RMSE on known ratings = {rmse:.2f}&quot;</span>)
+
+R_hat = <span class="fn">factorize</span>(R_filled, <span class="nu">2</span>)
+<span class="fn">print</span>(<span class="st">&quot;rank-2 predictions for the empty cells (row=user, col=item):&quot;</span>)
+<span class="fn">print</span>(np.<span class="fn">where</span>(mask, np.nan, R_hat.<span class="fn">clip</span>(<span class="nu">1</span>, <span class="nu">5</span>)))
+<span class="out"># rank 1: RMSE on known ratings = 1.54</span>
+<span class="out"># rank 2: RMSE on known ratings = 0.65</span>
+<span class="out"># rank 3: RMSE on known ratings = 0.51</span>
+<span class="out"># rank 5: RMSE on known ratings = 0.00</span>
+<span class="out"># rank-2 predictions for the empty cells (row=user, col=item):</span>
+<span class="out"># [[ nan  nan 2.3   nan  nan]</span>
+<span class="out">#  [ nan 3.52  nan  nan 1.96]</span>
+<span class="out">#  [ nan  nan  nan 1.62  nan]</span>
+<span class="out">#  [2.38  nan  nan  nan  nan]</span>
+<span class="out">#  [ nan  nan 3.36  nan 3.03]</span>
+<span class="out">#  [2.67  nan  nan  nan 3.99]]</span></code></pre>
+
+<p>Rank 5 reproduces the known cells exactly, which is the recommender version of overfitting: a rank equal to the number of items just memorizes the table, and its predictions for empty cells are noise. Rank 2 already captures the two-taste structure (RMSE 0.65) and its predictions are sensible: Ana is predicted 2.3 for Up, Eli 3.4 for Up (he is a generous rater) and Fay 4.0 for Coco. In real systems the rank and λ are chosen by validation on held-out ratings, exactly like any hyperparameter (Chapter 13).</p>
+
+<div class="widget" id="w-mf">
+  <div class="w-title">Interactive: how many latent factors?</div>
+  <div class="controls">
+    <label>Rank k <input type="range" id="mf-k" min="1" max="5" value="2" data-out="mf-k-out"> <output id="mf-k-out"></output></label>
+    <span>RMSE on known cells: <span class="readout" id="mf-rmse">–</span></span>
+  </div>
+  <svg viewBox="0 0 760 250" id="mf-svg" role="img" aria-label="Six by five rating matrix reconstructed at rank k; known cells show original and reconstructed values, empty cells show the prediction"></svg>
+  <div class="note">Known cells show <em>original → reconstructed</em>; the violet cells are the predictions for the empty entries. Slide to k = 5 and the known cells become perfect while the predictions swing wildly (Eli's Up goes from 3.4 to 3.2, Ben's Coco from 2.0 to 3.3). Perfect training fit, unreliable predictions: the bias–variance trade-off of Chapter 7 in a new costume.</div>
+</div>
+
+<h3>Implicit feedback and the confidence trick</h3>
+<p>Ratings are rare; clicks, plays and purchases are abundant. Implicit data has no negatives: an unplayed song might be disliked or simply undiscovered. The standard approach (Hu, Koren &amp; Volinsky, 2008) treats every cell as a binary preference p<sub>ui</sub> ∈ {0, 1} and attaches a <em>confidence</em> c<sub>ui</sub> = 1 + α·(number of interactions): unknown cells count a little, a song played 40 times counts a lot. ALS then minimizes ∑ c<sub>ui</sub>(p<sub>ui</sub> − u<sub>u</sub>·v<sub>i</sub>)<sup>2</sup> over <em>all</em> cells. Modern systems replace the dot product with two neural "towers" (a user tower and an item tower producing embeddings whose dot product is the score, trained with sampled negatives), but the picture is identical to Figure 22.2: two vectors, one dot product.</p>
+
+<h3>Cold start, popularity bias and diversity</h3>
+<p>CF cannot say anything about a user with no history or an item nobody has touched: this is the <strong>cold-start problem</strong>. The fixes are unglamorous and effective: (1) fall back to popularity or to content-based similarity until enough interactions exist; (2) ask new users two or three onboarding questions; (3) build hybrid models whose item vector is partly computed from item attributes (so a new film with "sci-fi, 2026, director X" lands near its siblings on day one); (4) for new items, run a small exploration budget that shows them to a few users deliberately (the bandit idea from Section 7).</p>
+
+<p>A subtler failure is <strong>popularity bias</strong>. Popular items have the most interactions, get the best-estimated vectors, are recommended more, and collect even more interactions: a feedback loop that shrinks the catalogue in effect to a few hundred blockbusters. Offline metrics reward this because the held-out clicks were themselves generated by yesterday's popularity-biased system. Production teams counter it with diversity re-ranking (penalize showing ten items from the same category), popularity-debiasing weights during training, and explicit exploration.</p>
+
+<h3>Evaluation: offline ranking metrics vs online reality</h3>
+<p>A recommender produces a ranked list, so classification accuracy is the wrong yardstick. The offline metrics all take a ranked list and a set of held-out "relevant" items (things the user actually consumed later) and ask how well the list put the relevant items at the top.</p>
+
+<div class="callout math"><div class="title">The math (optional)</div>
+<div class="formula">precision@k = |top-k ∩ relevant| / k        recall@k = |top-k ∩ relevant| / |relevant|</div>
+<div class="formula">DCG@k = ∑<sub>p=1..k</sub> rel<sub>p</sub> / log<sub>2</sub>(p + 1)        NDCG@k = DCG@k / IDCG@k</div>
+<p>rel<sub>p</sub> is 1 if the item at position p is relevant (or its graded relevance), and the log<sub>2</sub>(p + 1) discount says a hit at position 1 is worth 1, at position 2 worth 0.63, at position 10 worth 0.29. IDCG is the DCG of the best possible ordering, so NDCG lies in [0, 1] and is comparable across users with different numbers of relevant items. <strong>MAP</strong> (mean average precision) averages precision@p over the positions p where a hit occurs, then averages across users. <strong>Hit rate@k</strong> is the fraction of users with at least one hit in their top k, the simplest of all and often the one a product manager understands best.</p>
+</div>
+
+<pre class="code" data-lang="python"><code><span class="cm"># Ranking metrics: precision@k, recall@k, NDCG@k for one user</span>
+<span class="kw">import</span> numpy <span class="kw">as</span> np
+
+<span class="kw">def</span> <span class="fn">precision_at_k</span>(ranked, relevant, k):
+    <span class="kw">return</span> <span class="fn">len</span>(<span class="fn">set</span>(ranked[:k]) &amp; relevant) / k
+
+<span class="kw">def</span> <span class="fn">recall_at_k</span>(ranked, relevant, k):
+    <span class="kw">return</span> <span class="fn">len</span>(<span class="fn">set</span>(ranked[:k]) &amp; relevant) / <span class="fn">len</span>(relevant)
+
+<span class="kw">def</span> <span class="fn">ndcg_at_k</span>(ranked, relevant, k):
+    gains = [<span class="nu">1.0</span> <span class="kw">if</span> it <span class="kw">in</span> relevant <span class="kw">else</span> <span class="nu">0.0</span> <span class="kw">for</span> it <span class="kw">in</span> ranked[:k]]
+    dcg = <span class="fn">sum</span>(g / np.<span class="fn">log2</span>(i + <span class="nu">2</span>) <span class="kw">for</span> i, g <span class="kw">in</span> <span class="fn">enumerate</span>(gains))     <span class="cm"># position 1 → log2(2)</span>
+    ideal = <span class="fn">sum</span>(<span class="nu">1.0</span> / np.<span class="fn">log2</span>(i + <span class="nu">2</span>) <span class="kw">for</span> i <span class="kw">in</span> <span class="fn">range</span>(<span class="fn">min</span>(<span class="fn">len</span>(relevant), k)))
+    <span class="kw">return</span> dcg / ideal
+
+ranked   = [<span class="st">&quot;Coco&quot;</span>, <span class="st">&quot;Alien&quot;</span>, <span class="st">&quot;Heat&quot;</span>, <span class="st">&quot;Up&quot;</span>, <span class="st">&quot;Dune&quot;</span>]   <span class="cm"># what the model shows, best first</span>
+relevant = {<span class="st">&quot;Alien&quot;</span>, <span class="st">&quot;Dune&quot;</span>}                          <span class="cm"># what the user actually liked (held out)</span>
+<span class="kw">for</span> k <span class="kw">in</span> (<span class="nu">1</span>, <span class="nu">3</span>, <span class="nu">5</span>):
+    <span class="fn">print</span>(<span class="st">f&quot;k={k}: P@k={precision_at_k(ranked, relevant, k):.2f} &quot;</span>
+          <span class="st">f&quot;R@k={recall_at_k(ranked, relevant, k):.2f} &quot;</span>
+          <span class="st">f&quot;NDCG@k={ndcg_at_k(ranked, relevant, k):.2f}&quot;</span>)
+<span class="out"># k=1: P@k=0.00 R@k=0.00 NDCG@k=0.00</span>
+<span class="out"># k=3: P@k=0.33 R@k=0.50 NDCG@k=0.39</span>
+<span class="out"># k=5: P@k=0.40 R@k=1.00 NDCG@k=0.62</span></code></pre>
+
+<p>Offline metrics are computed on clicks the old system caused, on items the old system chose to show. They are a filter for obviously bad models, not a measurement of value. The only measurement that counts is <strong>online</strong>: an A/B test (Section 5) of the new ranker against the old one on click-through rate, conversion, watch time, or, if you are careful, long-term retention. Expect offline gains to shrink by half or vanish online, and expect a model with a worse NDCG to sometimes win because it is more diverse.</p>
+
+<figure class="fig">
+<svg viewBox="0 0 800 270" role="img" aria-label="Industry recommender architecture in two stages: several candidate generators reduce millions of items to hundreds, a ranking model scores those hundreds with rich features, and a re-ranking step applies business rules before the top ten are shown">
+  <defs><marker id="arr-f22-3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+  <text x="20" y="26" class="lbl-strong" font-size="14">Two-stage retrieval → ranking (what YouTube, Amazon, Spotify actually run)</text>
+  <!-- catalogue -->
+  <rect x="20" y="60" width="120" height="150" rx="8" class="box"/>
+  <text x="80" y="85" text-anchor="middle" class="lbl-strong">Catalogue</text>
+  <text x="80" y="103" text-anchor="middle" class="lbl">10⁷ items</text>
+  <g fill="var(--ink-3)">
+    <circle cx="45" cy="130" r="3"/><circle cx="60" cy="145" r="3"/><circle cx="80" cy="125" r="3"/><circle cx="100" cy="150" r="3"/><circle cx="115" cy="130" r="3"/><circle cx="50" cy="170" r="3"/><circle cx="75" cy="185" r="3"/><circle cx="95" cy="170" r="3"/><circle cx="118" cy="190" r="3"/><circle cx="65" cy="160" r="3"/><circle cx="105" cy="185" r="3"/><circle cx="40" cy="190" r="3"/>
+  </g>
+  <!-- candidate generators -->
+  <line x1="140" y1="135" x2="182" y2="135" class="arrow" marker-end="url(#arr-f22-3)"/>
+  <rect x="185" y="60" width="170" height="150" rx="8" fill="var(--s1)" fill-opacity=".12" stroke="var(--s1)" stroke-width="1.5"/>
+  <text x="270" y="82" text-anchor="middle" class="lbl-strong">1. Candidate generation</text>
+  <text x="270" y="100" text-anchor="middle" class="lbl">cheap, recall-oriented</text>
+  <rect x="198" y="112" width="144" height="22" rx="4" fill="var(--surface)" stroke="var(--s1)"/><text x="270" y="127" text-anchor="middle" class="lbl" font-size="11">two-tower embeddings + ANN</text>
+  <rect x="198" y="140" width="144" height="22" rx="4" fill="var(--surface)" stroke="var(--s1)"/><text x="270" y="155" text-anchor="middle" class="lbl" font-size="11">item-item neighbours</text>
+  <rect x="198" y="168" width="144" height="22" rx="4" fill="var(--surface)" stroke="var(--s1)"/><text x="270" y="183" text-anchor="middle" class="lbl" font-size="11">popular / trending / new</text>
+  <text x="270" y="204" text-anchor="middle" class="lbl" font-size="11">→ ~500 candidates, &lt; 10 ms</text>
+  <!-- ranking -->
+  <line x1="355" y1="135" x2="397" y2="135" class="arrow" marker-end="url(#arr-f22-3)"/>
+  <rect x="400" y="60" width="170" height="150" rx="8" fill="var(--s2)" fill-opacity=".12" stroke="var(--s2)" stroke-width="1.5"/>
+  <text x="485" y="82" text-anchor="middle" class="lbl-strong">2. Ranking model</text>
+  <text x="485" y="100" text-anchor="middle" class="lbl">expensive, precision-oriented</text>
+  <text x="485" y="124" text-anchor="middle" class="lbl" font-size="11">GBM or deep net on hundreds</text>
+  <text x="485" y="139" text-anchor="middle" class="lbl" font-size="11">of features: user × item × context</text>
+  <text x="485" y="154" text-anchor="middle" class="lbl" font-size="11">(time of day, device, session)</text>
+  <text x="485" y="176" text-anchor="middle" class="lbl" font-size="11">predicts p(click), p(buy),</text>
+  <text x="485" y="191" text-anchor="middle" class="lbl" font-size="11">expected watch time…</text>
+  <!-- re-rank -->
+  <line x1="570" y1="135" x2="612" y2="135" class="arrow" marker-end="url(#arr-f22-3)"/>
+  <rect x="615" y="60" width="165" height="150" rx="8" fill="var(--s3)" fill-opacity=".12" stroke="var(--s3)" stroke-width="1.5"/>
+  <text x="697" y="82" text-anchor="middle" class="lbl-strong">3. Re-rank &amp; serve</text>
+  <text x="697" y="100" text-anchor="middle" class="lbl">business rules</text>
+  <text x="697" y="124" text-anchor="middle" class="lbl" font-size="11">diversity, freshness,</text>
+  <text x="697" y="139" text-anchor="middle" class="lbl" font-size="11">exploration slot, filters</text>
+  <text x="697" y="154" text-anchor="middle" class="lbl" font-size="11">(already bought, out of stock)</text>
+  <text x="697" y="180" text-anchor="middle" class="lbl-strong" fill="var(--s3)">→ top 10 shown</text>
+  <!-- feedback loop -->
+  <path d="M697,210 L697,240 L80,240 L80,212" class="arrow" fill="none" marker-end="url(#arr-f22-3)" stroke-dasharray="5 4"/>
+  <text x="390" y="234" text-anchor="middle" class="lbl">clicks/skips logged → retrain both stages → A/B test before rollout</text>
+  <text x="20" y="262" class="lbl">Stage 1 must be fast enough to scan millions; stage 2 can afford 100× more compute per item because it only sees hundreds.</text>
+</svg>
+<figcaption><strong>Figure 22.3 — The industrial recommender.</strong> Nobody scores 10 million items with a deep model per request. A cheap retrieval stage (embeddings + approximate nearest neighbours, plus simple heuristics) narrows the catalogue to a few hundred candidates; a rich ranking model orders them; business logic re-ranks. Each stage is evaluated separately: recall for stage 1, NDCG and online lift for stage 2.</figcaption>
+</figure>
+
+<div class="callout pro"><div class="title">At work</div>
+<p>Most companies do not need Figure 22.3. If you have under a million users and a catalogue of thousands, start with <strong>item-item CF on implicit data</strong> (a few hundred lines, precomputed nightly), add a popularity fallback for cold users, and A/B test it against "most popular this week". That baseline is embarrassingly hard to beat and takes a week. Reach for two-tower models when the catalogue is large enough that item-item similarity does not fit in memory, or when you have rich content features (text, images) that a neural tower can exploit. Whatever you build, log <em>impressions</em> (what was shown), not only clicks; without impressions you cannot compute CTR, cannot de-bias, and cannot train the next model properly.</p>
+</div>
+
+<div class="callout key"><div class="title">Key idea</div>
+<p>Recommendation is matrix completion plus ranking. Every method, from neighbours to two-tower networks, estimates a score for a (user, item) pair from patterns of co-occurrence; the differences are in scalability, cold-start behaviour and what extra features they can absorb. Offline ranking metrics are a filter; the online A/B test is the measurement.</p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s3">3. Anomaly detection: what "weird" means</h2>
+
+<p>An <strong>anomaly</strong> (outlier, novelty) is an observation that does not fit the pattern of the rest. That definition hides the entire difficulty: "the pattern" must be learned from data that is mostly normal but is not labeled, and "does not fit" must be turned into a number. Anomaly detection is the unsupervised cousin of classification, used whenever the rare class is too rare, too varied, or too new to have enough labels: fraud, machine failure, network intrusion, data-quality bugs, sensor faults, insider trading.</p>
+
+<figure class="fig">
+<svg viewBox="0 0 800 300" role="img" aria-label="Three panels: a point anomaly far from a scatter cluster; a contextual anomaly in a time series where a normal value appears at an abnormal time; a collective anomaly where a run of individually normal readings is abnormal together">
+  <defs><marker id="arr-f22-4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+  <!-- panel 1: point -->
+  <text x="140" y="26" text-anchor="middle" class="lbl-strong" font-size="14">Point anomaly</text>
+  <line x1="30" y1="230" x2="250" y2="230" class="axis"/><line x1="30" y1="230" x2="30" y2="50" class="axis"/>
+  <text x="140" y="250" text-anchor="middle" class="lbl">transaction amount</text>
+  <text x="18" y="140" text-anchor="middle" class="lbl" transform="rotate(-90 18 140)">time since last</text>
+  <g fill="var(--s1)" fill-opacity=".8">
+    <circle cx="70" cy="190" r="4"/><circle cx="85" cy="175" r="4"/><circle cx="95" cy="200" r="4"/><circle cx="110" cy="180" r="4"/><circle cx="120" cy="160" r="4"/><circle cx="105" cy="150" r="4"/><circle cx="130" cy="185" r="4"/><circle cx="90" cy="165" r="4"/><circle cx="140" cy="170" r="4"/><circle cx="115" cy="205" r="4"/><circle cx="75" cy="160" r="4"/><circle cx="125" cy="145" r="4"/><circle cx="100" cy="185" r="4"/><circle cx="145" cy="155" r="4"/><circle cx="135" cy="200" r="4"/><circle cx="80" cy="195" r="4"/>
+  </g>
+  <circle cx="220" cy="80" r="6" fill="var(--critical)"/>
+  <text x="212" y="70" text-anchor="end" class="lbl" fill="var(--critical)" font-weight="700">$9,800 at 3 am</text>
+  <text x="140" y="275" text-anchor="middle" class="lbl">one record, far from everything</text>
+
+  <!-- panel 2: contextual -->
+  <text x="400" y="26" text-anchor="middle" class="lbl-strong" font-size="14">Contextual anomaly</text>
+  <line x1="290" y1="230" x2="510" y2="230" class="axis"/><line x1="290" y1="230" x2="290" y2="50" class="axis"/>
+  <text x="400" y="250" text-anchor="middle" class="lbl">hour of week</text>
+  <text x="278" y="140" text-anchor="middle" class="lbl" transform="rotate(-90 278 140)">server load</text>
+  <polyline points="295,200 305,180 315,120 325,90 335,85 345,95 355,150 365,205 375,210 385,200 395,175 405,120 415,88 425,90 435,110 445,160 455,205 465,208 475,200 485,180 495,130 505,95" fill="none" stroke="var(--s1)" stroke-width="2"/>
+  <circle cx="470" cy="100" r="6" fill="var(--critical)"/>
+  <line x1="470" y1="106" x2="470" y2="200" stroke="var(--critical)" stroke-dasharray="3 3"/>
+  <text x="470" y="88" text-anchor="middle" class="lbl" fill="var(--critical)" font-weight="700">peak load at 3 am</text>
+  <text x="400" y="275" text-anchor="middle" class="lbl">normal value, abnormal context</text>
+
+  <!-- panel 3: collective -->
+  <text x="660" y="26" text-anchor="middle" class="lbl-strong" font-size="14">Collective anomaly</text>
+  <line x1="550" y1="230" x2="780" y2="230" class="axis"/><line x1="550" y1="230" x2="550" y2="50" class="axis"/>
+  <text x="665" y="250" text-anchor="middle" class="lbl">time</text>
+  <text x="538" y="140" text-anchor="middle" class="lbl" transform="rotate(-90 538 140)">heartbeat</text>
+  <polyline points="555,160 565,120 575,190 585,150 595,110 605,185 615,150 625,120 635,190 645,152" fill="none" stroke="var(--s1)" stroke-width="2"/>
+  <polyline points="645,152 655,150 665,151 675,150 685,152 695,151 705,150 715,151" fill="none" stroke="var(--critical)" stroke-width="2.5"/>
+  <polyline points="715,151 725,115 735,188 745,150 755,118 765,185 775,150" fill="none" stroke="var(--s1)" stroke-width="2"/>
+  <rect x="645" y="60" width="70" height="170" fill="var(--critical)" fill-opacity=".1"/>
+  <text x="680" y="75" text-anchor="middle" class="lbl" fill="var(--critical)" font-weight="700">flatline</text>
+  <text x="665" y="275" text-anchor="middle" class="lbl">each value normal; the run is not</text>
+</svg>
+<figcaption><strong>Figure 22.4 — Three kinds of anomaly.</strong> A point anomaly is odd on its own. A contextual anomaly is a normal value at the wrong time or place, so the detector needs context features (hour, weekday, device). A collective anomaly is a sequence that is only odd as a whole, so the detector needs windowed or sequence features. Most fraud is contextual; most equipment failure is collective.</figcaption>
+</figure>
+
+<div class="callout eli9"><div class="title">Explain it like I'm 9</div>
+<p>Imagine a class photo. A point anomaly is the kid wearing a giant dinosaur costume: weird anywhere. A contextual anomaly is a kid in a swimsuit: fine at the pool, weird in the school photo. A collective anomaly is thirty kids all standing perfectly still with the same blank stare: each kid is normal, but all of them together is creepy. A detector has to know which kind of weird it is looking for.</p>
+</div>
+
+<h3>The no-labels reality</h3>
+<p>Almost always you start with a pile of unlabeled data that is "mostly normal", a vague sense of what a problem looks like, and a human (fraud analyst, engineer, nurse) who will review whatever you flag. That shapes the whole design: the output is a <strong>ranked list</strong> for review, not a yes/no; the budget is <strong>how many alerts a human can check per day</strong>; and the metric is <strong>precision of the top-k</strong> at that budget, plus whatever recall you can estimate. Frame it that way in the first meeting and half of the arguments about thresholds disappear.</p>
+
+<h3>Statistical baselines: z-score, IQR, Mahalanobis</h3>
+<p>For a single numeric variable the classic tools are the <strong>z-score</strong> (how many standard deviations from the mean; flag |z| &gt; 3) and the <strong>IQR rule</strong> (flag anything below Q1 − 1.5·IQR or above Q3 + 1.5·IQR). Both need a <strong>robust</strong> version in practice, because the anomalies you are hunting inflate the mean and standard deviation that define "normal": use the median and the MAD (median absolute deviation, scaled by 1.4826 to match σ for Gaussian data) instead. For several variables, distance from the centre must account for correlation: a customer spending $500 is normal, a customer with 2 logins is normal, but $500 with 2 logins may be very odd. The <strong>Mahalanobis distance</strong> does exactly this.</p>
+
+<div class="callout math"><div class="title">The math (optional)</div>
+<div class="formula">z = (x − μ) / σ        robust z = (x − median) / (1.4826 · MAD)</div>
+<div class="formula">D<sub>M</sub>(x) = √( (x − μ)ᵀ Σ<sup>−1</sup> (x − μ) )</div>
+<p>μ is the mean vector, Σ the covariance matrix of the normal data, and Σ<sup>−1</sup> rescales each direction by its spread and rotates away correlation, so D<sub>M</sub> is the z-score generalized to an ellipse. For Gaussian data with d variables, D<sub>M</sub><sup>2</sup> follows a χ<sup>2</sup> distribution with d degrees of freedom, which gives a principled threshold (e.g. the 99th percentile). scikit-learn's <code>EllipticEnvelope</code> fits μ and Σ robustly (Minimum Covariance Determinant) so that the anomalies do not distort the ellipse they are measured against.</p>
+</div>
+
+<figure class="fig">
+<svg viewBox="0 0 800 300" role="img" aria-label="Left: correlated 2-D data with a circular z-score threshold that misses an off-axis outlier and a tilted Mahalanobis ellipse that catches it. Right: isolation forest picture where a lone point is separated by two random splits while an inlier needs many">
+  <!-- left panel -->
+  <text x="200" y="26" text-anchor="middle" class="lbl-strong" font-size="14">z-score circle vs Mahalanobis ellipse</text>
+  <line x1="40" y1="260" x2="370" y2="260" class="axis"/><line x1="40" y1="260" x2="40" y2="45" class="axis"/>
+  <text x="205" y="280" text-anchor="middle" class="lbl">monthly spend</text>
+  <text x="26" y="150" text-anchor="middle" class="lbl" transform="rotate(-90 26 150)">logins</text>
+  <g fill="var(--s1)" fill-opacity=".75">
+    <circle cx="90" cy="230" r="3.5"/><circle cx="105" cy="215" r="3.5"/><circle cx="120" cy="222" r="3.5"/><circle cx="130" cy="200" r="3.5"/><circle cx="145" cy="195" r="3.5"/><circle cx="150" cy="210" r="3.5"/><circle cx="165" cy="180" r="3.5"/><circle cx="175" cy="190" r="3.5"/><circle cx="185" cy="170" r="3.5"/><circle cx="200" cy="160" r="3.5"/><circle cx="205" cy="178" r="3.5"/><circle cx="215" cy="150" r="3.5"/><circle cx="230" cy="140" r="3.5"/><circle cx="235" cy="158" r="3.5"/><circle cx="250" cy="130" r="3.5"/><circle cx="260" cy="120" r="3.5"/><circle cx="270" cy="135" r="3.5"/><circle cx="285" cy="110" r="3.5"/><circle cx="295" cy="100" r="3.5"/><circle cx="305" cy="118" r="3.5"/><circle cx="315" cy="90" r="3.5"/><circle cx="325" cy="80" r="3.5"/><circle cx="110" cy="235" r="3.5"/><circle cx="160" cy="205" r="3.5"/><circle cx="220" cy="172" r="3.5"/><circle cx="240" cy="145" r="3.5"/><circle cx="280" cy="128" r="3.5"/><circle cx="300" cy="92" r="3.5"/><circle cx="190" cy="152" r="3.5"/><circle cx="135" cy="218" r="3.5"/>
+  </g>
+  <!-- z-score circle: centre (205,160) radius 95 -->
+  <circle cx="205" cy="160" r="95" fill="none" stroke="var(--ink-3)" stroke-width="1.5" stroke-dasharray="5 4"/>
+  <text x="300" y="235" class="lbl" fill="var(--ink-2)">|z| &lt; 3 circle</text>
+  <!-- ellipse tilted -->
+  <ellipse cx="205" cy="160" rx="135" ry="32" fill="none" stroke="var(--s7)" stroke-width="2.5" transform="rotate(-33 205 160)"/>
+  <text x="60" y="70" class="lbl-strong" fill="var(--s7)">Mahalanobis ellipse</text>
+  <!-- outlier: inside circle, outside ellipse -->
+  <circle cx="265" cy="215" r="6" fill="var(--critical)"/>
+  <text x="275" y="220" class="lbl" fill="var(--critical)" font-weight="700">high spend, few logins</text>
+  <text x="275" y="234" class="lbl" font-size="11">inside the circle, outside the ellipse</text>
+
+  <!-- right panel: isolation forest -->
+  <text x="600" y="26" text-anchor="middle" class="lbl-strong" font-size="14">Isolation Forest: random splits</text>
+  <rect x="440" y="45" width="330" height="215" fill="none" class="axis"/>
+  <g fill="var(--s1)" fill-opacity=".75">
+    <circle cx="560" cy="150" r="3.5"/><circle cx="575" cy="165" r="3.5"/><circle cx="590" cy="140" r="3.5"/><circle cx="605" cy="160" r="3.5"/><circle cx="580" cy="185" r="3.5"/><circle cx="615" cy="180" r="3.5"/><circle cx="600" cy="130" r="3.5"/><circle cx="565" cy="175" r="3.5"/><circle cx="620" cy="150" r="3.5"/><circle cx="595" cy="195" r="3.5"/><circle cx="585" cy="155" r="3.5"/><circle cx="610" cy="200" r="3.5"/><circle cx="570" cy="135" r="3.5"/><circle cx="630" cy="170" r="3.5"/><circle cx="600" cy="175" r="3.5"/><circle cx="555" cy="190" r="3.5"/>
+  </g>
+  <circle cx="730" cy="75" r="6" fill="var(--critical)"/>
+  <!-- splits isolating the outlier: 2 cuts -->
+  <line x1="690" y1="45" x2="690" y2="260" stroke="var(--s2)" stroke-width="2"/>
+  <text x="694" y="252" class="lbl" fill="var(--s2)" font-size="11">split 1</text>
+  <line x1="690" y1="105" x2="770" y2="105" stroke="var(--s2)" stroke-width="2"/>
+  <text x="700" y="120" class="lbl" fill="var(--s2)" font-size="11">split 2 → alone</text>
+  <text x="736" y="72" class="lbl" fill="var(--critical)" font-weight="700" font-size="11">path = 2</text>
+  <!-- splits inside the cluster: many cuts -->
+  <g stroke="var(--s3)" stroke-width="1.2" stroke-dasharray="3 2">
+    <line x1="440" y1="165" x2="690" y2="165"/><line x1="592" y1="45" x2="592" y2="260"/><line x1="592" y1="145" x2="690" y2="145"/><line x1="612" y1="145" x2="612" y2="165"/><line x1="592" y1="155" x2="612" y2="155"/>
+  </g>
+  <text x="455" y="70" class="lbl" fill="var(--s3)">inlier: 5+ splits before it is alone</text>
+  <text x="455" y="86" class="lbl" font-size="11">score = average path length over 100 trees</text>
+  <text x="600" y="280" text-anchor="middle" class="lbl">short path = easy to isolate = anomalous</text>
+</svg>
+<figcaption><strong>Figure 22.5 — Two mechanisms for "far from normal".</strong> Left: with correlated features a per-variable z-score draws a circle and misses the off-axis point; the Mahalanobis ellipse follows the data's shape and catches it. Right: an Isolation Forest partitions the space with random axis-aligned cuts; an isolated point ends up alone after a couple of cuts, a point deep in a cluster needs many. No distribution is assumed.</figcaption>
+</figure>
+
+<!-- ============================================================ -->
+<h2 id="s4">4. Anomaly detectors, thresholds and evaluation</h2>
+
+<h3>Isolation Forest</h3>
+<p><strong>Isolation Forest</strong> (Liu, Ting &amp; Zhou, 2008) is the default choice for tabular anomaly detection and the one you should try first. It builds many random trees: pick a random feature, pick a random split value between that feature's min and max, recurse. Anomalies, being few and different, get separated into their own leaf after a handful of splits; normal points, sitting in dense regions, need many. The anomaly score is a function of the <em>average path length</em> across trees. It is fast (linear time), handles hundreds of features, needs no distance metric or scaling, and has one hyperparameter that matters: <code>contamination</code>, the expected fraction of anomalies, which only sets the threshold and does not change the ranking.</p>
+
+<h3>Local Outlier Factor and One-Class SVM</h3>
+<p><strong>Local Outlier Factor (LOF)</strong> compares the density around a point to the density around its neighbours. A point in a sparse region that borders a dense cluster gets a high LOF; a point in a uniformly sparse region does not, because its neighbours are equally sparse. This "local" view catches anomalies that global methods miss when the data has clusters of very different density (Figure 22.6, left). It is a k-NN method, so it needs scaled features and does not scale to millions of rows without approximate neighbours. <strong>One-Class SVM</strong> learns a boundary that encloses most of the training data in a kernel feature space; it is elegant but sensitive to its ν and γ parameters and rarely beats Isolation Forest on real tabular data. Know it exists; reach for it only when the data is small and smooth.</p>
+
+<h3>Autoencoders: reconstruction error</h3>
+<p>For high-dimensional, structured inputs (images of products on a conveyor, spectrograms of a motor, sequences of API calls) the modern detector is an <strong>autoencoder</strong> (Chapter 15): a network trained to compress its input to a small bottleneck and reconstruct it. Trained on normal data only, it learns to reconstruct normal things well. A defective part, a failing bearing, an unusual request pattern reconstructs badly, and the reconstruction error is the anomaly score (Figure 22.6, right). The same idea powers time-series anomaly detection with LSTM or transformer autoencoders, and forecasting-based detection: predict the next value, flag large residuals.</p>
+
+<figure class="fig">
+<svg viewBox="0 0 800 290" role="img" aria-label="Left: two clusters of very different density; a point near the tight cluster is an outlier by LOF even though it is closer to its neighbours than points in the loose cluster are to theirs. Right: an autoencoder compresses input to a bottleneck and reconstructs it; a normal input has small error and an anomaly a large error, shown as a histogram with a threshold">
+  <defs><marker id="arr-f22-6" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+  <!-- LOF panel -->
+  <text x="200" y="26" text-anchor="middle" class="lbl-strong" font-size="14">LOF: density relative to neighbours</text>
+  <rect x="30" y="45" width="340" height="215" fill="none" class="axis"/>
+  <!-- tight cluster -->
+  <g fill="var(--s1)" fill-opacity=".8">
+    <circle cx="110" cy="110" r="3"/><circle cx="116" cy="118" r="3"/><circle cx="104" cy="116" r="3"/><circle cx="112" cy="124" r="3"/><circle cx="120" cy="110" r="3"/><circle cx="106" cy="106" r="3"/><circle cx="118" cy="126" r="3"/><circle cx="100" cy="122" r="3"/><circle cx="124" cy="118" r="3"/><circle cx="110" cy="130" r="3"/><circle cx="114" cy="102" r="3"/><circle cx="98" cy="110" r="3"/>
+  </g>
+  <text x="112" y="88" text-anchor="middle" class="lbl" font-size="11">tight cluster</text>
+  <!-- loose cluster -->
+  <g fill="var(--s3)" fill-opacity=".8">
+    <circle cx="250" cy="170" r="3"/><circle cx="290" cy="200" r="3"/><circle cx="230" cy="215" r="3"/><circle cx="310" cy="160" r="3"/><circle cx="270" cy="235" r="3"/><circle cx="330" cy="215" r="3"/><circle cx="240" cy="150" r="3"/><circle cx="300" cy="240" r="3"/><circle cx="280" cy="150" r="3"/><circle cx="340" cy="185" r="3"/><circle cx="215" cy="185" r="3"/><circle cx="260" cy="205" r="3"/>
+  </g>
+  <text x="280" y="135" text-anchor="middle" class="lbl" font-size="11">loose cluster (all normal)</text>
+  <!-- outlier near tight cluster -->
+  <circle cx="150" cy="150" r="5.5" fill="var(--critical)"/>
+  <circle cx="150" cy="150" r="30" fill="none" stroke="var(--critical)" stroke-dasharray="3 3"/>
+  <text x="150" y="200" text-anchor="middle" class="lbl" fill="var(--critical)" font-weight="700" font-size="11">LOF ≈ 4: its neighbours are</text>
+  <text x="150" y="214" text-anchor="middle" class="lbl" fill="var(--critical)" font-weight="700" font-size="11">4× denser than it is</text>
+  <circle cx="290" cy="200" r="30" fill="none" stroke="var(--s3)" stroke-dasharray="3 3"/>
+  <text x="290" y="252" text-anchor="middle" class="lbl" font-size="11" fill="var(--s3)">LOF ≈ 1: as sparse as its neighbours</text>
+  <text x="200" y="280" text-anchor="middle" class="lbl">a global distance rule would flag the whole loose cluster first</text>
+
+  <!-- autoencoder panel -->
+  <text x="600" y="26" text-anchor="middle" class="lbl-strong" font-size="14">Autoencoder: reconstruction error</text>
+  <!-- network -->
+  <g fill="var(--s1)"><circle cx="440" cy="70" r="6"/><circle cx="440" cy="90" r="6"/><circle cx="440" cy="110" r="6"/><circle cx="440" cy="130" r="6"/><circle cx="440" cy="150" r="6"/></g>
+  <g fill="var(--s7)"><circle cx="500" cy="100" r="6"/><circle cx="500" cy="120" r="6"/></g>
+  <g fill="var(--s1)"><circle cx="560" cy="70" r="6"/><circle cx="560" cy="90" r="6"/><circle cx="560" cy="110" r="6"/><circle cx="560" cy="130" r="6"/><circle cx="560" cy="150" r="6"/></g>
+  <g stroke="var(--ink-3)" stroke-opacity=".5">
+    <line x1="446" y1="70" x2="494" y2="100"/><line x1="446" y1="90" x2="494" y2="100"/><line x1="446" y1="110" x2="494" y2="120"/><line x1="446" y1="130" x2="494" y2="120"/><line x1="446" y1="150" x2="494" y2="120"/>
+    <line x1="506" y1="100" x2="554" y2="70"/><line x1="506" y1="100" x2="554" y2="90"/><line x1="506" y1="120" x2="554" y2="110"/><line x1="506" y1="120" x2="554" y2="130"/><line x1="506" y1="120" x2="554" y2="150"/>
+  </g>
+  <text x="440" y="172" text-anchor="middle" class="lbl" font-size="11">x</text>
+  <text x="500" y="145" text-anchor="middle" class="lbl" font-size="11" fill="var(--s7)">bottleneck</text>
+  <text x="560" y="172" text-anchor="middle" class="lbl" font-size="11">x̂</text>
+  <text x="500" y="195" text-anchor="middle" class="lbl-strong" font-size="12">score = ‖x − x̂‖²</text>
+  <!-- histogram of errors -->
+  <line x1="610" y1="230" x2="780" y2="230" class="axis"/>
+  <text x="695" y="250" text-anchor="middle" class="lbl" font-size="11">reconstruction error</text>
+  <g fill="var(--s1)" fill-opacity=".8">
+    <rect x="612" y="150" width="12" height="80"/><rect x="626" y="100" width="12" height="130"/><rect x="640" y="70" width="12" height="160"/><rect x="654" y="120" width="12" height="110"/><rect x="668" y="170" width="12" height="60"/><rect x="682" y="205" width="12" height="25"/><rect x="696" y="220" width="12" height="10"/>
+  </g>
+  <g fill="var(--critical)" fill-opacity=".85">
+    <rect x="738" y="210" width="12" height="20"/><rect x="752" y="200" width="12" height="30"/><rect x="766" y="215" width="12" height="15"/>
+  </g>
+  <line x1="722" y1="60" x2="722" y2="230" stroke="var(--s7)" stroke-width="2" stroke-dasharray="5 3"/>
+  <text x="722" y="52" text-anchor="middle" class="lbl" fill="var(--s7)" font-weight="700" font-size="11">threshold</text>
+  <text x="650" y="62" text-anchor="middle" class="lbl" font-size="11">normal</text>
+  <text x="758" y="190" text-anchor="middle" class="lbl" font-size="11" fill="var(--critical)">defects</text>
+  <text x="600" y="280" text-anchor="middle" class="lbl">train on normal only; whatever it cannot rebuild is suspicious</text>
+</svg>
+<figcaption><strong>Figure 22.6 — Local density and learned reconstruction.</strong> Left: LOF scores a point by the ratio of its neighbours' density to its own, so it finds the red point next to the tight cluster while leaving the equally sparse (but uniformly sparse) loose cluster alone. Right: an autoencoder trained on normal data reconstructs normal inputs well; the error distribution separates, and a threshold set on the normal tail becomes the alarm.</figcaption>
+</figure>
+
+<h3>Choosing the threshold (contamination)</h3>
+<p>Every detector outputs a score; the threshold is a business decision, not a statistical one. Three ways to set it: (1) <strong>budget</strong>: flag the top k per day, where k is what the reviewers can handle; (2) <strong>expected rate</strong>: if you believe ~1% of transactions are fraudulent, set <code>contamination=0.01</code>; (3) <strong>the score distribution</strong>: look at the histogram of scores on normal data and cut at the 99.5th percentile or at an obvious gap. Never trust the library default (<code>contamination="auto"</code>) for anything that pages a human at night.</p>
+
+<h3>Evaluating without labels, and with a few</h3>
+<p>With <strong>no labels</strong>, two honest options remain. First, <strong>precision of the top-k reviewed by humans</strong>: take the 50 highest-scored items, have an expert label them, and report "31 of 50 were real problems". That is a real number a business can act on. Second, <strong>injected anomalies</strong>: synthesize plausible anomalies (a transaction with a foreign IP and a 10× amount; a sensor value stuck at a constant), mix them in, and measure how many you recover. Injected anomalies test only the failure modes you imagined, but they catch broken pipelines and give you a regression test.</p>
+
+<p>With <strong>a few labels</strong>, which you will accumulate as reviewers work through the queue, evaluate as a ranking problem: <strong>PR-AUC</strong> (average precision) and precision@k, never ROC-AUC alone (Chapter 6: with 0.5% positives a ROC-AUC of 0.95 can coexist with a useless alert queue). Those labels are also the seed of a supervised model: once you have a few hundred confirmed anomalies, a gradient-boosted classifier using the unsupervised scores <em>as features</em> usually beats every unsupervised method.</p>
+
+<pre class="code" data-lang="python"><code><span class="cm"># Three unsupervised detectors on synthetic data with injected outliers, scored with labels we normally wouldn&#x27;t have</span>
+<span class="kw">import</span> numpy <span class="kw">as</span> np
+<span class="kw">from</span> sklearn.datasets <span class="kw">import</span> make_blobs
+<span class="kw">from</span> sklearn.ensemble <span class="kw">import</span> IsolationForest
+<span class="kw">from</span> sklearn.neighbors <span class="kw">import</span> LocalOutlierFactor
+<span class="kw">from</span> sklearn.covariance <span class="kw">import</span> EllipticEnvelope
+<span class="kw">from</span> sklearn.metrics <span class="kw">import</span> average_precision_score
+
+rng = np.random.<span class="fn">default_rng</span>(<span class="nu">0</span>)
+X_norm, _ = <span class="fn">make_blobs</span>(n_samples=<span class="nu">1000</span>, centers=[[<span class="nu">0</span>, <span class="nu">0</span>], [<span class="nu">6</span>, <span class="nu">5</span>]], cluster_std=<span class="nu">1.0</span>, random_state=<span class="nu">0</span>)
+X_out = rng.<span class="fn">uniform</span>(-<span class="nu">6</span>, <span class="nu">12</span>, size=(<span class="nu">30</span>, <span class="nu">2</span>))               <span class="cm"># 3% injected anomalies, spread anywhere</span>
+X = np.<span class="fn">vstack</span>([X_norm, X_out])
+y = np.r_[np.<span class="fn">zeros</span>(<span class="nu">1000</span>), np.<span class="fn">ones</span>(<span class="nu">30</span>)]                    <span class="cm"># 1 = anomaly (only used for scoring)</span>
+
+detectors = {
+    <span class="st">&quot;IsolationForest&quot;</span>: IsolationForest(contamination=<span class="nu">0.03</span>, random_state=<span class="nu">0</span>),
+    <span class="st">&quot;LOF&quot;</span>:             LocalOutlierFactor(n_neighbors=<span class="nu">20</span>, contamination=<span class="nu">0.03</span>),
+    <span class="st">&quot;EllipticEnvelope&quot;</span>: EllipticEnvelope(contamination=<span class="nu">0.03</span>, random_state=<span class="nu">0</span>),
+}
+k = <span class="nu">30</span>
+<span class="fn">print</span>(<span class="st">f&quot;{&#x27;detector&#x27;:&lt;18}{&#x27;PR-AUC&#x27;:&gt;8}{&#x27;P@30&#x27;:&gt;8}&quot;</span>)
+<span class="kw">for</span> name, det <span class="kw">in</span> detectors.<span class="fn">items</span>():
+    <span class="kw">if</span> name == <span class="st">&quot;LOF&quot;</span>:
+        det.<span class="fn">fit</span>(X); score = -det.negative_outlier_factor_      <span class="cm"># higher = more anomalous</span>
+    <span class="kw">else</span>:
+        det.<span class="fn">fit</span>(X); score = -det.<span class="fn">score_samples</span>(X)
+    top_k = np.<span class="fn">argsort</span>(-score)[:k]
+    <span class="fn">print</span>(<span class="st">f&quot;{name:&lt;18}{average_precision_score(y, score):&gt;8.2f}{y[top_k].mean():&gt;8.2f}&quot;</span>)
+<span class="out"># detector            PR-AUC    P@30</span>
+<span class="out"># IsolationForest       0.75    0.63</span>
+<span class="out"># LOF                   0.86    0.83</span>
+<span class="out"># EllipticEnvelope      0.79    0.73</span></code></pre>
+
+<p>On this data LOF wins because the injected anomalies are spread uniformly and some land close to the two clusters, where only local density catches them. Change the shape of the anomalies and the ranking of methods changes, which is the honest lesson: there is no universally best detector, so keep an evaluation harness (labels, injections, top-k review) and let it choose.</p>
+
+<div class="tbl-wrap">
+<table class="tbl">
+<thead><tr><th>Detector</th><th>Mechanism</th><th>Best when</th><th>Watch out for</th></tr></thead>
+<tbody>
+<tr><td><strong>Robust z-score / IQR</strong></td><td>distance from median in MAD units, per variable</td><td>one or two metrics; monitoring dashboards; first look at any data</td><td>ignores correlations between variables</td></tr>
+<tr><td><strong>Elliptic Envelope (Mahalanobis)</strong></td><td>robust Gaussian ellipse</td><td>low-dimensional, roughly Gaussian numeric data</td><td>breaks with clusters, heavy tails, categorical features</td></tr>
+<tr><td><strong>Isolation Forest</strong></td><td>random splits; short path = anomaly</td><td>default for tabular data, many features, large n</td><td>weak on local anomalies inside dense clusters; axis-aligned</td></tr>
+<tr><td><strong>LOF</strong></td><td>local density ratio (k-NN)</td><td>clusters of varying density; small–medium n</td><td>needs scaling; O(n²) naive; k choice matters</td></tr>
+<tr><td><strong>One-Class SVM</strong></td><td>kernel boundary around normal data</td><td>small smooth datasets</td><td>ν, γ sensitivity; slow on large n</td></tr>
+<tr><td><strong>Autoencoder / forecast residual</strong></td><td>reconstruction or prediction error</td><td>images, sequences, sensors, high-dimensional structure</td><td>needs clean normal training data; threshold drift</td></tr>
+<tr><td><strong>Supervised GBM on scores + labels</strong></td><td>ordinary classifier</td><td>once a few hundred confirmed anomalies exist</td><td>label bias: you only labeled what the old system flagged</td></tr>
+</tbody>
+</table>
+</div>
+
+<h3>Time series, fraud and feedback loops</h3>
+<p>For <strong>time series</strong> (Chapter 14) the recipe is: remove what you can explain (trend, seasonality, known events) with a forecast model, then run a detector on the residuals, with windowed features (rolling mean, rolling std, lag differences) so that collective anomalies become point anomalies in feature space. For <strong>fraud</strong>, remember that fraudsters adapt: the moment you block a pattern, they change it, so the distribution shifts by design; retrain often, keep an unsupervised detector running alongside the supervised one to catch new patterns, and treat the labels with suspicion, because you only ever label what you investigated, and you only investigate what the previous model flagged. This <strong>feedback loop</strong> quietly teaches the next model to look where the last one looked.</p>
+
+<div class="callout warn"><div class="title">Common mistake: alert fatigue</div>
+<p>A detector that fires 400 alerts a day with 3% precision will be muted within a month, and then it catches nothing. Fewer, better alerts always beat more alerts. Set the threshold from the reviewers' capacity, group related alerts into one incident, show the reviewer <em>why</em> the item scored high (the features driving the score; SHAP works on Isolation Forest too, Chapter 20), and measure precision weekly. An alerting system's real metric is the fraction of alerts that get acted on.</p>
+</div>
+
+<div class="callout pro"><div class="title">At work</div>
+<p>Start with robust z-scores on the two or three metrics the domain expert already watches; you will be surprised how often that is enough, and it builds trust. Then Isolation Forest on a wider feature table with a contamination set from the review budget. Ship the ranked list into the reviewers' existing tool, log every decision they make, and in three months you will own a labeled dataset that turns the problem into ordinary supervised learning. The unsupervised model was never the destination; it was the label-collection machine.</p>
+</div>
+
+<div class="callout key"><div class="title">Key idea</div>
+<p>Anomaly detection is <em>ranking by strangeness</em> under a review budget. The score comes from a model of normal (a distribution, a tree ensemble's path length, a local density, a reconstruction); the threshold comes from the business; the evaluation comes from humans reviewing the top of the list. Labels, once they exist, beat every unsupervised method.</p>
+</div>
+
+
+<!-- ============================================================ -->
+<h2 id="s5">5. Causal inference: correlation is not a lever</h2>
+
+<p>Every model in this book so far answers "what will happen?" Business, however, keeps asking "what will happen <em>if we do X</em>?" Those are different questions, and confusing them is the most expensive mistake in applied ML. Ice-cream sales and drowning deaths rise together every summer; a predictive model would happily use ice-cream sales to forecast drownings, and it would be right. Banning ice cream would save nobody, because the common cause is hot weather. Hot weather is a <strong>confounder</strong>: a variable that affects both the "treatment" (ice cream) and the outcome (drowning), creating a correlation with no causal arrow between them.</p>
+
+<div class="callout eli9"><div class="title">Explain it like I'm 9</div>
+<p>Kids who own more books get better grades. Does mailing every kid a box of books raise grades? Probably not much: the families who buy lots of books are also the families who read aloud, help with homework, and can afford tutors. The books are a <em>sign</em> of those things, not the <em>cause</em> of the grades. To find out what books alone do, you would have to hand out books by coin flip and watch. That coin flip is the whole secret of causal inference.</p>
+</div>
+
+<figure class="fig">
+<svg viewBox="0 0 800 300" role="img" aria-label="Left: a causal DAG where engagement (confounder) points to both offer (treatment) and retention (outcome), plus the direct offer-to-retention arrow we want. Right: propensity weighting; treated and untreated groups have different engagement histograms before weighting and matching histograms after">
+  <defs><marker id="arr-f22-7" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+  <!-- DAG -->
+  <text x="190" y="26" text-anchor="middle" class="lbl-strong" font-size="14">The DAG: a confounder opens a back door</text>
+  <rect x="120" y="50" width="140" height="44" class="box-accent"/><text x="190" y="72" text-anchor="middle" class="lbl-strong">Engagement</text><text x="190" y="87" text-anchor="middle" class="lbl" font-size="11">(confounder)</text>
+  <rect x="30" y="180" width="120" height="44" class="box"/><text x="90" y="202" text-anchor="middle" class="lbl-strong">Offer sent</text><text x="90" y="217" text-anchor="middle" class="lbl" font-size="11">(treatment T)</text>
+  <rect x="230" y="180" width="120" height="44" class="box"/><text x="290" y="202" text-anchor="middle" class="lbl-strong">Retained</text><text x="290" y="217" text-anchor="middle" class="lbl" font-size="11">(outcome Y)</text>
+  <line x1="150" y1="94" x2="105" y2="178" class="arrow" marker-end="url(#arr-f22-7)"/>
+  <line x1="230" y1="94" x2="275" y2="178" class="arrow" marker-end="url(#arr-f22-7)"/>
+  <line x1="150" y1="202" x2="228" y2="202" stroke="var(--s7)" stroke-width="2.5" marker-end="url(#arr-f22-7)"/>
+  <text x="190" y="196" text-anchor="middle" class="lbl-strong" fill="var(--s7)" font-size="11">effect we want</text>
+  <text x="95" y="140" text-anchor="end" class="lbl" font-size="11">engaged users</text>
+  <text x="95" y="154" text-anchor="end" class="lbl" font-size="11">get offers more</text>
+  <text x="285" y="140" class="lbl" font-size="11">engaged users</text>
+  <text x="285" y="154" class="lbl" font-size="11">stay anyway</text>
+  <text x="190" y="255" text-anchor="middle" class="lbl">naive T→Y comparison = real effect + back-door path</text>
+  <text x="190" y="273" text-anchor="middle" class="lbl">randomize T, or condition on Engagement, to close it</text>
+
+  <!-- propensity balancing -->
+  <text x="590" y="26" text-anchor="middle" class="lbl-strong" font-size="14">Propensity weighting rebalances the groups</text>
+  <text x="500" y="52" text-anchor="middle" class="lbl">before weighting</text>
+  <line x1="420" y1="150" x2="580" y2="150" class="axis"/>
+  <text x="500" y="166" text-anchor="middle" class="lbl" font-size="11">engagement →</text>
+  <g fill="var(--s2)" fill-opacity=".7"><rect x="425" y="80" width="14" height="70"/><rect x="443" y="100" width="14" height="50"/><rect x="461" y="120" width="14" height="30"/><rect x="479" y="135" width="14" height="15"/><rect x="497" y="143" width="14" height="7"/></g>
+  <g fill="var(--s1)" fill-opacity=".7"><rect x="497" y="140" width="14" height="10"/><rect x="515" y="125" width="14" height="25"/><rect x="533" y="100" width="14" height="50"/><rect x="551" y="80" width="14" height="70"/><rect x="565" y="95" width="12" height="55"/></g>
+  <text x="440" y="72" class="lbl" font-size="11" fill="var(--s2)">untreated</text>
+  <text x="575" y="72" text-anchor="end" class="lbl" font-size="11" fill="var(--s1)">treated</text>
+  <text x="680" y="52" text-anchor="middle" class="lbl">after weighting by 1/p(T | x)</text>
+  <line x1="600" y1="150" x2="760" y2="150" class="axis"/>
+  <text x="680" y="166" text-anchor="middle" class="lbl" font-size="11">engagement →</text>
+  <g fill="var(--s2)" fill-opacity=".55"><rect x="605" y="120" width="14" height="30"/><rect x="623" y="100" width="14" height="50"/><rect x="641" y="85" width="14" height="65"/><rect x="659" y="80" width="14" height="70"/><rect x="677" y="85" width="14" height="65"/><rect x="695" y="100" width="14" height="50"/><rect x="713" y="120" width="14" height="30"/><rect x="731" y="135" width="14" height="15"/></g>
+  <g fill="var(--s1)" fill-opacity=".55"><rect x="609" y="122" width="14" height="28"/><rect x="627" y="102" width="14" height="48"/><rect x="645" y="87" width="14" height="63"/><rect x="663" y="82" width="14" height="68"/><rect x="681" y="87" width="14" height="63"/><rect x="699" y="102" width="14" height="48"/><rect x="717" y="122" width="14" height="28"/><rect x="735" y="137" width="14" height="13"/></g>
+  <text x="590" y="200" text-anchor="middle" class="lbl">propensity p(T | x): probability of being treated given covariates x</text>
+  <text x="590" y="218" text-anchor="middle" class="lbl">rare treated users (low p) get weight 1/p ≫ 1; common ones get ≈ 1</text>
+  <text x="590" y="236" text-anchor="middle" class="lbl">→ a pseudo-population where T is independent of x, as if randomized</text>
+  <text x="590" y="266" text-anchor="middle" class="lbl-strong" font-size="11">only works for confounders you measured</text>
+  <text x="590" y="282" text-anchor="middle" class="lbl" font-size="11">and where both groups overlap (positivity)</text>
+</svg>
+<figcaption><strong>Figure 22.7 — Confounding and one repair.</strong> Left: the DAG makes the problem visible: Engagement causes both the offer and the outcome, so the naive treated-vs-untreated gap mixes the real effect with the back-door path. Right: inverse-propensity weighting reweights users so that the treated and untreated groups have the same engagement distribution, mimicking a randomized experiment — but only over the confounders you actually measured.</figcaption>
+</figure>
+
+<h3>Randomized experiments: the gold standard</h3>
+<p>If you assign the treatment by coin flip, nothing else can be correlated with it, so no back door exists and the difference in outcomes <em>is</em> the causal effect. That is why an <strong>A/B test</strong> is the most powerful tool in this chapter and the one you should fight for. Its discipline is simple but violated constantly:</p>
+
+<ol class="steps">
+  <li><strong>Randomize the unit that matters.</strong> If users talk to each other (marketplaces, social features), randomize by region or time, not by user, or the control group is contaminated.</li>
+  <li><strong>Decide the sample size before you start.</strong> To detect a 1-point lift on a 20% conversion rate at 80% power you need roughly 30,000 users <em>per arm</em>; a power calculation takes one minute and prevents a month of wishful thinking.</li>
+  <li><strong>Do not peek.</strong> Checking the p-value daily and stopping when it dips below 0.05 inflates the false-positive rate several-fold. Fix the duration, or use a sequential testing method built for peeking.</li>
+  <li><strong>Pre-register the metric.</strong> One primary metric, decided in advance; everything else is exploratory. Twenty metrics at α = 0.05 give you a "significant" win by chance most of the time.</li>
+  <li><strong>Watch guardrails.</strong> A ranker that lifts clicks by 5% and complaints by 40% is not a win.</li>
+</ol>
+
+<h3>Observational causal methods, honestly</h3>
+<p>Sometimes you cannot randomize: the treatment already happened, it is unethical to withhold, or the business refuses. Then you estimate the effect from observational data by <strong>adjusting for confounders</strong>, and you must say out loud that the result is only as good as the assumption that you measured all of them. The main tools:</p>
+
+<div class="callout math"><div class="title">The math (optional)</div>
+<p><strong>Regression adjustment:</strong> fit Y = β<sub>0</sub> + τ·T + βᵀx and read τ as the effect, valid if x contains every confounder and the linear form is right. <strong>Propensity score</strong> e(x) = P(T = 1 | x), estimated with any classifier. <strong>Matching</strong> pairs each treated unit with an untreated unit of similar e(x) and compares outcomes within pairs. <strong>Inverse probability weighting (IPW)</strong> estimates the average treatment effect as</p>
+<div class="formula">τ̂<sub>IPW</sub> = (1/n) ∑<sub>i</sub> [ T<sub>i</sub> Y<sub>i</sub> / e(x<sub>i</sub>) − (1 − T<sub>i</sub>) Y<sub>i</sub> / (1 − e(x<sub>i</sub>)) ]</div>
+<p>Each treated unit is up-weighted by how unlikely it was to be treated, so the reweighted treated group looks like the whole population; likewise for controls. It requires <em>overlap</em>: every x must have a real chance of both treatment and control (e(x) not near 0 or 1), otherwise the weights explode. <strong>Difference-in-differences</strong> compares the <em>change</em> in outcome for the treated group to the change for an untreated group over the same period, cancelling any fixed difference between them (assumes parallel trends). <strong>Instrumental variables</strong> use a variable that shifts treatment but affects the outcome only through treatment (a random nudge, a policy cutoff) to recover the effect even with unmeasured confounding; they are powerful and fragile, and belong in an economist's hands.</p>
+</div>
+
+<pre class="code" data-lang="python"><code><span class="cm"># Confounding: a &quot;retention offer&quot; that is sent mostly to engaged customers</span>
+<span class="kw">import</span> numpy <span class="kw">as</span> np
+<span class="kw">from</span> sklearn.linear_model <span class="kw">import</span> LogisticRegression, LinearRegression
+
+rng = np.random.<span class="fn">default_rng</span>(<span class="nu">42</span>)
+n = <span class="nu">50_000</span>
+engagement = rng.<span class="fn">normal</span>(<span class="nu">0</span>, <span class="nu">1</span>, n)                     <span class="cm"># confounder: affects BOTH treatment and outcome</span>
+p_treat = <span class="nu">1</span> / (<span class="nu">1</span> + np.<span class="fn">exp</span>(-<span class="nu">1.5</span> * engagement))       <span class="cm"># engaged customers get the offer more often</span>
+T = rng.<span class="fn">random</span>(n) &lt; p_treat                          <span class="cm"># treatment: got the offer</span>
+TRUE_EFFECT = <span class="nu">0.05</span>                                   <span class="cm"># offer raises retention by 5 points, for everyone</span>
+p_stay = np.<span class="fn">clip</span>(<span class="nu">0.5</span> + <span class="nu">0.15</span> * engagement + TRUE_EFFECT * T, <span class="nu">0</span>, <span class="nu">1</span>)
+Y = rng.<span class="fn">random</span>(n) &lt; p_stay                           <span class="cm"># outcome: stayed</span>
+
+naive = Y[T].<span class="fn">mean</span>() - Y[~T].<span class="fn">mean</span>()
+<span class="fn">print</span>(<span class="st">f&quot;naive difference in retention (treated - untreated): {naive:+.3f}&quot;</span>)
+
+<span class="cm"># 1) regression adjustment: control for the confounder</span>
+X = np.c_[T, engagement]
+adj = LinearRegression().<span class="fn">fit</span>(X, Y).coef_[<span class="nu">0</span>]
+<span class="fn">print</span>(<span class="st">f&quot;regression-adjusted effect:                         {adj:+.3f}&quot;</span>)
+
+<span class="cm"># 2) inverse probability weighting: re-weight so treated/untreated look alike</span>
+ps = LogisticRegression().<span class="fn">fit</span>(engagement[:, <span class="kw">None</span>], T).<span class="fn">predict_proba</span>(engagement[:, <span class="kw">None</span>])[:, <span class="nu">1</span>]
+w = np.<span class="fn">where</span>(T, <span class="nu">1</span> / ps, <span class="nu">1</span> / (<span class="nu">1</span> - ps))
+ipw = np.<span class="fn">average</span>(Y[T], weights=w[T]) - np.<span class="fn">average</span>(Y[~T], weights=w[~T])
+<span class="fn">print</span>(<span class="st">f&quot;IPW effect:                                         {ipw:+.3f}&quot;</span>)
+
+<span class="cm"># 3) the gold standard: randomize</span>
+T_rct = rng.<span class="fn">random</span>(n) &lt; <span class="nu">0.5</span>
+Y_rct = rng.<span class="fn">random</span>(n) &lt; np.<span class="fn">clip</span>(<span class="nu">0.5</span> + <span class="nu">0.15</span> * engagement + TRUE_EFFECT * T_rct, <span class="nu">0</span>, <span class="nu">1</span>)
+<span class="fn">print</span>(<span class="st">f&quot;randomized experiment:                              {Y_rct[T_rct].mean() - Y_rct[~T_rct].mean():+.3f}&quot;</span>)
+<span class="fn">print</span>(<span class="st">f&quot;true effect:                                        {TRUE_EFFECT:+.3f}&quot;</span>)
+<span class="out"># naive difference in retention (treated - untreated): +0.210</span>
+<span class="out"># regression-adjusted effect:                         +0.049</span>
+<span class="out"># IPW effect:                                         +0.052</span>
+<span class="out"># randomized experiment:                              +0.057</span>
+<span class="out"># true effect:                                        +0.050</span></code></pre>
+
+<p>The naive comparison overstates the effect four-fold: the offer looks like it lifts retention by 21 points when the true effect is 5, because engaged customers, who were going to stay anyway, received it more often. Both adjustments recover the truth because we simulated the confounder and measured it. In real data you never know whether you measured them all; the randomized arm is the only line with no asterisk.</p>
+
+<div class="callout warn"><div class="title">Common mistake</div>
+<p>Reading a feature importance or a SHAP value as a causal effect. "Customers who received the discount churn less, so discounts reduce churn" is exactly the ice-cream fallacy when discounts were targeted at loyal customers. A predictive model is trained to exploit confounding, not to remove it; that is what makes it a good predictor and a terrible policy guide. The words to use with stakeholders are "associated with", until an experiment lets you say "causes".</p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s6">6. Uplift modeling: whom to treat</h2>
+
+<p>Here is the sharpest version of the prediction-versus-intervention gap. A churn model tells you <em>who will leave</em>. The retention team wants to know <em>whom a phone call will keep</em>. Those are different people. Some customers will leave whatever you do; some will stay whatever you do; some will be persuaded by the call; and some, annoyingly, will be reminded by the call that they meant to cancel. Only the third group is worth the call. <strong>Uplift modeling</strong> (also: heterogeneous treatment effect estimation) predicts, per customer, the <em>difference</em> the treatment makes.</p>
+
+<figure class="fig">
+<svg viewBox="0 0 800 310" role="img" aria-label="Left: a 2 by 2 grid of customer types by outcome without treatment and with treatment: persuadables, sure things, lost causes, sleeping dogs. Right: a Qini curve showing cumulative incremental conversions versus fraction of population targeted by predicted uplift, compared with a random targeting diagonal">
+  <defs><marker id="arr-f22-8" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+  <text x="200" y="26" text-anchor="middle" class="lbl-strong" font-size="14">Four kinds of customer</text>
+  <!-- axes labels -->
+  <text x="220" y="52" text-anchor="middle" class="lbl">if treated →</text>
+  <text x="140" y="64" text-anchor="middle" class="lbl" font-size="11">stays</text><text x="300" y="64" text-anchor="middle" class="lbl" font-size="11">leaves</text>
+  <text x="46" y="160" text-anchor="middle" class="lbl" transform="rotate(-90 46 160)">if NOT treated ↓</text>
+  <text x="68" y="118" text-anchor="end" class="lbl" font-size="11">leaves</text><text x="68" y="218" text-anchor="end" class="lbl" font-size="11">stays</text>
+  <!-- cells -->
+  <rect x="75" y="72" width="145" height="95" rx="6" fill="var(--good)" fill-opacity=".22" stroke="var(--good)" stroke-width="2"/>
+  <text x="147" y="105" text-anchor="middle" class="lbl-strong">Persuadables</text>
+  <text x="147" y="123" text-anchor="middle" class="lbl" font-size="11">leave alone, stay if called</text>
+  <text x="147" y="150" text-anchor="middle" class="lbl-strong" fill="var(--good)" font-size="11">TARGET THESE</text>
+  <rect x="225" y="72" width="145" height="95" rx="6" class="box"/>
+  <text x="297" y="105" text-anchor="middle" class="lbl-strong">Lost causes</text>
+  <text x="297" y="123" text-anchor="middle" class="lbl" font-size="11">leave either way</text>
+  <text x="297" y="150" text-anchor="middle" class="lbl" font-size="11">wasted call</text>
+  <rect x="75" y="172" width="145" height="95" rx="6" class="box"/>
+  <text x="147" y="205" text-anchor="middle" class="lbl-strong">Sure things</text>
+  <text x="147" y="223" text-anchor="middle" class="lbl" font-size="11">stay either way</text>
+  <text x="147" y="250" text-anchor="middle" class="lbl" font-size="11">wasted call (and discount)</text>
+  <rect x="225" y="172" width="145" height="95" rx="6" fill="var(--critical)" fill-opacity=".18" stroke="var(--critical)" stroke-width="2"/>
+  <text x="297" y="205" text-anchor="middle" class="lbl-strong">Sleeping dogs</text>
+  <text x="297" y="223" text-anchor="middle" class="lbl" font-size="11">stay alone, leave if called</text>
+  <text x="297" y="250" text-anchor="middle" class="lbl-strong" fill="var(--critical)" font-size="11">DO NOT WAKE</text>
+  <text x="222" y="292" text-anchor="middle" class="lbl">a churn model ranks by "leaves if not treated": it mixes persuadables with lost causes</text>
+
+  <!-- Qini curve -->
+  <text x="600" y="26" text-anchor="middle" class="lbl-strong" font-size="14">Qini curve: incremental wins vs. share targeted</text>
+  <line x1="450" y1="260" x2="770" y2="260" class="axis" marker-end="url(#arr-f22-8)"/>
+  <line x1="450" y1="260" x2="450" y2="50" class="axis" marker-end="url(#arr-f22-8)"/>
+  <text x="610" y="282" text-anchor="middle" class="lbl">fraction of customers targeted (by predicted uplift)</text>
+  <text x="438" y="155" text-anchor="middle" class="lbl" transform="rotate(-90 438 155)">cumulative extra retentions</text>
+  <g class="lbl" font-size="11"><text x="450" y="274" text-anchor="middle">0</text><text x="610" y="274" text-anchor="middle">50%</text><text x="770" y="274" text-anchor="middle">100%</text></g>
+  <!-- random diagonal -->
+  <line x1="450" y1="260" x2="770" y2="170" stroke="var(--ink-3)" stroke-width="1.5" stroke-dasharray="5 4"/>
+  <text x="700" y="215" class="lbl" font-size="11">random targeting</text>
+  <!-- model curve: rises steeply, peaks, declines (sleeping dogs) -->
+  <path d="M450,260 C500,150 560,100 610,95 C650,92 690,110 730,140 C750,155 760,163 770,170" fill="none" stroke="var(--s1)" stroke-width="3"/>
+  <text x="560" y="88" class="lbl-strong" fill="var(--s1)" font-size="11">uplift model</text>
+  <!-- optimal point -->
+  <circle cx="610" cy="95" r="5" fill="var(--s7)"/>
+  <line x1="610" y1="95" x2="610" y2="260" stroke="var(--s7)" stroke-dasharray="3 3"/>
+  <text x="618" y="118" class="lbl" fill="var(--s7)" font-weight="700" font-size="11">stop here: beyond this,</text>
+  <text x="618" y="132" class="lbl" fill="var(--s7)" font-weight="700" font-size="11">extra calls lose customers</text>
+  <!-- area annotation -->
+  <text x="520" y="200" class="lbl" font-size="11">area between curves</text>
+  <text x="520" y="214" class="lbl" font-size="11">= Qini coefficient</text>
+  <line x1="770" y1="170" x2="770" y2="260" stroke="var(--ink-3)" stroke-dasharray="2 3"/>
+  <text x="760" y="176" text-anchor="end" class="lbl" font-size="10">treat all = average effect</text>
+</svg>
+<figcaption><strong>Figure 22.8 — Whom to treat, and how to know the model is right.</strong> Left: only persuadables generate value; sleeping dogs generate negative value, and a churn score cannot tell them apart from lost causes. Right: the Qini curve targets customers in order of predicted uplift and plots the observed incremental outcome (treated minus control, in a held-out randomized test); a good model rises steeply, peaks, and can fall when it reaches the sleeping dogs.</figcaption>
+</figure>
+
+<h3>Meta-learners: S, T and X</h3>
+<p>Uplift needs experimental (or well-adjusted observational) data with a treatment column. Given that, the simplest estimators reuse ordinary supervised models:</p>
+<ul>
+  <li><strong>S-learner</strong> ("single"): fit one model f(x, T) with the treatment as a feature; uplift τ̂(x) = f(x, 1) − f(x, 0). Simple, but a regularized model may ignore T when its effect is small relative to the other features, shrinking all uplifts toward zero.</li>
+  <li><strong>T-learner</strong> ("two"): fit f<sub>1</sub> on treated rows and f<sub>0</sub> on control rows; τ̂(x) = f<sub>1</sub>(x) − f<sub>0</sub>(x). Easy, robust, the default. Its weakness is that the two models' errors do not cancel, so the difference is noisy when one arm is small.</li>
+  <li><strong>X-learner</strong>: a T-learner followed by a second stage that imputes each unit's individual effect (Y − f<sub>0</sub>(x) for treated, f<sub>1</sub>(x) − Y for controls), models those, and blends with propensity weights. Better when the arms are unbalanced. Beyond that: uplift trees that split directly on the difference in outcome rates, causal forests, and double machine learning; the <code>causalml</code> and <code>econml</code> libraries implement them all.</li>
+</ul>
+
+<pre class="code" data-lang="python"><code><span class="cm"># Uplift modeling: predict WHO the offer will change, not who will stay</span>
+<span class="kw">import</span> numpy <span class="kw">as</span> np
+<span class="kw">from</span> sklearn.ensemble <span class="kw">import</span> GradientBoostingClassifier
+
+rng = np.random.<span class="fn">default_rng</span>(<span class="nu">7</span>)
+n = <span class="nu">20_000</span>
+X = rng.<span class="fn">normal</span>(size=(n, <span class="nu">4</span>))                 <span class="cm"># x0 = price sensitivity, x1 = loyalty, x2, x3 = noise</span>
+T = rng.<span class="fn">random</span>(n) &lt; <span class="nu">0.5</span>                     <span class="cm"># a real randomized campaign: coin-flip treatment</span>
+base = <span class="nu">1</span> / (<span class="nu">1</span> + np.<span class="fn">exp</span>(-<span class="nu">0.8</span> * X[:, <span class="nu">1</span>]))     <span class="cm"># loyal customers stay anyway (sure things)</span>
+tau = <span class="nu">0.25</span> * (X[:, <span class="nu">0</span>] &gt; <span class="nu">0.5</span>) - <span class="nu">0.10</span> * (X[:, <span class="nu">1</span>] &gt; <span class="nu">1.0</span>)   <span class="cm"># persuadables +25 pts, sleeping dogs -10 pts</span>
+Y = rng.<span class="fn">random</span>(n) &lt; np.<span class="fn">clip</span>(base + tau * T, <span class="nu">0</span>, <span class="nu">1</span>)
+
+tr = np.<span class="fn">arange</span>(n) &lt; <span class="nu">12_000</span>                  <span class="cm"># first 12k train, rest test</span>
+te = ~tr
+gbm = <span class="kw">lambda</span>: GradientBoostingClassifier(n_estimators=<span class="nu">100</span>, max_depth=<span class="nu">3</span>, random_state=<span class="nu">0</span>)
+m1 = <span class="fn">gbm</span>().<span class="fn">fit</span>(X[tr &amp; T], Y[tr &amp; T])        <span class="cm"># T-learner: one model per arm</span>
+m0 = <span class="fn">gbm</span>().<span class="fn">fit</span>(X[tr &amp; ~T], Y[tr &amp; ~T])
+tau_hat = m1.<span class="fn">predict_proba</span>(X[te])[:, <span class="nu">1</span>] - m0.<span class="fn">predict_proba</span>(X[te])[:, <span class="nu">1</span>]
+
+<span class="cm"># Qini-style check: sort test customers by predicted uplift, then measure the OBSERVED</span>
+<span class="cm"># treated-minus-control retention gap inside each decile</span>
+order = np.<span class="fn">argsort</span>(-tau_hat)
+Yo, To, tau_o = Y[te][order], T[te][order], tau_hat[order]
+gap = <span class="kw">lambda</span> sl: Yo[sl][To[sl]].<span class="fn">mean</span>() - Yo[sl][~To[sl]].<span class="fn">mean</span>()
+d = <span class="fn">len</span>(order) // <span class="nu">10</span>
+<span class="fn">print</span>(<span class="st">f&quot;{&#x27;decile&#x27;:&lt;8}{&#x27;observed uplift&#x27;:&gt;16}{&#x27;mean predicted&#x27;:&gt;16}&quot;</span>)
+<span class="kw">for</span> i <span class="kw">in</span> <span class="fn">range</span>(<span class="nu">10</span>):
+    sl = <span class="fn">slice</span>(i * d, (i + <span class="nu">1</span>) * d)
+    <span class="fn">print</span>(<span class="st">f&quot;{i + 1:&lt;8}{gap(sl):&gt;+16.3f}{tau_o[sl].mean():&gt;+16.3f}&quot;</span>)
+<span class="fn">print</span>(<span class="st">f&quot;average uplift if we treat everyone: {gap(slice(None)):+.3f}&quot;</span>)
+<span class="out"># decile   observed uplift  mean predicted</span>
+<span class="out"># 1                 +0.235          +0.346</span>
+<span class="out"># 2                 +0.261          +0.260</span>
+<span class="out"># 3                 +0.148          +0.181</span>
+<span class="out"># 4                 +0.024          +0.104</span>
+<span class="out"># 5                 +0.022          +0.059</span>
+<span class="out"># 6                 -0.046          +0.028</span>
+<span class="out"># 7                 -0.001          +0.002</span>
+<span class="out"># 8                 -0.037          -0.021</span>
+<span class="out"># 9                 +0.019          -0.053</span>
+<span class="out"># 10                -0.052          -0.121</span>
+<span class="out"># average uplift if we treat everyone: +0.057</span></code></pre>
+
+<p>The T-learner puts the persuadables (high price sensitivity) in the top deciles, where the <em>observed</em> treated-minus-control gap is 24–26 points against a population average of 6, and it correctly predicts negative uplift for the bottom decile, which holds the sleeping dogs (the very loyal, who react badly to being nudged). Contact the top three deciles and you capture most of the gain at 30% of the cost; contact everyone and you actively lose the last decile. That table, translated into money (Chapter 23), is the business case.</p>
+
+<div class="callout pro"><div class="title">At work</div>
+<p>Uplift is the right frame whenever a <em>costly, optional</em> action is applied to a <em>subset</em> of people: retention offers, marketing emails, discount coupons, sales-rep calls, dunning strategies, medical outreach. Two conditions must hold before you build one: you need a treatment log with a randomized (or at least not fully targeted) control group, and the treatment effect must plausibly vary across people, otherwise a single average effect and a cost threshold is all you need. If the team has never run an experiment, your first deliverable is not a model; it is a 10% random holdout on the next campaign. That holdout is the training set for everything that follows.</p>
+</div>
+
+<div class="callout key"><div class="title">Key idea</div>
+<p>Prediction tells you what will happen; causal inference tells you what you can change. Randomization removes confounding by construction; adjustment (regression, propensity scores, IPW, diff-in-diff) removes it only for confounders you measured. Uplift modeling turns a causal question into a ranking: sort people by the effect the treatment has on <em>them</em>, and act on the top.</p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s7">7. Reinforcement learning primer &amp; bandits</h2>
+
+<p><strong>Reinforcement learning (RL)</strong> is the third family from Chapter 1: an <strong>agent</strong> observes a <strong>state</strong>, takes an <strong>action</strong>, receives a <strong>reward</strong> and a new state, and learns a <strong>policy</strong> (state → action) that maximizes the total reward over time. There is no answer key. The feedback is delayed and partial: you learn that a chess move was bad forty moves later, and you only ever learn about the moves you tried.</p>
+
+<div class="callout eli9"><div class="title">Explain it like I'm 9</div>
+<p>Training a puppy. You do not explain "sit"; the puppy tries things, and when it happens to sit it gets a treat. The puppy's whole job is to figure out which of its actions, in which situations, leads to treats, even when the treat comes a bit later. The tricky part: if the puppy only ever repeats the first thing that earned a treat, it never discovers that "roll over" earns two. It has to keep trying new things sometimes. That is exploration versus exploitation, and it is the central tension of this whole section.</p>
+</div>
+
+<figure class="fig">
+<svg viewBox="0 0 800 280" role="img" aria-label="The agent-environment loop: the agent observes state s and reward r, chooses action a via its policy; the environment returns next state and reward; value V(s) is the expected discounted sum of future rewards; a small timeline shows rewards discounted by gamma to the power t">
+  <defs><marker id="arr-f22-9" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+  <text x="200" y="26" text-anchor="middle" class="lbl-strong" font-size="14">The loop</text>
+  <rect x="60" y="60" width="150" height="70" class="box-accent"/><text x="135" y="90" text-anchor="middle" class="lbl-strong">Agent</text><text x="135" y="108" text-anchor="middle" class="lbl" font-size="11">policy π(a | s)</text>
+  <rect x="60" y="190" width="150" height="70" class="box"/><text x="135" y="220" text-anchor="middle" class="lbl-strong">Environment</text><text x="135" y="238" text-anchor="middle" class="lbl" font-size="11">P(s′, r | s, a)</text>
+  <path d="M210,95 L290,95 L290,225 L212,225" class="arrow" fill="none" marker-end="url(#arr-f22-9)"/>
+  <text x="300" y="160" class="lbl-strong">action a<tspan font-size="9" dy="4">t</tspan></text>
+  <path d="M60,225 L20,225 L20,95 L58,95" class="arrow" fill="none" marker-end="url(#arr-f22-9)"/>
+  <text x="12" y="150" text-anchor="start" class="lbl-strong" font-size="11">s<tspan font-size="8" dy="4">t+1</tspan><tspan dy="-4">, r</tspan><tspan font-size="8" dy="4">t+1</tspan></text>
+  <text x="135" y="165" text-anchor="middle" class="lbl" font-size="11">state: what the agent can see</text>
+  <text x="200" y="272" text-anchor="middle" class="lbl">MDP: next state depends only on (s, a), not on history</text>
+
+  <!-- value & discounting -->
+  <text x="590" y="26" text-anchor="middle" class="lbl-strong" font-size="14">Value = discounted future reward</text>
+  <line x1="420" y1="150" x2="770" y2="150" class="axis" marker-end="url(#arr-f22-9)"/>
+  <text x="600" y="172" text-anchor="middle" class="lbl">time step k after now</text>
+  <g class="lbl" font-size="11" text-anchor="middle"><text x="440" y="166">0</text><text x="500" y="166">1</text><text x="560" y="166">2</text><text x="620" y="166">3</text><text x="680" y="166">4</text><text x="740" y="166">5</text></g>
+  <g fill="var(--s1)">
+    <rect x="428" y="60" width="24" height="90"/><rect x="488" y="69" width="24" height="81"/><rect x="548" y="77" width="24" height="73"/><rect x="608" y="84" width="24" height="66"/><rect x="668" y="91" width="24" height="59"/><rect x="728" y="97" width="24" height="53"/>
+  </g>
+  <g class="lbl" font-size="10" text-anchor="middle" fill="var(--ink)"><text x="440" y="54">1</text><text x="500" y="63">γ</text><text x="560" y="71">γ²</text><text x="620" y="78">γ³</text><text x="680" y="85">γ⁴</text><text x="740" y="91">γ⁵</text></g>
+  <text x="595" y="200" text-anchor="middle" class="lbl">weight on a reward k steps ahead = γ<tspan font-size="9" dy="-5">k</tspan><tspan dy="5">   (γ = 0.9 shown)</tspan></text>
+  <text x="595" y="220" text-anchor="middle" class="lbl">γ → 0: greedy, only now matters.  γ → 1: patient, far-sighted, slower to learn</text>
+  <text x="595" y="248" text-anchor="middle" class="lbl-strong">V<tspan font-size="9" dy="4">π</tspan><tspan dy="-4">(s) = E[ r</tspan><tspan font-size="9" dy="4">1</tspan><tspan dy="-4"> + γ r</tspan><tspan font-size="9" dy="4">2</tspan><tspan dy="-4"> + γ² r</tspan><tspan font-size="9" dy="4">3</tspan><tspan dy="-4"> + … | s, π ]</tspan></text>
+  <text x="595" y="268" text-anchor="middle" class="lbl">Q(s, a): the same, for "take a now, follow π after"</text>
+</svg>
+<figcaption><strong>Figure 22.9 — Agent, environment, value.</strong> Left: the loop that defines RL; the Markov property (the next state depends only on the current state and action) makes it a Markov decision process (MDP). Right: the value of a state is the expected sum of future rewards, each discounted by γ per step, so that near rewards count more and infinite sums stay finite.</figcaption>
+</figure>
+
+<div class="callout math"><div class="title">The math (optional)</div>
+<p>An MDP is (S, A, P, R, γ): states, actions, transition probabilities P(s′ | s, a), reward function R(s, a) and discount γ ∈ [0, 1). The <strong>return</strong> from time t is</p>
+<div class="formula">G<sub>t</sub> = r<sub>t+1</sub> + γ r<sub>t+2</sub> + γ<sup>2</sup> r<sub>t+3</sub> + … = ∑<sub>k≥0</sub> γ<sup>k</sup> r<sub>t+k+1</sub></div>
+<p>The state value V<sub>π</sub>(s) = E[G<sub>t</sub> | s<sub>t</sub> = s] under policy π, and the action value Q<sub>π</sub>(s, a) is the same with the first action fixed. The optimal values satisfy the <strong>Bellman equation</strong>:</p>
+<div class="formula">Q*(s, a) = E[ r + γ · max<sub>a′</sub> Q*(s′, a′) | s, a ]</div>
+<p>which says: the value of taking a in s equals the immediate reward plus the discounted value of the best action in the next state. Every RL algorithm is some way of solving this equation from samples.</p>
+</div>
+
+<h3>Multi-armed bandits: the RL you will actually use</h3>
+<p>Strip the MDP down to a single state (no state transitions, every round is independent) and you have a <strong>multi-armed bandit</strong>: k slot machines with unknown payout rates, one pull per round, maximize total payout. It is the mathematical form of "which headline / banner / price / recommendation should we show?" and it is the version of RL that runs in real products, because it needs no simulator and its failure modes are mild. The bandit's only problem is the exploration–exploitation trade-off, and three classic strategies solve it:</p>
+
+<figure class="fig">
+<svg viewBox="0 0 800 280" role="img" aria-label="Three bandit strategies over four arms: epsilon-greedy picks the best mean except with probability epsilon; UCB picks the arm with the highest mean plus confidence bonus, shown as error bars; Thompson sampling draws one sample from each arm's Beta posterior, shown as bell curves, and picks the largest">
+  <!-- eps-greedy -->
+  <text x="140" y="26" text-anchor="middle" class="lbl-strong" font-size="14">ε-greedy</text>
+  <line x1="40" y1="200" x2="250" y2="200" class="axis"/>
+  <g fill="var(--s1)"><rect x="55" y="170" width="30" height="30"/><rect x="105" y="150" width="30" height="50"/><rect x="155" y="120" width="30" height="80"/><rect x="205" y="135" width="30" height="65"/></g>
+  <g class="lbl" font-size="11" text-anchor="middle"><text x="70" y="216">A</text><text x="120" y="216">B</text><text x="170" y="216">C</text><text x="220" y="216">D</text></g>
+  <text x="170" y="110" text-anchor="middle" class="lbl-strong" fill="var(--s1)" font-size="11">best mean → 90%</text>
+  <text x="145" y="244" text-anchor="middle" class="lbl">with prob. ε = 0.1: random arm</text>
+  <text x="145" y="262" text-anchor="middle" class="lbl" font-size="11">simple; keeps exploring bad arms forever</text>
+
+  <!-- UCB -->
+  <text x="400" y="26" text-anchor="middle" class="lbl-strong" font-size="14">UCB (optimism)</text>
+  <line x1="300" y1="200" x2="510" y2="200" class="axis"/>
+  <g fill="var(--s1)"><rect x="315" y="170" width="30" height="30"/><rect x="365" y="150" width="30" height="50"/><rect x="415" y="120" width="30" height="80"/><rect x="465" y="135" width="30" height="65"/></g>
+  <g stroke="var(--s2)" stroke-width="2">
+    <line x1="330" y1="170" x2="330" y2="90"/><line x1="322" y1="90" x2="338" y2="90"/>
+    <line x1="380" y1="150" x2="380" y2="118"/><line x1="372" y1="118" x2="388" y2="118"/>
+    <line x1="430" y1="120" x2="430" y2="105"/><line x1="422" y1="105" x2="438" y2="105"/>
+    <line x1="480" y1="135" x2="480" y2="80"/><line x1="472" y1="80" x2="488" y2="80"/>
+  </g>
+  <g class="lbl" font-size="11" text-anchor="middle"><text x="330" y="216">A</text><text x="380" y="216">B</text><text x="430" y="216">C</text><text x="480" y="216">D</text></g>
+  <text x="480" y="70" text-anchor="middle" class="lbl-strong" fill="var(--s2)" font-size="11">pick D: highest top</text>
+  <text x="405" y="244" text-anchor="middle" class="lbl">bonus √(2 ln t / n<tspan font-size="9" dy="4">a</tspan><tspan dy="-4">) shrinks as an arm is pulled</tspan></text>
+  <text x="405" y="262" text-anchor="middle" class="lbl" font-size="11">rarely-pulled arms look promising until proven otherwise</text>
+
+  <!-- Thompson -->
+  <text x="655" y="26" text-anchor="middle" class="lbl-strong" font-size="14">Thompson sampling</text>
+  <line x1="560" y1="200" x2="770" y2="200" class="axis"/>
+  <!-- Beta posteriors as curves -->
+  <path d="M565,200 C580,200 585,150 600,150 C615,150 620,200 640,200" fill="var(--s1)" fill-opacity=".25" stroke="var(--s1)" stroke-width="1.5"/>
+  <path d="M600,200 C620,200 630,120 650,120 C670,120 675,200 700,200" fill="var(--s1)" fill-opacity=".25" stroke="var(--s1)" stroke-width="1.5"/>
+  <path d="M655,200 C675,200 680,70 700,70 C720,70 725,200 745,200" fill="var(--s3)" fill-opacity=".3" stroke="var(--s3)" stroke-width="2"/>
+  <path d="M640,200 C660,200 675,160 720,160 C765,160 770,200 770,200" fill="var(--s2)" fill-opacity=".2" stroke="var(--s2)" stroke-width="1.5"/>
+  <text x="600" y="140" text-anchor="middle" class="lbl" font-size="10">A</text><text x="650" y="110" text-anchor="middle" class="lbl" font-size="10">B</text><text x="700" y="60" text-anchor="middle" class="lbl" font-size="10">C</text><text x="735" y="150" text-anchor="middle" class="lbl" font-size="10">D (wide: few pulls)</text>
+  <g fill="var(--s7)"><circle cx="596" cy="200" r="4"/><circle cx="662" cy="200" r="4"/><circle cx="712" cy="200" r="4"/><circle cx="748" cy="200" r="4"/></g>
+  <text x="748" y="222" text-anchor="middle" class="lbl-strong" fill="var(--s7)" font-size="11">D's draw wins</text>
+  <text x="655" y="244" text-anchor="middle" class="lbl">draw one sample per arm from Beta(wins+1, losses+1)</text>
+  <text x="655" y="262" text-anchor="middle" class="lbl" font-size="11">explores exactly as much as the uncertainty warrants</text>
+</svg>
+<figcaption><strong>Figure 22.10 — Three ways to balance exploring and exploiting.</strong> ε-greedy explores a fixed fraction of the time regardless of what it has learned. UCB adds an uncertainty bonus that automatically shrinks for well-tested arms. Thompson sampling keeps a posterior per arm and acts on a random draw, so uncertain arms get tried in proportion to how plausibly they might be best; it is the usual production choice.</figcaption>
+</figure>
+
+<pre class="code" data-lang="python"><code><span class="cm"># Multi-armed bandits: epsilon-greedy vs UCB vs Thompson sampling, judged by cumulative regret</span>
+<span class="kw">import</span> numpy <span class="kw">as</span> np
+rng = np.random.<span class="fn">default_rng</span>(<span class="nu">0</span>)
+p_true = np.<span class="fn">array</span>([<span class="nu">0.05</span>, <span class="nu">0.08</span>, <span class="nu">0.12</span>, <span class="nu">0.10</span>])   <span class="cm"># click rates of 4 banner variants (unknown to the agent)</span>
+best = p_true.<span class="fn">max</span>()
+T = <span class="nu">5000</span>
+
+<span class="kw">def</span> <span class="fn">run</span>(policy):
+    n = np.<span class="fn">zeros</span>(<span class="nu">4</span>); s = np.<span class="fn">zeros</span>(<span class="nu">4</span>); regret = <span class="nu">0.0</span>
+    <span class="kw">for</span> t <span class="kw">in</span> <span class="fn">range</span>(<span class="nu">1</span>, T + <span class="nu">1</span>):
+        <span class="kw">if</span> policy == <span class="st">&quot;eps-greedy&quot;</span>:                 <span class="cm"># explore 10% of the time, otherwise pick the best-so-far</span>
+            a = rng.<span class="fn">integers</span>(<span class="nu">4</span>) <span class="kw">if</span> rng.<span class="fn">random</span>() &lt; <span class="nu">0.1</span> <span class="kw">else</span> <span class="fn">int</span>(np.<span class="fn">argmax</span>(s / np.<span class="fn">maximum</span>(n, <span class="nu">1</span>)))
+        <span class="kw">elif</span> policy == <span class="st">&quot;ucb&quot;</span>:                      <span class="cm"># optimism: mean + exploration bonus that shrinks with pulls</span>
+            a = t - <span class="nu">1</span> <span class="kw">if</span> t &lt;= <span class="nu">4</span> <span class="kw">else</span> <span class="fn">int</span>(np.<span class="fn">argmax</span>(s / n + np.<span class="fn">sqrt</span>(<span class="nu">2</span> * np.<span class="fn">log</span>(t) / n)))
+        <span class="kw">else</span>:                                      <span class="cm"># thompson: sample a plausible rate per arm from its Beta posterior</span>
+            a = <span class="fn">int</span>(np.<span class="fn">argmax</span>(rng.<span class="fn">beta</span>(<span class="nu">1</span> + s, <span class="nu">1</span> + n - s)))
+        r = rng.<span class="fn">random</span>() &lt; p_true[a]
+        n[a] += <span class="nu">1</span>; s[a] += r
+        regret += best - p_true[a]                 <span class="cm"># expected clicks lost by not pulling the best arm</span>
+    <span class="kw">return</span> regret, n
+
+<span class="kw">for</span> pol <span class="kw">in</span> [<span class="st">&quot;eps-greedy&quot;</span>, <span class="st">&quot;ucb&quot;</span>, <span class="st">&quot;thompson&quot;</span>]:
+    reg, n = <span class="fn">run</span>(pol)
+    <span class="fn">print</span>(<span class="st">f&quot;{pol:&lt;11} regret = {reg:6.1f}   pulls per arm = {n.astype(int)}&quot;</span>)
+<span class="fn">print</span>(<span class="st">f&quot;show-each-variant-equally regret = {T * (best - p_true.mean()):.1f}&quot;</span>)
+<span class="out"># eps-greedy  regret =   25.5   pulls per arm = [ 226  170 4458  146]</span>
+<span class="out"># ucb         regret =  115.6   pulls per arm = [ 651 1041 1889 1419]</span>
+<span class="out"># thompson    regret =   17.0   pulls per arm = [  88  165 4535  212]</span>
+<span class="out"># show-each-variant-equally regret = 162.5</span></code></pre>
+
+<p>Read the pull counts: ε-greedy and Thompson both concentrated on arm C (the 12% arm), while UCB, whose exploration bonus assumes rewards can vary across the full [0, 1] range, kept testing the other arms far longer than these tiny click rates warranted; its regret is still under the "show every variant equally" baseline, which is what a classic A/B test costs. That is the bandit's selling point in one line: a fixed-split A/B test <em>pays the full price of exploration for the whole test</em>, a bandit pays it only while the answer is uncertain. The cost is statistical: a bandit's final estimates of the losing arms are noisy (it stopped pulling them), and adaptive allocation complicates the p-value. Use bandits when the goal is to <em>earn</em> during the test (headlines, offers, ad creatives); use fixed A/B tests when the goal is to <em>learn</em> precisely (pricing decisions you will defend to the board).</p>
+
+<h3>Contextual bandits</h3>
+<p>Add features (the user, the time, the device) and let the reward model depend on them, and you have a <strong>contextual bandit</strong>: each round, predict the reward of every arm given the context, pick with Thompson sampling or UCB over the model's uncertainty, observe, update. This is the workhorse of personalized news, ad and recommendation exploration at scale, and it is the honest answer to the cold-start and popularity-bias problems of Section 2: the exploration slot in Figure 22.3 is a contextual bandit.</p>
+
+<!-- ============================================================ -->
+<h2 id="s8">8. Q-learning on a gridworld</h2>
+
+<p>Full RL brings back states and transitions. The cleanest algorithm to hold in your head is <strong>tabular Q-learning</strong>: keep a table Q[s, a] of estimated action values, act mostly greedily on it, and after every step nudge the entry you just used toward the reward you saw plus the discounted best value of where you landed. That nudge is the Bellman equation applied to one sample.</p>
+
+<div class="callout math"><div class="title">The math (optional)</div>
+<div class="formula">Q(s, a) ← Q(s, a) + α [ r + γ · max<sub>a′</sub> Q(s′, a′) − Q(s, a) ]</div>
+<p>α is the learning rate (how far to move toward the new estimate), r the reward just received, γ the discount, s′ the next state, and the bracket is the <strong>temporal-difference error</strong>: the gap between what we predicted and what one step of experience suggests. Q-learning is <em>off-policy</em>: it learns the value of the greedy policy even while the agent explores with ε-greedy, because the target uses max<sub>a′</sub> rather than the action actually taken next. Given enough exploration and a decaying α it converges to Q*. Deep Q-networks (DQN) replace the table with a neural network Q(s, a; θ) and the same update becomes a regression loss on the TD error.</p>
+</div>
+
+<pre class="code" data-lang="python"><code><span class="cm"># Tabular Q-learning on a 4x4 gridworld: start top-left, goal bottom-right (+1), pit at row 1 col 2 (-1)</span>
+<span class="kw">import</span> numpy <span class="kw">as</span> np
+rng = np.random.<span class="fn">default_rng</span>(<span class="nu">1</span>)
+N = <span class="nu">4</span>; GOAL = (<span class="nu">3</span>, <span class="nu">3</span>); PIT = (<span class="nu">1</span>, <span class="nu">2</span>)
+moves = {<span class="nu">0</span>: (-<span class="nu">1</span>, <span class="nu">0</span>), <span class="nu">1</span>: (<span class="nu">0</span>, <span class="nu">1</span>), <span class="nu">2</span>: (<span class="nu">1</span>, <span class="nu">0</span>), <span class="nu">3</span>: (<span class="nu">0</span>, -<span class="nu">1</span>)}   <span class="cm"># up, right, down, left</span>
+arrows = <span class="st">&quot;↑→↓←&quot;</span>
+Q = np.<span class="fn">zeros</span>((N, N, <span class="nu">4</span>))                                   <span class="cm"># Q[row, col, action]</span>
+alpha, gamma, eps = <span class="nu">0.2</span>, <span class="nu">0.9</span>, <span class="nu">0.2</span>                         <span class="cm"># learning rate, discount, exploration</span>
+
+<span class="kw">def</span> <span class="fn">step</span>(s, a):
+    r, c = s; dr, dc = moves[a]
+    s2 = (<span class="fn">min</span>(<span class="fn">max</span>(r + dr, <span class="nu">0</span>), N - <span class="nu">1</span>), <span class="fn">min</span>(<span class="fn">max</span>(c + dc, <span class="nu">0</span>), N - <span class="nu">1</span>))   <span class="cm"># walls: bump and stay</span>
+    <span class="kw">if</span> s2 == GOAL: <span class="kw">return</span> s2, <span class="nu">1.0</span>, <span class="kw">True</span>
+    <span class="kw">if</span> s2 == PIT:  <span class="kw">return</span> s2, -<span class="nu">1.0</span>, <span class="kw">True</span>
+    <span class="kw">return</span> s2, -<span class="nu">0.04</span>, <span class="kw">False</span>                               <span class="cm"># small step cost: prefer short paths</span>
+
+<span class="kw">for</span> episode <span class="kw">in</span> <span class="fn">range</span>(<span class="nu">500</span>):
+    s = (<span class="nu">0</span>, <span class="nu">0</span>)
+    <span class="kw">for</span> _ <span class="kw">in</span> <span class="fn">range</span>(<span class="nu">50</span>):
+        a = <span class="fn">int</span>(rng.<span class="fn">integers</span>(<span class="nu">4</span>)) <span class="kw">if</span> rng.<span class="fn">random</span>() &lt; eps <span class="kw">else</span> <span class="fn">int</span>(np.<span class="fn">argmax</span>(Q[s]))
+        s2, r, done = <span class="fn">step</span>(s, a)
+        target = r <span class="kw">if</span> done <span class="kw">else</span> r + gamma * Q[s2].<span class="fn">max</span>()
+        Q[s][a] += alpha * (target - Q[s][a])             <span class="cm"># THE Q-learning update</span>
+        s = s2
+        <span class="kw">if</span> done: <span class="kw">break</span>
+
+<span class="fn">print</span>(<span class="st">&quot;learned policy (G = goal, X = pit):&quot;</span>)
+<span class="kw">for</span> r <span class="kw">in</span> <span class="fn">range</span>(N):
+    <span class="fn">print</span>(<span class="st">&quot; &quot;</span>.<span class="fn">join</span>(<span class="st">&quot;G&quot;</span> <span class="kw">if</span> (r, c) == GOAL <span class="kw">else</span> <span class="st">&quot;X&quot;</span> <span class="kw">if</span> (r, c) == PIT <span class="kw">else</span> arrows[<span class="fn">int</span>(np.<span class="fn">argmax</span>(Q[r, c]))] <span class="kw">for</span> c <span class="kw">in</span> <span class="fn">range</span>(N)))
+<span class="fn">print</span>(<span class="st">&quot;state values V(s) = max_a Q(s,a):&quot;</span>)
+<span class="fn">print</span>(np.<span class="fn">round</span>(Q.<span class="fn">max</span>(axis=<span class="nu">2</span>), <span class="nu">2</span>))
+<span class="out"># learned policy (G = goal, X = pit):</span>
+<span class="out"># → ↓ → ↓</span>
+<span class="out"># → ↓ X ↓</span>
+<span class="out"># → ↓ → ↓</span>
+<span class="out"># → → → G</span>
+<span class="out"># state values V(s) = max_a Q(s,a):</span>
+<span class="out"># [[0.43 0.52 0.52 0.71]</span>
+<span class="out">#  [0.52 0.62 0.   0.85]</span>
+<span class="out">#  [0.62 0.73 0.86 1.  ]</span>
+<span class="out">#  [0.73 0.86 1.   0.  ]]</span></code></pre>
+
+<p>The learned policy is a set of arrows: every state points along a shortest path to the goal that avoids the pit (compare the column-2 states, which route around the X). The value grid shows the discounting at work: 1.0 next to the goal, 0.86 one step further, 0.73 after that; each step back costs a factor of γ = 0.9 plus the −0.04 step penalty. Watch the same process on a larger grid below.</p>
+
+<div class="widget" id="w-ql">
+  <div class="w-title">Interactive: Q-learning gridworld</div>
+  <div class="controls">
+    <button class="btn primary" id="ql-run">Run 100 episodes</button>
+    <button class="btn" id="ql-reset">Reset</button>
+    <span>Episodes: <span class="readout" id="ql-ep">0</span></span>
+    <span>Last 10 avg return: <span class="readout" id="ql-ret">–</span></span>
+    <span>ε = 0.2, α = 0.2, γ = 0.9</span>
+  </div>
+  <svg viewBox="0 0 560 330" id="ql-svg" role="img" aria-label="A five by five gridworld with a start, a goal and a pit; cells are coloured by learned state value and show the greedy policy arrow"></svg>
+  <div class="note">Start top-left, goal (G, +1) bottom-right, pit (X, −1) in the middle, −0.04 per step. Click <em>Run</em> a few times: values spread backwards from the goal like a dye, the arrows near the pit turn away from it, and the average return climbs from negative (random wandering) to about +0.5. Cells far from the goal are learned last: information travels one step per visit. The state-space is 25; a robot arm has 10<sup>30</sup>.</div>
+</div>
+
+<h3>Deep RL and RLHF, in one paragraph</h3>
+<p>When states are images or continuous vectors, the Q-table becomes a neural network (DQN, 2015, Atari), or the network outputs the policy directly and is trained to increase the probability of actions that led to above-average return (policy gradient; PPO is the standard modern variant). The same machinery, with the "environment" being a reward model trained on human preference comparisons, is <strong>RLHF</strong>, the step that turns a raw language model into an assistant (Chapter 19). The reward model is itself a supervised model of "which of these two answers did the human prefer"; PPO then nudges the language model's policy toward answers that score well while a penalty keeps it close to the original model, the RL equivalent of regularization.</p>
+
+<h3>Why RL is hard in production</h3>
+<p>Three reasons full RL stays rare outside games, robotics labs and a few large tech companies. <strong>Sample efficiency and simulators:</strong> Q-learning needed hundreds of episodes for 25 states; real problems need millions of interactions, which means a faithful simulator, and building one is usually harder than the original problem. <strong>Safety:</strong> exploration means deliberately trying actions you suspect are bad; in a game that is free, in a pricing system or a power grid it is not. <strong>Reward hacking:</strong> the agent optimizes the reward you wrote, not the goal you meant, with a creativity that is genuinely unsettling: a boat-racing agent that loops forever collecting bonus points instead of finishing, a recommender that maximizes clicks by recommending outrage. If your reward is a proxy (and it always is), the agent will find the gap between the proxy and the intent. Bandits avoid all three problems by having no state, small exploration cost, and an immediate reward. That is why they are the practical RL.</p>
+
+<div class="callout warn"><div class="title">Common mistake</div>
+<p>Reaching for RL because the problem involves "decisions over time". Most sequential business decisions are better served by a forecast plus an optimizer (predict demand, then solve a scheduling problem), or by a contextual bandit if feedback is immediate. Full RL earns its complexity only when actions change future states in ways you cannot model by hand <em>and</em> you have a simulator or a very cheap, safe way to explore.</p>
+</div>
+
+<div class="callout key"><div class="title">Key idea</div>
+<p>RL learns a policy from rewards by solving the Bellman equation from experience. The exploration–exploitation trade-off is the core difficulty; bandits are its simplest, most useful form. Tabular Q-learning is the mechanism; deep RL swaps the table for a network; RLHF is deep RL with a learned reward. In production, use bandits freely, full RL rarely, and watch the reward for hacks.</p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s9">9. Which advanced topic, when — and honorable mentions</h2>
+
+<div class="tbl-wrap">
+<table class="tbl">
+<thead><tr><th>You are asked…</th><th>Reach for</th><th>First thing to build</th><th>The metric that counts</th><th>Do NOT…</th></tr></thead>
+<tbody>
+<tr><td>"What should we show / suggest to each user?"</td><td>Recommender (Sections 1–2)</td><td>item-item CF on implicit data + popularity fallback</td><td>online CTR / conversion lift in an A/B test; NDCG@k offline</td><td>ship on offline NDCG alone; treat blanks as dislikes</td></tr>
+<tr><td>"Flag the weird ones" with no labels</td><td>Anomaly detection (3–4)</td><td>robust z-scores → Isolation Forest with a review budget</td><td>precision of top-k reviewed by humans; PR-AUC once labels exist</td><td>use library-default thresholds; ignore alert fatigue</td></tr>
+<tr><td>"Does X cause Y?" / "Did the campaign work?"</td><td>Causal inference (5)</td><td>an A/B test with a pre-registered metric and sample size</td><td>effect size with a confidence interval</td><td>read feature importance as causation; peek at p-values</td></tr>
+<tr><td>"Whom should we call / discount / email?"</td><td>Uplift modeling (6)</td><td>a 10% random holdout on the next campaign, then a T-learner</td><td>Qini / observed uplift by decile, in money</td><td>target by churn probability</td></tr>
+<tr><td>"Which variant / price / headline wins, while earning?"</td><td>Bandits (7)</td><td>Thompson sampling over the variants</td><td>cumulative reward (regret)</td><td>expect precise estimates for the losing arms</td></tr>
+<tr><td>"Control this system over time"</td><td>RL (8), maybe</td><td>a forecast + optimizer first; RL only with a simulator</td><td>long-run reward on the real system, safely</td><td>explore on the live system without guardrails</td></tr>
+</tbody>
+</table>
+</div>
+
+<h3>Honorable mentions</h3>
+<p><strong>Survival analysis.</strong> When the question is "how long until…" (churn, failure, repayment) and many records are still alive at the end of your data (censored), a regression on "days until event" silently drops or distorts them. Survival models (Kaplan–Meier curves, Cox proportional hazards, gradient-boosted survival trees in <code>scikit-survival</code>) use the censored rows correctly and output a full time-to-event curve rather than a point. Reach for them whenever the label is a duration and some durations are unfinished.</p>
+
+<p><strong>Graph ML.</strong> When the rows are connected (customers who transact with each other, molecules, road networks, citation graphs), the neighbourhood is a feature. Start with hand-made graph features (degree, PageRank, how many fraudulent neighbours), which capture most of the value inside a GBM; graduate to graph neural networks (message passing, where each node's embedding aggregates its neighbours') when the structure is rich and the labels are plentiful. Fraud rings and recommendation are the classic wins.</p>
+
+<p><strong>AutoML.</strong> Tools like AutoGluon, FLAML and H2O search over models, preprocessing and hyperparameters automatically, and on clean tabular data they produce a strong ensemble in an hour. They are excellent for a baseline and a sanity check ("is my hand-built model in the right ballpark?") and poor at the parts that actually decide a project: target definition, leakage, and business translation. Use them as a fast second opinion, not as the workflow.</p>
+
+<p><strong>TabPFN.</strong> A transformer pre-trained on millions of synthetic tabular datasets that performs classification on a new small table (up to a few thousand rows) with <em>no training</em>, by in-context learning. On small, clean, numeric datasets it is often the best model available at zero tuning cost. Try it when n &lt; 10,000 and you need an answer today; verify it with the same cross-validation you would use for anything else.</p>
+
+<p><strong>Semi-supervised and active learning.</strong> Labels are the expensive part of most projects. Semi-supervised methods use the unlabeled majority (pseudo-labeling confident predictions, consistency regularization) to improve a model trained on a small labeled set. <strong>Active learning</strong> chooses <em>which</em> unlabeled rows to send to the human labeler, typically the ones the model is least certain about or the ones most representative of a cluster, so that every label buys the maximum improvement. If you are about to pay people to label 50,000 examples, an active-learning loop usually gets the same model from 10,000.</p>
+
+<div class="callout pro"><div class="title">At work</div>
+<p>The pattern across every topic in this chapter: the "advanced" method is rarely the first deliverable. The first deliverable is the <em>infrastructure that makes the method possible</em>: impression logs for a recommender, a review queue that captures labels for anomaly detection, a random holdout for causal and uplift work, a reward log for bandits. Build that in week one, and the sophisticated model becomes a two-week project instead of an impossible one.</p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="quiz">Quiz</h2>
+<div class="quiz">
+  <h3>Check your understanding</h3>
+
+  <div class="q">
+    <p class="question">1. In an explicit-ratings matrix, a blank cell means the user…</p>
+    <ul class="opts">
+      <li><button>Disliked the item (rating 0)</button></li>
+      <li><button data-correct>Has not rated it; the value is unknown</button></li>
+      <li><button>Rated it exactly at their average</button></li>
+      <li><button>Is a cold-start user</button></li>
+    </ul>
+    <div class="explain">Blank = unknown. Treating it as 0 teaches the model that everyone hates almost everything. In implicit data blanks are weak negatives, handled with confidence weights, not hard zeros.</div>
+  </div>
+
+  <div class="q">
+    <p class="question">2. Your new recommender has a better NDCG@10 offline but loses the A/B test on conversions. The most likely explanation is…</p>
+    <ul class="opts">
+      <li><button>NDCG was computed incorrectly</button></li>
+      <li><button data-correct>Offline relevance labels came from what the old system chose to show, so offline metrics reward imitating it; the online test measures actual value</button></li>
+      <li><button>A/B tests are unreliable for recommenders</button></li>
+      <li><button>The new model has too many latent factors</button></li>
+    </ul>
+    <div class="explain">Held-out clicks are biased by past exposure and popularity. Offline metrics are a filter; online lift is the measurement, and a less "accurate" but more diverse ranker can win.</div>
+  </div>
+
+  <div class="q">
+    <p class="question">3. A fraud analyst can review 40 alerts per day. What is the right way to set the anomaly detector's threshold?</p>
+    <ul class="opts">
+      <li><button>Use the library default contamination</button></li>
+      <li><button>Flag everything with |z| &gt; 3</button></li>
+      <li><button data-correct>Rank by score and send the top 40 per day; measure the precision of those 40 weekly</button></li>
+      <li><button>Set contamination = 0.5 to be safe</button></li>
+    </ul>
+    <div class="explain">The threshold is a budget decision. Ranking under the review capacity keeps precision high, avoids alert fatigue, and produces labels that will later train a supervised model.</div>
+  </div>
+
+  <div class="q">
+    <p class="question">4. Customers who received a loyalty discount churned 20 points less than those who did not. Discounts were given by account managers to their "best" customers. The 20-point gap is…</p>
+
+    <ul class="opts">
+      <li><button>The causal effect of the discount</button></li>
+      <li><button data-correct>Confounded: the managers selected customers who were already likely to stay</button></li>
+      <li><button>Evidence that discounts should go to everyone</button></li>
+      <li><button>A sign of leakage in the churn model</button></li>
+    </ul>
+    <div class="explain">Selection into treatment by a variable (manager's judgment of loyalty) that also drives the outcome is confounding. Only randomization, or adjustment for the confounder, can recover the real effect.</div>
+  </div>
+
+  <div class="q">
+    <p class="question">5. In uplift terms, which group should a retention campaign avoid contacting because contact makes them <em>more</em> likely to leave?</p>
+    <ul class="opts">
+      <li><button>Persuadables</button></li>
+      <li><button>Sure things</button></li>
+      <li><button>Lost causes</button></li>
+      <li><button data-correct>Sleeping dogs</button></li>
+    </ul>
+    <div class="explain">Sleeping dogs stay if left alone and leave if contacted (negative uplift). Sure things and lost causes are merely wasted money; persuadables are the target.</div>
+  </div>
+
+  <div class="q">
+    <p class="question">6. In the Q-learning update Q(s,a) ← Q(s,a) + α[r + γ max<sub>a′</sub>Q(s′,a′) − Q(s,a)], the term in brackets is…</p>
+    <ul class="opts">
+      <li><button>The discounted return of the whole episode</button></li>
+      <li><button data-correct>The temporal-difference error: one-step sampled estimate minus the current estimate</button></li>
+      <li><button>The policy's probability of action a</button></li>
+      <li><button>The exploration bonus</button></li>
+    </ul>
+    <div class="explain">It is the gap between what the table predicted and what one step of experience suggests (reward plus discounted best next value). α controls how far the estimate moves toward it.</div>
+  </div>
+</div>
+
+<h2 id="exercises">Exercises</h2>
+
+<div class="exercise"><div class="title">Exercise 22.1 — Break the recommender</div>
+<p>Using the code in Section 1, add a seventh user "Gus" who has rated only <em>Coco</em> (5). What does the item-item model predict for Gus on <em>Dune</em>, and why is that prediction weak? Then add an eighth user with no ratings at all. What can the model say? Propose two concrete fallbacks.</p>
+<details class="answer"><summary>Show answer</summary>
+<p>Gus's only rated item, Coco, has negative adjusted-cosine similarity with Dune, so there are no positive neighbours and the model returns Gus's mean (5.0), which is meaningless with one rating; with more neighbours it would predict "low" because Coco-lovers dislike Dune in this data. The eighth user has no row at all: pure cold start, and CF returns nothing. Fallbacks: (1) recommend the most popular items (Up and Dune have the most high ratings), (2) content-based: ask one onboarding question ("animation or sci-fi?") and map it onto the two latent factors from Section 2; (3) an exploration slot: show a random item and learn from the response (a bandit).</p>
+</details>
+</div>
+
+<div class="exercise"><div class="title">Exercise 22.2 — Adjust for a confounder, then break the adjustment</div>
+<p>In the causal simulation of Section 5, add a second confounder <code>tenure</code> that raises both the treatment probability and retention, but leave it <em>out</em> of the regression adjustment and the propensity model. Re-run. How far off are the "adjusted" estimates now, and what does that tell you about observational causal claims at work?</p>
+<details class="answer"><summary>Show answer</summary>
+<p>Both adjusted estimates become biased upward again (typically landing between the naive and the true value), because a back door through tenure remains open. The randomized arm stays correct. Lesson: adjustment methods fix only the confounders you measured and included; the honest sentence in a report is "assuming no unmeasured confounding", and the honest recommendation is to run the experiment.</p>
+</details>
+</div>
+
+<div class="exercise"><div class="title">Exercise 22.3 — Do it at work: find your bandit</div>
+<p>List every place in your company where a choice among a few options is made repeatedly with fast feedback (email subject lines, push notification timing, which promotion to show, which support macro to suggest, which supplier to route to). Pick one. Write down: the arms, the reward (measurable within hours), the context features if any, and the guardrail metric. Estimate the cost of a fixed A/B test (traffic × duration × share sent to the losing arms) versus a Thompson-sampling bandit. Present the comparison to the owner of that decision.</p>
+<details class="answer"><summary>Show answer</summary>
+<p>A good answer names an immediate, automatically logged reward (open rate within 4 hours, not "customer satisfaction"), keeps the arm count small (3–8), and identifies a guardrail (unsubscribes, complaints). The cost comparison typically shows the bandit saving 50–80% of the exploration loss for the same decision quality; the caveat to state is that the bandit's estimates for the losing arms will be imprecise, which matters if someone later asks "by how much did the loser lose?"</p>
+</details>
+</div>
+
+<div class="summary">
+  <h3>Chapter summary</h3>
+  <ul class="checklist">
+    <li>Recommendation = matrix completion + ranking. Item-item CF on implicit data is the workhorse baseline; matrix factorization and two-tower embeddings scale it; hybrids fix cold start.</li>
+    <li>Blank ≠ dislike. Popularity bias is a feedback loop; evaluate with precision@k / NDCG offline, but decide by online A/B lift.</li>
+    <li>Anomaly detection ranks by strangeness under a review budget: robust z-scores, Mahalanobis, Isolation Forest (default), LOF (local density), autoencoders (structured data).</li>
+    <li>Set thresholds from reviewer capacity, evaluate with top-k human review or injected anomalies, and let collected labels turn the problem supervised.</li>
+    <li>Correlation is not a lever. Confounders open back doors; randomization closes them by construction; regression, propensity/IPW and diff-in-diff close only the ones you measured.</li>
+    <li>Run A/B tests properly: right unit, pre-computed sample size, no peeking, one primary metric, guardrails.</li>
+    <li>Uplift models rank people by the effect of treatment on <em>them</em> (T-learner: two models, subtract). Validate with a Qini/decile table on a randomized holdout, in money.</li>
+    <li>RL = policy learning from rewards via the Bellman equation. Bandits (Thompson sampling) are the production RL; Q-learning is the mechanism; full RL needs a simulator, safety, and a reward that cannot be hacked.</li>
+    <li>Survival analysis for durations with censoring, graph features for connected data, AutoML/TabPFN as fast second opinions, active learning to spend the labeling budget wisely.</li>
+  </ul>
+</div>
+
+<div class="mark-done"></div>
+<nav class="pager"></nav>
+
+</div></main>
+</div>
+
+<script src="../assets/chapters.js"></script>
+<script src="../assets/app.js"></script>
+<script>
+(function () {
+  /* ---------- Widget 1: matrix-factorization rank slider (precomputed truncated SVD of the 6x5 matrix) ---------- */
+  var R = [[5,4,0,5,1],[4,0,1,4,0],[1,1,5,0,4],[0,1,4,1,5],[5,5,0,4,0],[0,2,5,1,0]];
+  var users = ["Ana","Ben","Cy","Dee","Eli","Fay"], items = ["Dune","Heat","Up","Alien","Coco"];
+  var PRE = {
+    1: {rmse: 1.54, R: [[4.1,3.2,3.9,3.5,3.5],[3.4,2.7,3.3,2.9,3.0],[3.2,2.5,3.0,2.7,2.7],[3.3,2.5,3.1,2.8,2.8],[4.6,3.6,4.3,3.9,3.9],[3.3,2.6,3.1,2.8,2.8]]},
+    2: {rmse: 0.65, R: [[5.0,4.4,2.3,4.6,2.1],[4.0,3.5,2.2,3.7,2.0],[2.4,1.3,4.6,1.6,4.2],[2.4,1.2,4.8,1.6,4.3],[5.1,4.3,3.4,4.6,3.0],[2.7,1.6,4.4,2.0,4.0]]},
+    3: {rmse: 0.51, R: [[4.4,4.3,2.9,5.3,1.5],[4.5,3.6,1.7,3.1,2.4],[1.5,1.1,5.5,2.6,3.3],[3.0,1.4,4.1,0.8,5.0],[5.3,4.4,3.1,4.3,3.3],[2.7,1.6,4.3,1.9,4.1]]},
+    4: {rmse: 0.22, R: [[4.7,4.5,3.3,4.9,1.1],[3.9,3.4,1.0,4.0,3.3],[1.1,0.9,5.0,3.3,4.0],[3.0,1.4,4.0,0.9,5.1],[5.4,4.4,3.2,4.2,3.1],[3.3,1.9,5.0,1.0,3.2]]},
+    5: {rmse: 0.00, R: [[5.0,4.0,3.2,5.0,1.0],[4.0,3.2,1.0,4.0,3.2],[1.0,1.0,5.0,3.2,4.0],[3.2,1.0,4.0,1.0,5.0],[5.0,5.0,3.2,4.0,3.2],[3.2,2.0,5.0,1.0,3.2]]}
+  };
+  var svg = document.getElementById("mf-svg"), slider = document.getElementById("mf-k"), rmseOut = document.getElementById("mf-rmse");
+  if (svg && slider) {
+    var renderMF = function () {
+      var k = +slider.value, P = PRE[k], s = "", cw = 88, ch = 34, x0 = 70, y0 = 40;
+      s += '<text x="' + x0 + '" y="20" font-size="13" font-weight="700">Rank-' + k + ' reconstruction  (original → reconstructed; violet = prediction)</text>';
+      for (var j = 0; j < 5; j++) s += '<text x="' + (x0 + j * cw + cw / 2) + '" y="' + (y0 - 6) + '" text-anchor="middle" font-size="11" opacity=".8">' + items[j] + '</text>';
+      for (var i = 0; i < 6; i++) {
+        s += '<text x="' + (x0 - 8) + '" y="' + (y0 + i * ch + ch / 2 + 4) + '" text-anchor="end" font-size="11" opacity=".8">' + users[i] + '</text>';
+        for (var jj = 0; jj < 5; jj++) {
+          var x = x0 + jj * cw, y = y0 + i * ch, known = R[i][jj] > 0, v = Math.min(5, Math.max(1, P.R[i][jj]));
+          var err = known ? Math.abs(P.R[i][jj] - R[i][jj]) : 0;
+          var fill = known ? 'var(--s1)' : 'var(--s7)', op = known ? (0.12 + 0.16 * (v - 1)) : 0.35;
+          s += '<rect x="' + x + '" y="' + y + '" width="' + (cw - 3) + '" height="' + (ch - 3) + '" rx="4" fill="' + fill + '" fill-opacity="' + op.toFixed(2) + '" stroke="' + (known && err > 0.75 ? 'var(--critical)' : 'var(--border)') + '" stroke-width="' + (known && err > 0.75 ? 2 : 1) + '"/>';
+          var label = known ? (R[i][jj] + ' → ' + P.R[i][jj].toFixed(1)) : ('? → ' + v.toFixed(1));
+          s += '<text x="' + (x + (cw - 3) / 2) + '" y="' + (y + ch / 2 + 4) + '" text-anchor="middle" font-size="12" font-weight="' + (known ? 400 : 700) + '">' + label + '</text>';
+        }
+      }
+      var bx = 540;
+      s += '<text x="' + bx + '" y="' + (y0 + 8) + '" font-size="12" font-weight="700">RMSE on known cells</text>';
+      for (var kk = 1; kk <= 5; kk++) {
+        var h = PRE[kk].rmse / 1.6 * 120, yy = y0 + 150 - h;
+        s += '<rect x="' + (bx + (kk - 1) * 40) + '" y="' + yy + '" width="30" height="' + h + '" fill="' + (kk === k ? 'var(--s2)' : 'var(--s1)') + '" fill-opacity="' + (kk === k ? 1 : 0.35) + '"/>';
+        s += '<text x="' + (bx + (kk - 1) * 40 + 15) + '" y="' + (yy - 4) + '" text-anchor="middle" font-size="10">' + PRE[kk].rmse.toFixed(2) + '</text>';
+        s += '<text x="' + (bx + (kk - 1) * 40 + 15) + '" y="' + (y0 + 164) + '" text-anchor="middle" font-size="10">k=' + kk + '</text>';
+      }
+      s += '<text x="' + bx + '" y="' + (y0 + 190) + '" font-size="11" opacity=".8">red border: known cell off by &gt; 0.75</text>';
+      svg.innerHTML = s;
+      rmseOut.textContent = P.rmse.toFixed(2);
+    };
+    slider.addEventListener("input", renderMF); renderMF();
+  }
+
+  /* ---------- Widget 2: Q-learning gridworld (5x5) ---------- */
+  var N = 5, GOAL = [4, 4], PIT = [2, 2], START = [0, 0];
+  var ALPHA = 0.2, GAMMA = 0.9, EPS = 0.2;
+  var Q, episodes, returns, timer = null;
+  var qsvg = document.getElementById("ql-svg"), runBtn = document.getElementById("ql-run"), resetBtn = document.getElementById("ql-reset");
+  var epOut = document.getElementById("ql-ep"), retOut = document.getElementById("ql-ret");
+  var MOVES = [[-1, 0], [0, 1], [1, 0], [0, -1]], ARROWS = ["↑", "→", "↓", "←"];
+  function reset() {
+    Q = []; for (var i = 0; i < N * N; i++) Q.push([0, 0, 0, 0]);
+    episodes = 0; returns = []; if (timer) { clearTimeout(timer); timer = null; }
+    draw();
+  }
+  function argmax(a) { var b = 0; for (var i = 1; i < a.length; i++) if (a[i] > a[b]) b = i; return b; }
+  function step(r, c, a) {
+    var r2 = Math.min(N - 1, Math.max(0, r + MOVES[a][0])), c2 = Math.min(N - 1, Math.max(0, c + MOVES[a][1]));
+    if (r2 === GOAL[0] && c2 === GOAL[1]) return [r2, c2, 1, true];
+    if (r2 === PIT[0] && c2 === PIT[1]) return [r2, c2, -1, true];
+    return [r2, c2, -0.04, false];
+  }
+  function episode() {
+    var r = START[0], c = START[1], G = 0, disc = 1;
+    for (var t = 0; t < 60; t++) {
+      var s = r * N + c, a = Math.random() < EPS ? Math.floor(Math.random() * 4) : argmax(Q[s]);
+      var res = step(r, c, a), s2 = res[0] * N + res[1];
+      var target = res[3] ? res[2] : res[2] + GAMMA * Math.max.apply(null, Q[s2]);
+      Q[s][a] += ALPHA * (target - Q[s][a]);
+      G += disc * res[2]; disc *= GAMMA; r = res[0]; c = res[1];
+      if (res[3]) break;
+    }
+    episodes++; returns.push(G);
+  }
+  function draw() {
+    var cell = 56, x0 = 20, y0 = 24, s = "";
+    for (var r = 0; r < N; r++) for (var c = 0; c < N; c++) {
+      var i = r * N + c, v = Math.max.apply(null, Q[i]), x = x0 + c * cell, y = y0 + r * cell;
+      var isG = r === GOAL[0] && c === GOAL[1], isP = r === PIT[0] && c === PIT[1];
+      var fill = isG ? 'var(--good)' : isP ? 'var(--critical)' : (v >= 0 ? 'var(--s3)' : 'var(--critical)');
+      var op = isG || isP ? 0.8 : Math.min(0.85, 0.04 + Math.abs(v) * 0.9);
+      s += '<rect x="' + x + '" y="' + y + '" width="' + (cell - 2) + '" height="' + (cell - 2) + '" rx="5" fill="' + fill + '" fill-opacity="' + op.toFixed(2) + '" stroke="var(--border)"/>';
+      if (isG) s += '<text x="' + (x + cell / 2 - 1) + '" y="' + (y + cell / 2 + 6) + '" text-anchor="middle" font-size="18" font-weight="700">G</text>';
+      else if (isP) s += '<text x="' + (x + cell / 2 - 1) + '" y="' + (y + cell / 2 + 6) + '" text-anchor="middle" font-size="18" font-weight="700">X</text>';
+      else {
+        var visited = Q[i].some(function (q) { return q !== 0; });
+        s += '<text x="' + (x + cell / 2 - 1) + '" y="' + (y + cell / 2 + 2) + '" text-anchor="middle" font-size="20" font-weight="700" opacity="' + (visited ? 1 : 0.25) + '">' + ARROWS[argmax(Q[i])] + '</text>';
+        s += '<text x="' + (x + cell / 2 - 1) + '" y="' + (y + cell - 8) + '" text-anchor="middle" font-size="10" opacity=".85">' + v.toFixed(2) + '</text>';
+        if (r === START[0] && c === START[1]) s += '<text x="' + (x + 4) + '" y="' + (y + 12) + '" font-size="9" font-weight="700">S</text>';
+      }
+    }
+    // return curve
+    var cx0 = 330, cy0 = 40, cw = 210, chh = 200;
+    s += '<text x="' + cx0 + '" y="' + (cy0 - 10) + '" font-size="12" font-weight="700">Return per episode</text>';
+    s += '<line x1="' + cx0 + '" y1="' + (cy0 + chh) + '" x2="' + (cx0 + cw) + '" y2="' + (cy0 + chh) + '" stroke="currentColor" stroke-opacity=".5"/>';
+    s += '<line x1="' + cx0 + '" y1="' + cy0 + '" x2="' + cx0 + '" y2="' + (cy0 + chh) + '" stroke="currentColor" stroke-opacity=".5"/>';
+    var zero = cy0 + chh * (1 - (0 + 1.5) / 2.5);
+    s += '<line x1="' + cx0 + '" y1="' + zero + '" x2="' + (cx0 + cw) + '" y2="' + zero + '" stroke="currentColor" stroke-opacity=".25" stroke-dasharray="3 3"/>';
+    s += '<text x="' + (cx0 - 4) + '" y="' + (zero + 4) + '" text-anchor="end" font-size="10">0</text><text x="' + (cx0 - 4) + '" y="' + (cy0 + 4) + '" text-anchor="end" font-size="10">+1</text><text x="' + (cx0 - 4) + '" y="' + (cy0 + chh + 4) + '" text-anchor="end" font-size="10">−1.5</text>';
+    var n = returns.length;
+    if (n > 1) {
+      var pts = [];
+      for (var k = 0; k < n; k++) {
+        var yv = Math.max(-1.5, Math.min(1, returns[k]));
+        pts.push((cx0 + k / Math.max(1, n - 1) * cw).toFixed(1) + "," + (cy0 + chh * (1 - (yv + 1.5) / 2.5)).toFixed(1));
+      }
+      s += '<polyline points="' + pts.join(" ") + '" fill="none" stroke="var(--s1)" stroke-width="1.5" stroke-opacity=".8"/>';
+    }
+    s += '<text x="' + (cx0 + cw / 2) + '" y="' + (cy0 + chh + 18) + '" text-anchor="middle" font-size="11">episode (0 … ' + n + ')</text>';
+    s += '<text x="' + x0 + '" y="' + (y0 + N * cell + 22) + '" font-size="11" opacity=".85">colour = V(s) = max Q(s,a); green positive, red negative; arrow = greedy action</text>';
+    qsvg.innerHTML = s;
+    epOut.textContent = episodes;
+    if (n) { var last = returns.slice(-10), m = last.reduce(function (a, b) { return a + b; }, 0) / last.length; retOut.textContent = m.toFixed(2); } else retOut.textContent = "–";
+  }
+  function run() {
+    if (timer) return;
+    var done = 0;
+    var tick = function () {
+      for (var i = 0; i < 5; i++) episode();
+      done += 5; draw();
+      if (done < 100) timer = setTimeout(tick, 60); else timer = null;
+    };
+    tick();
+  }
+  if (qsvg) { runBtn.addEventListener("click", run); resetBtn.addEventListener("click", reset); reset(); }
+})();
+</script>
+</body>
+</html>
