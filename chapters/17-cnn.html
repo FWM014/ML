@@ -749,6 +749,10 @@ n_params = <span class="fn">sum</span>(p.numel() <span class="kw">for</span> p <
 <h3>ResNet and the skip connection</h3>
 <p>By 2015 the field had a puzzle: a 56-layer plain network trained <em>worse</em> than a 20-layer one, even on the training set. That cannot be overfitting (training error went up) and it is not vanishing gradients alone (batch norm was in use). The deeper network simply could not find the solution the shallower one found, even though it could represent it exactly by making the extra layers identity maps. The fix was to make identity the <em>default</em>: instead of asking a block to learn a mapping H(x), let it learn the difference F(x) = H(x) − x and add x back. If the best thing a block can do is nothing, it learns F = 0, which is easy. And gradients flow straight through the addition to earlier layers, undiminished.</p>
 
+<div class="callout eli9"><div class="title">Explain it like I'm 9</div>
+<p>Imagine a long relay of editors improving a story. In a plain network each editor must rewrite the whole story from scratch, and if any one of them is having a bad day the story comes out worse than it went in. In a ResNet each editor only writes down <em>changes</em> on a sticky note attached to the original. An editor with nothing useful to add simply attaches a blank note, and the story passes through unharmed. Fifty editors can now be chained safely; the worst case is that nothing changes.</p>
+</div>
+
 <figure class="fig">
 <svg viewBox="0 0 820 320" role="img" aria-label="Left: a plain block maps x through two conv layers to H(x). Middle: a residual block adds the input x to the two-layer output, giving F(x) plus x, with the identity path drawn as a skip arrow. Right: a chart of training error versus depth: plain nets get worse beyond about 20 layers, residual nets keep improving">
   <defs><marker id="arr17-7" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
