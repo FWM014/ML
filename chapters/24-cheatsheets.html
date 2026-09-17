@@ -357,8 +357,8 @@
   <rect x="350" y="86" width="200" height="40" rx="8" fill="var(--s7)" fill-opacity=".18" stroke="var(--s7)" stroke-width="2"/>
   <text x="450" y="111" text-anchor="middle" class="lbl-strong" style="font-size:13px">Is there a label?</text>
   <!-- no label -->
-  <path d="M550,106 L700,106 L700,124" class="arrow" marker-end="url(#arr-f3)"/>
-  <text x="625" y="100" text-anchor="middle" class="lbl" style="font-size:11px">no</text>
+  <path d="M550,106 L572,106 L572,154 L588,154" class="arrow" marker-end="url(#arr-f3)"/>
+  <text x="561" y="100" text-anchor="middle" class="lbl" style="font-size:11px">no</text>
   <rect x="590" y="126" width="220" height="56" class="box"/>
   <text x="700" y="144" text-anchor="middle" class="lbl-strong" style="font-size:12px">Unsupervised · Ch 12, 22</text>
   <text x="700" y="159" text-anchor="middle" class="lbl" style="font-size:10px">groups → k-means · plots → PCA / UMAP</text>
@@ -370,7 +370,7 @@
   <text x="450" y="183" text-anchor="middle" class="lbl-strong" style="font-size:13px">&lt; 1,000 rows, or must be fully explainable?</text>
   <!-- yes → linear -->
   <path d="M312,178 L200,178 L200,214" class="arrow" marker-end="url(#arr-f3)"/>
-  <text x="265" y="172" text-anchor="middle" class="lbl" style="font-size:11px">yes</text>
+  <text x="240" y="192" text-anchor="middle" class="lbl" style="font-size:11px">yes</text>
   <rect x="90" y="216" width="220" height="56" rx="6" fill="var(--s1)" fill-opacity=".18" stroke="var(--s1)" stroke-width="2"/>
   <text x="200" y="236" text-anchor="middle" class="lbl-strong" style="font-size:12px">Logistic / Ridge / Lasso</text>
   <text x="200" y="251" text-anchor="middle" class="lbl" style="font-size:10px">scale → regularize → read coefficients</text>
@@ -467,10 +467,10 @@
   <path d="M660,250 C 665,150 700,90 760,75 C 800,66 840,62 850,60" stroke="var(--s1)" stroke-width="2.5" fill="none"/>
   <circle cx="700" cy="100" r="5" fill="var(--s7)"/>
   <text x="708" y="97" class="lbl" style="font-size:10px" fill="var(--s7)">one threshold</text>
-  <text x="770" y="180" text-anchor="middle" class="lbl-strong" style="font-size:12px" fill="var(--s1)">AUC ≈ 0.88</text>
-  <text x="770" y="196" text-anchor="middle" class="lbl" style="font-size:10px">= P(random positive scores</text>
-  <text x="770" y="209" text-anchor="middle" class="lbl" style="font-size:10px">above random negative)</text>
-  <text x="808" y="150" text-anchor="end" class="lbl" style="font-size:10px" transform="rotate(-45 808 150)">random = 0.5</text>
+  <text x="790" y="205" text-anchor="middle" class="lbl-strong" style="font-size:12px" fill="var(--s1)">AUC ≈ 0.88</text>
+  <text x="790" y="221" text-anchor="middle" class="lbl" style="font-size:10px">= P(random positive scores</text>
+  <text x="790" y="234" text-anchor="middle" class="lbl" style="font-size:10px">above random negative)</text>
+  <text x="772" y="128" text-anchor="middle" class="lbl" style="font-size:10px" transform="rotate(-45 772 128)">random = 0.5</text>
   <text x="760" y="303" text-anchor="middle" class="lbl" style="font-size:10px">Each point = (FPR, TPR) at one threshold;</text>
   <text x="760" y="316" text-anchor="middle" class="lbl" style="font-size:10px">sweeping the threshold traces the curve.</text>
 </svg>
@@ -594,10 +594,12 @@
   <path d="M730,150 L770,150" class="arrow" marker-end="url(#arr-f5)"/>
   <rect x="772" y="128" width="108" height="44" class="box-accent"/><text x="826" y="147" text-anchor="middle" class="lbl-strong" style="font-size:11px">predictions</text><text x="826" y="162" text-anchor="middle" class="lbl" style="font-size:10px">ŷ or P(y=1)</text>
   <!-- fit vs predict -->
-  <text x="20" y="40" class="lbl-strong" style="font-size:11px" fill="var(--s3)">.fit(X_train, y_train)</text>
-  <text x="20" y="54" class="lbl" style="font-size:10px">every step learns its statistics from TRAIN rows only</text>
-  <text x="20" y="225" class="lbl-strong" style="font-size:11px" fill="var(--s7)">.predict(X_new)</text>
-  <text x="20" y="239" class="lbl" style="font-size:10px">same steps, frozen; unseen categories → all-zeros (handle_unknown)</text>
+  <text x="20" y="34" class="lbl-strong" style="font-size:11px" fill="var(--s3)">.fit(X_train, y_train)</text>
+  <text x="20" y="47" class="lbl" style="font-size:10px">every step learns its</text>
+  <text x="20" y="59" class="lbl" style="font-size:10px">stats from TRAIN rows only</text>
+  <text x="20" y="222" class="lbl-strong" style="font-size:11px" fill="var(--s7)">.predict(X_new)</text>
+  <text x="20" y="235" class="lbl" style="font-size:10px">same steps, frozen; unseen</text>
+  <text x="20" y="247" class="lbl" style="font-size:10px">category → all zeros</text>
   <!-- cv band -->
   <rect x="20" y="268" width="860" height="46" rx="8" fill="var(--s7)" fill-opacity=".12" stroke="var(--s7)"/>
   <text x="450" y="287" text-anchor="middle" class="lbl-strong" style="font-size:12px">cross_val_score(pipe, X, y, cv=5) · GridSearchCV(pipe, {"model__max_depth": [...]})</text>
@@ -607,7 +609,7 @@
 </figure>
 
 <h3>Imports by task</h3>
-<pre class="code" data-lang="python"><code><span class="cm"># Imports by task -- the lines you type at the top of almost every notebook</span>
+<pre class="code" data-lang="python"><code><span class="cm"># Imports by task (top of almost every notebook)</span>
 <span class="kw">import</span> numpy <span class="kw">as</span> np, pandas <span class="kw">as</span> pd
 
 <span class="cm"># splitting &amp; validation</span>
@@ -648,7 +650,7 @@
 <span class="out"># all imports OK  (CatBoost: from catboost import CatBoostClassifier)</span></code></pre>
 
 <h3>The universal pattern: split → fit → predict → score</h3>
-<pre class="code" data-lang="python"><code><span class="cm"># The universal pattern: split -&gt; fit on train -&gt; predict on test -&gt; score</span>
+<pre class="code" data-lang="python"><code><span class="cm"># The universal pattern: split -&gt; fit -&gt; predict -&gt; score</span>
 <span class="kw">from</span> sklearn.datasets <span class="kw">import</span> load_breast_cancer
 <span class="kw">from</span> sklearn.model_selection <span class="kw">import</span> train_test_split
 <span class="kw">from</span> sklearn.pipeline <span class="kw">import</span> make_pipeline
@@ -678,7 +680,7 @@ proba = model.<span class="fn">predict_proba</span>(X_te)[:, <span class="nu">1<
 
 <h3>The Pipeline + ColumnTransformer template</h3>
 <p>This is the block to copy into every tabular project. Numeric columns get a median imputer and a scaler, categorical columns get a most-frequent imputer and a one-hot encoder with <code>handle_unknown="ignore"</code>, and the whole thing is cross-validated as a unit.</p>
-<pre class="code" data-lang="python"><code><span class="cm"># Pipeline + ColumnTransformer template: the one you copy into every tabular project</span>
+<pre class="code" data-lang="python"><code><span class="cm"># Pipeline + ColumnTransformer template (copy into every tabular project)</span>
 <span class="kw">import</span> numpy <span class="kw">as</span> np, pandas <span class="kw">as</span> pd
 <span class="kw">from</span> sklearn.compose <span class="kw">import</span> ColumnTransformer, make_column_selector <span class="kw">as</span> selector
 <span class="kw">from</span> sklearn.pipeline <span class="kw">import</span> Pipeline
@@ -757,7 +759,7 @@ rs = <span class="fn">RandomizedSearchCV</span>(<span class="fn">RandomForestCla
 <span class="out"># random best acc: 0.983 | refit model ready: RandomForestClassifier</span></code></pre>
 
 <h3>Metrics: which call needs labels and which needs probabilities</h3>
-<pre class="code" data-lang="python"><code><span class="cm"># Metrics cheat sheet: the calls, and what each one needs (labels vs probabilities)</span>
+<pre class="code" data-lang="python"><code><span class="cm"># Metrics: which call needs labels, which needs probabilities</span>
 <span class="kw">import</span> numpy <span class="kw">as</span> np
 <span class="kw">from</span> sklearn.datasets <span class="kw">import</span> make_classification, make_regression
 <span class="kw">from</span> sklearn.model_selection <span class="kw">import</span> train_test_split
@@ -801,7 +803,7 @@ yhat = <span class="fn">Ridge</span>(alpha=<span class="nu">1.0</span>).<span cl
 <span class="out"># MAE 11.49  RMSE 14.06  R2 0.984</span></code></pre>
 
 <h3>Model persistence</h3>
-<pre class="code" data-lang="python"><code><span class="cm"># Model persistence: save the WHOLE pipeline (preprocessing + model), version it, reload it</span>
+<pre class="code" data-lang="python"><code><span class="cm"># Persistence: save the WHOLE pipeline, version it, reload it</span>
 <span class="kw">import</span> os, tempfile, json, joblib, sklearn
 <span class="kw">from</span> sklearn.datasets <span class="kw">import</span> load_iris
 <span class="kw">from</span> sklearn.pipeline <span class="kw">import</span> make_pipeline
@@ -831,7 +833,7 @@ loaded = joblib.<span class="fn">load</span>(path)                              
 </div>
 
 <h3>Common estimators and the parameters that matter</h3>
-<pre class="code" data-lang="python-noexec"><code><span class="cm"># Common estimators and the parameters that actually matter (defaults shown are good starting points)</span>
+<pre class="code" data-lang="python-noexec"><code><span class="cm"># Common estimators and the parameters that matter</span>
 <span class="kw">from</span> sklearn.linear_model <span class="kw">import</span> LogisticRegression, Ridge, Lasso
 <span class="kw">from</span> sklearn.ensemble <span class="kw">import</span> RandomForestClassifier, HistGradientBoostingClassifier, IsolationForest
 <span class="kw">from</span> sklearn.svm <span class="kw">import</span> SVC
@@ -861,7 +863,7 @@ loaded = joblib.<span class="fn">load</span>(path)                              
 
 <h3>pandas EDA cheat sheet</h3>
 <p>Fifteen calls answer almost every "what is in this data?" question from Chapter 2. Run them in this order on every new dataset before modelling anything.</p>
-<pre class="code" data-lang="python"><code><span class="cm"># pandas EDA cheat sheet: the 15 calls that answer 90% of &quot;what is in this data?&quot;</span>
+<pre class="code" data-lang="python"><code><span class="cm"># pandas EDA: the 15 calls that answer &quot;what is in this data?&quot;</span>
 <span class="kw">import</span> numpy <span class="kw">as</span> np, pandas <span class="kw">as</span> pd
 rng = np.random.<span class="fn">default_rng</span>(<span class="nu">7</span>)
 n = <span class="nu">500</span>
@@ -917,7 +919,7 @@ df[<span class="st">&quot;spend&quot;</span>] = df[<span class="st">&quot;spend&
 
 <h3>PyTorch training-loop skeleton</h3>
 <p>The five lines inside the batch loop (zero the gradients, forward, loss, backward, step) are the same in every PyTorch project from this toy MLP to a vision Transformer (Chapter 16). Everything else — data loading, validation, early stopping, checkpointing — wraps around them.</p>
-<pre class="code" data-lang="python"><code><span class="cm"># PyTorch training-loop skeleton (the same 12 lines scale from this toy to ImageNet)</span>
+<pre class="code" data-lang="python"><code><span class="cm"># PyTorch training-loop skeleton (scales from this toy to ImageNet)</span>
 <span class="kw">import</span> torch, torch.nn <span class="kw">as</span> nn
 <span class="kw">from</span> sklearn.datasets <span class="kw">import</span> make_classification
 <span class="kw">from</span> sklearn.model_selection <span class="kw">import</span> train_test_split
@@ -1042,16 +1044,16 @@ model.<span class="fn">load_state_dict</span>(state)
   <!-- Q1 -->
   <rect x="330" y="132" width="240" height="36" rx="6" fill="var(--s7)" fill-opacity=".16" stroke="var(--s7)" stroke-width="1.5"/>
   <text x="450" y="155" text-anchor="middle" class="lbl-strong" style="font-size:12px">Q1 · Is the TRAINING score bad too?</text>
-  <path d="M330,150 L180,150 L180,180" class="arrow" marker-end="url(#arr-f7)"/><text x="255" y="144" text-anchor="middle" class="lbl-strong" style="font-size:10px" fill="var(--s1)">yes → UNDERFIT</text>
-  <rect x="30" y="182" width="300" height="130" rx="8" fill="var(--s1)" fill-opacity=".10" stroke="var(--s1)" stroke-width="1.5"/>
+  <path d="M330,150 L298,150" class="arrow" marker-end="url(#arr-f7)"/><text x="314" y="144" text-anchor="middle" class="lbl-strong" style="font-size:9px" fill="var(--s1)">yes</text>
+  <rect x="20" y="86" width="275" height="130" rx="8" fill="var(--s1)" fill-opacity=".10" stroke="var(--s1)" stroke-width="1.5"/>
   <g>
-    <text x="45" y="200" class="lbl-strong" style="font-size:11px">Underfitting: model can't even fit the train set (Ch 7)</text>
-    <text x="45" y="218" class="lbl" style="font-size:10.5px">• more flexible model: linear → boosting / deeper net</text>
-    <text x="45" y="234" class="lbl" style="font-size:10.5px">• better features: interactions, ratios, dates, text</text>
-    <text x="45" y="250" class="lbl" style="font-size:10.5px">• less regularization: alpha ↓, C ↑, dropout ↓, min_leaf ↓</text>
-    <text x="45" y="266" class="lbl" style="font-size:10.5px">• train longer / lr not too small (nets); check loss actually falls</text>
-    <text x="45" y="282" class="lbl" style="font-size:10.5px">• label noise or wrong target? look at the worst train errors</text>
-    <text x="45" y="298" class="lbl" style="font-size:10.5px">• is there signal at all? try the best single feature alone</text>
+    <text x="32" y="104" class="lbl-strong" style="font-size:11px">UNDERFIT: can't even fit the train set (Ch 7)</text>
+    <text x="32" y="122" class="lbl" style="font-size:10.5px">• more flexible model: linear → boosting / deeper net</text>
+    <text x="32" y="138" class="lbl" style="font-size:10.5px">• better features: interactions, ratios, dates, text</text>
+    <text x="32" y="154" class="lbl" style="font-size:10.5px">• less regularization: alpha ↓, C ↑, dropout ↓, min_leaf ↓</text>
+    <text x="32" y="170" class="lbl" style="font-size:10.5px">• train longer / lr not too small (nets); check loss actually falls</text>
+    <text x="32" y="186" class="lbl" style="font-size:10.5px">• label noise or wrong target? look at the worst train errors</text>
+    <text x="32" y="202" class="lbl" style="font-size:10.5px">• is there signal at all? try the best single feature alone</text>
   </g>
   <path d="M450,168 L450,188" class="arrow" marker-end="url(#arr-f7)"/><text x="462" y="184" class="lbl" style="font-size:10px">no</text>
 
@@ -1601,7 +1603,7 @@ model.<span class="fn">load_state_dict</span>(state)
     <span>F1 <span class="readout" id="mc-f1">–</span></span>
     <span>MCC <span class="readout" id="mc-mcc">–</span></span>
   </div>
-  <svg viewBox="0 0 760 300" id="mc-svg" role="img" aria-label="Confusion matrix with cells shaded in proportion to their counts, and bars for each derived metric"></svg>
+  <svg viewBox="0 0 770 300" id="mc-svg" role="img" aria-label="Confusion matrix with cells shaded in proportion to their counts, and bars for each derived metric"></svg>
   <div class="note">Cells are shaded by their share of all rows; the bars on the right show each metric with its formula. Notice that MCC drops toward 0 for the "always negative" model even though accuracy stays high, and that F1 ignores TN entirely (Chapter 6).</div>
 </div>
 
@@ -1751,12 +1753,12 @@ model.<span class="fn">load_state_dict</span>(state)
       '<text x="' + (x + w / 2) + '" y="' + (y + h / 2 + 12) + '" text-anchor="middle" style="font-size:11px" opacity=".75">' + sub + (total ? ' · ' + Math.round(100 * count / total) + '%' : '') + '</text>';
   }
   function bar(y, name, value, formula, color) {
-    var w = isNaN(value) ? 0 : Math.max(0, value) * 300;
+    var w = isNaN(value) ? 0 : Math.max(0, value) * 220;
     var neg = !isNaN(value) && value < 0;
     return '<text x="420" y="' + (y + 12) + '" style="font-size:12px" font-weight="700">' + name + '</text>' +
-      '<rect x="500" y="' + y + '" width="300" height="16" fill="var(--surface-2)" stroke="var(--border)"/>' +
+      '<rect x="500" y="' + y + '" width="220" height="16" fill="var(--surface-2)" stroke="var(--border)"/>' +
       (neg ? '' : '<rect x="500" y="' + y + '" width="' + w.toFixed(1) + '" height="16" fill="' + color + '" fill-opacity=".8"/>') +
-      '<text x="' + (500 + Math.min(w, 250) + 6) + '" y="' + (y + 12) + '" style="font-size:11px" font-weight="700">' + fmt(value) + '</text>' +
+      '<text x="' + (500 + Math.min(w, 178) + 6) + '" y="' + (y + 12) + '" style="font-size:11px" font-weight="700">' + fmt(value) + '</text>' +
       '<text x="420" y="' + (y + 28) + '" style="font-size:10px" opacity=".7">' + formula + '</text>';
   }
   function render() {

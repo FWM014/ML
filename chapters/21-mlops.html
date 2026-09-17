@@ -1,0 +1,1233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>21 · MLOps: Shipping &amp; Monitoring Models — ML: Zero to Expert</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body data-chapter="21">
+<header class="topbar"></header>
+<div class="progress-track"><div></div></div>
+<div class="shell">
+<nav class="sidebar"></nav>
+<main class="content"><div class="container">
+
+<header class="ch-header">
+  <div class="kicker">Part IV · Expert &amp; Production · Chapter 21</div>
+  <h1>MLOps: Shipping &amp; Monitoring Models</h1>
+  <p class="lede">A model in a notebook has produced exactly zero business value. This chapter is about the other 80% of the work: making a model reproducible, packaging it, serving it, testing it, watching it rot, and replacing it safely — without a platform team of forty.</p>
+  <div class="meta"><span class="level expert">Expert</span> <span>⏱ 95 min read</span> <span>·</span> <span>Prereqs: Ch 4, 8, 13</span></div>
+</header>
+
+<div class="objectives">
+  <h3>By the end of this chapter you will be able to</h3>
+  <ul>
+    <li>Draw the whole ML system around a model and name the parts that fail most often.</li>
+    <li>Make a training run reproducible: seeds, pinned environments, versioned data and code, and a lineage record for every artifact.</li>
+    <li>Package a pipeline safely, choose a serving pattern (batch, REST, streaming, edge) with a decision table, and write the inference service and its container.</li>
+    <li>Write the three kinds of tests an ML pipeline needs and wire them into CI.</li>
+    <li>Detect data drift with PSI and the KS test, tell concept drift from data drift, and set alert thresholds that do not page you at 3 a.m. for nothing.</li>
+    <li>Roll out a new model version through shadow, canary and A/B stages, and roll it back in one command.</li>
+    <li>Judge honestly which rung of the MLOps maturity ladder your team actually needs.</li>
+  </ul>
+</div>
+
+<div class="toc-inline"><strong>In this chapter</strong>
+<ol>
+  <li><a href="#s1">The notebook-to-production gap</a></li>
+  <li><a href="#s2">Reproducibility &amp; experiment tracking</a></li>
+  <li><a href="#s3">Packaging a model &amp; the registry</a></li>
+  <li><a href="#s4">Serving patterns &amp; the inference service</a></li>
+  <li><a href="#s5">Training–serving skew &amp; feature stores</a></li>
+  <li><a href="#s6">CI/CD for ML: tests that matter</a></li>
+  <li><a href="#s7">Monitoring &amp; drift detection</a></li>
+  <li><a href="#s8">Retraining &amp; safe rollout</a></li>
+  <li><a href="#s9">Governance, cost &amp; the maturity ladder</a></li>
+  <li><a href="#quiz">Quiz &amp; exercises</a></li>
+</ol></div>
+
+<!-- ============================================================ -->
+<h2 id="s1">1. The notebook-to-production gap</h2>
+
+<p>The running example for this chapter is a churn model at a subscription business. After Chapter 13 you have a tuned gradient-boosted pipeline with AUC 0.87 in a notebook; retention wants a list of at-risk customers every Monday, and the product team wants a score inside the app when a customer opens the cancellation page. Between "AUC 0.87 in a notebook" and "a score in the app" lies everything this chapter covers, and it is where most ML projects die — not because the model is bad, but because nobody owned the system around it.</p>
+
+<p>In 2015 a group of Google engineers published a paper with a figure that has become the emblem of the field: a tiny black box labelled "ML code" surrounded by much larger boxes for data collection, feature extraction, configuration, serving, monitoring and infrastructure. The point was that the model is the <em>smallest</em> component of an ML system, and that all the surrounding components accumulate a special kind of technical debt: hidden feedback loops, undeclared consumers, pipelines nobody understands, and behaviour that changes when the world changes.</p>
+
+<figure class="fig">
+<svg viewBox="0 0 780 340" role="img" aria-label="An ML system diagram: a small box labelled ML code surrounded by larger boxes for data collection, data verification, feature extraction, configuration, serving infrastructure, monitoring, process management, resource management and analysis tools">
+  <defs><marker id="arr-g1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+  <text x="390" y="24" text-anchor="middle" class="lbl-strong" font-size="14">The model is the small box. Everything else is the system.</text>
+  <!-- row 1 -->
+  <rect x="20" y="44" width="150" height="70" class="box"/><text x="95" y="72" text-anchor="middle" class="lbl-strong">Data collection</text><text x="95" y="90" text-anchor="middle" class="lbl" font-size="11">events, CRM, billing</text>
+  <rect x="185" y="44" width="150" height="70" class="box"/><text x="260" y="72" text-anchor="middle" class="lbl-strong">Data validation</text><text x="260" y="90" text-anchor="middle" class="lbl" font-size="11">schema, ranges, nulls</text>
+  <rect x="350" y="44" width="150" height="70" class="box"/><text x="425" y="72" text-anchor="middle" class="lbl-strong">Feature pipeline</text><text x="425" y="90" text-anchor="middle" class="lbl" font-size="11">offline + online</text>
+  <rect x="515" y="44" width="245" height="70" class="box"/><text x="637" y="72" text-anchor="middle" class="lbl-strong">Configuration &amp; secrets</text><text x="637" y="90" text-anchor="middle" class="lbl" font-size="11">hyper-parameters, thresholds, flags</text>
+  <!-- row 2 -->
+  <rect x="20" y="130" width="150" height="90" class="box"/><text x="95" y="160" text-anchor="middle" class="lbl-strong">Experiment</text><text x="95" y="176" text-anchor="middle" class="lbl-strong">tracking</text><text x="95" y="196" text-anchor="middle" class="lbl" font-size="11">params, metrics, lineage</text>
+  <rect x="185" y="130" width="150" height="90" class="box"/><text x="260" y="160" text-anchor="middle" class="lbl-strong">Model registry</text><text x="260" y="176" text-anchor="middle" class="lbl-strong">&amp; packaging</text><text x="260" y="196" text-anchor="middle" class="lbl" font-size="11">versions, stages, cards</text>
+  <rect x="350" y="130" width="150" height="90" class="box-accent" stroke-width="2.5"/><text x="425" y="170" text-anchor="middle" class="lbl-strong" font-size="14">ML code</text><text x="425" y="192" text-anchor="middle" class="lbl" font-size="11">fit / predict · ~5%</text>
+  <rect x="515" y="130" width="245" height="90" class="box"/><text x="637" y="160" text-anchor="middle" class="lbl-strong">Serving infrastructure</text><text x="637" y="180" text-anchor="middle" class="lbl" font-size="11">batch job · REST · stream · edge</text><text x="637" y="198" text-anchor="middle" class="lbl" font-size="11">containers, autoscaling, rollback</text>
+  <!-- row 3 -->
+  <rect x="20" y="236" width="150" height="80" class="box"/><text x="95" y="266" text-anchor="middle" class="lbl-strong">CI / CD / CT</text><text x="95" y="286" text-anchor="middle" class="lbl" font-size="11">tests, pipelines, retrain</text>
+  <rect x="185" y="236" width="315" height="80" class="box"/><text x="342" y="266" text-anchor="middle" class="lbl-strong">Monitoring</text><text x="342" y="286" text-anchor="middle" class="lbl" font-size="11">input drift · prediction drift · delayed-label performance · latency · fairness</text>
+  <rect x="515" y="236" width="245" height="80" class="box"/><text x="637" y="266" text-anchor="middle" class="lbl-strong">Governance</text><text x="637" y="286" text-anchor="middle" class="lbl" font-size="11">audit log, PII, access, model cards</text>
+  <text x="390" y="334" text-anchor="middle" class="lbl" font-size="11">Every box outside the centre is where "it worked in the notebook" goes to die.</text>
+</svg>
+<figcaption><strong>Figure 21.1 — The ML system, after Sculley et al. (2015).</strong> The model is roughly 5% of the code and 5% of the risk. The other boxes are what MLOps is about, and each is a place the system can silently break while the model's own code stays perfect.</figcaption>
+</figure>
+
+<div class="callout eli9"><div class="title">Explain it like I'm 9</div>
+<p>Baking one great cake at home is cooking. Running a bakery that ships 10,000 identical cakes a day is a different job: you need the same flour every time (data), the recipe written down exactly (code and config), ovens that don't drift in temperature (infrastructure), someone tasting a cake from every batch (monitoring), and a plan for what to do when the milk supplier changes (retraining). MLOps is the bakery, not the cake.</p>
+</div>
+
+<p>Here is the honest version of what "production" means for the churn model, and what breaks in each part:</p>
+
+<div class="tbl-wrap">
+<table class="tbl">
+<thead><tr><th>Stage</th><th>What it must do</th><th>How it usually breaks</th></tr></thead>
+<tbody>
+<tr><td><strong>Reproduce</strong></td><td>Rebuild the exact model from the exact data and code, months later.</td><td>Unpinned library versions, un-seeded splits, a CSV someone overwrote.</td></tr>
+<tr><td><strong>Package</strong></td><td>Bundle preprocessing + model + metadata into one loadable artifact.</td><td>Pickle saved with sklearn 1.3, loaded with 1.5: silent numerical drift or a crash.</td></tr>
+<tr><td><strong>Serve</strong></td><td>Return predictions where and when the business needs them.</td><td>The Monday batch job takes nine hours; the REST endpoint times out under load.</td></tr>
+<tr><td><strong>Validate</strong></td><td>Refuse bad inputs before the model sees them.</td><td>A schema change upstream turns <code>monthly_spend</code> into cents; predictions go wild for a week.</td></tr>
+<tr><td><strong>Monitor</strong></td><td>Notice when inputs, outputs or accuracy change.</td><td>Nobody looks. Labels arrive 30 days late, so accuracy is discovered a quarter late.</td></tr>
+<tr><td><strong>Retrain &amp; roll out</strong></td><td>Replace the model without breaking anything.</td><td>The new version is deployed at 17:00 on a Friday to 100% of traffic with no rollback path.</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="callout key"><div class="title">Key idea</div>
+<p>MLOps is software engineering plus two things that ordinary software does not have: <strong>the behaviour of the system is learned from data</strong>, so it can change without anyone changing code; and <strong>the correct answer arrives late or never</strong>, so you cannot test it the way you test a login page. Everything in this chapter is a response to those two facts.</p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s2">2. Reproducibility &amp; experiment tracking</h2>
+
+<p>Six months from now a regulator, an auditor or simply your own future self will ask: "How exactly was churn-v1.3 built?" You need to be able to answer with a command, not a memory. Reproducibility has four ingredients, and teams usually have one or two of them.</p>
+
+<ol class="steps">
+  <li><strong>Seeds.</strong> Every source of randomness — the train/test split, the model (<code>random_state</code>), the bootstrap in a forest, data shuffling in a data loader, NumPy's global generator — gets a fixed seed that is stored with the run. Note the honest limit: GPU kernels and multi-threaded tree builders can still produce tiny non-determinism; record the seed anyway, and compare metrics with a tolerance.</li>
+  <li><strong>Pinned environment.</strong> A <code>requirements.txt</code> with exact versions (<code>scikit-learn==1.9.1</code>, not <code>&gt;=1.4</code>), or a lock file, or a container image tag. "Latest" is not a version.</li>
+  <li><strong>Versioned data and code.</strong> Code goes in git — that part is easy. Data is too big for git, so tools such as <strong>DVC</strong> store a small hash file in git that points to the real file in object storage; <strong>lakeFS</strong> and Delta Lake give the storage itself git-like branches and commits. The cheapest version that works: never overwrite a training extract, write it to a path containing the date and a content hash, and record that path with the run.</li>
+  <li><strong>Lineage.</strong> Every artifact points back to what produced it: model → training run → (data version, code commit, environment, parameters). If you can walk that graph, you can reproduce; if you can't, you have a file called <code>model_final_v2_REAL.pkl</code>.</li>
+</ol>
+
+<figure class="fig">
+<svg viewBox="0 0 780 300" role="img" aria-label="Artifact lineage graph: a raw data snapshot and a feature pipeline commit feed a training run, which also takes a config and an environment; the run produces a model artifact, metrics and a model card, which are registered as a versioned model and deployed">
+  <defs><marker id="arr-g2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+  <text x="390" y="22" text-anchor="middle" class="lbl-strong" font-size="14">Lineage: every artifact knows its parents</text>
+  <!-- inputs -->
+  <rect x="20" y="48" width="160" height="50" class="box"/><text x="100" y="68" text-anchor="middle" class="lbl-strong" font-size="11">data snapshot</text><text x="100" y="86" text-anchor="middle" class="lbl" font-size="10">s3://…/2026-09-01 · sha 9f3a…</text>
+  <rect x="20" y="110" width="160" height="50" class="box"/><text x="100" y="130" text-anchor="middle" class="lbl-strong" font-size="11">code commit</text><text x="100" y="148" text-anchor="middle" class="lbl" font-size="10">git 4c1e7b2 · features.py, train.py</text>
+  <rect x="20" y="172" width="160" height="50" class="box"/><text x="100" y="192" text-anchor="middle" class="lbl-strong" font-size="11">environment</text><text x="100" y="210" text-anchor="middle" class="lbl" font-size="10">image churn-train:1.9.1 · lockfile</text>
+  <rect x="20" y="234" width="160" height="50" class="box"/><text x="100" y="254" text-anchor="middle" class="lbl-strong" font-size="11">config</text><text x="100" y="272" text-anchor="middle" class="lbl" font-size="10">seed 0 · lr 0.05 · depth 3</text>
+  <!-- run -->
+  <rect x="270" y="110" width="170" height="112" class="box-accent"/><text x="355" y="140" text-anchor="middle" class="lbl-strong" font-size="13">training run</text><text x="355" y="160" text-anchor="middle" class="lbl" font-size="11">run_id 7d74a19c6f</text><text x="355" y="178" text-anchor="middle" class="lbl" font-size="11">2026-09-02 03:14 UTC</text><text x="355" y="196" text-anchor="middle" class="lbl" font-size="11">cv_auc 0.871 ± 0.006</text>
+  <line x1="180" y1="73" x2="268" y2="130" class="arrow" marker-end="url(#arr-g2)"/>
+  <line x1="180" y1="135" x2="268" y2="155" class="arrow" marker-end="url(#arr-g2)"/>
+  <line x1="180" y1="197" x2="268" y2="180" class="arrow" marker-end="url(#arr-g2)"/>
+  <line x1="180" y1="259" x2="268" y2="205" class="arrow" marker-end="url(#arr-g2)"/>
+  <!-- outputs -->
+  <rect x="520" y="48" width="150" height="46" class="box"/><text x="595" y="67" text-anchor="middle" class="lbl-strong" font-size="11">model artifact</text><text x="595" y="84" text-anchor="middle" class="lbl" font-size="10">churn-v1.3.0.joblib</text>
+  <rect x="520" y="110" width="150" height="46" class="box"/><text x="595" y="129" text-anchor="middle" class="lbl-strong" font-size="11">metrics &amp; plots</text><text x="595" y="146" text-anchor="middle" class="lbl" font-size="10">test AUC, calibration, SHAP</text>
+  <rect x="520" y="172" width="150" height="46" class="box"/><text x="595" y="191" text-anchor="middle" class="lbl-strong" font-size="11">model card</text><text x="595" y="208" text-anchor="middle" class="lbl" font-size="10">intended use, limits, fairness</text>
+  <rect x="520" y="234" width="150" height="46" class="box"/><text x="595" y="253" text-anchor="middle" class="lbl-strong" font-size="11">reference profile</text><text x="595" y="270" text-anchor="middle" class="lbl" font-size="10">feature histograms for drift</text>
+  <line x1="440" y1="140" x2="518" y2="75" class="arrow" marker-end="url(#arr-g2)"/>
+  <line x1="440" y1="158" x2="518" y2="133" class="arrow" marker-end="url(#arr-g2)"/>
+  <line x1="440" y1="180" x2="518" y2="195" class="arrow" marker-end="url(#arr-g2)"/>
+  <line x1="440" y1="200" x2="518" y2="255" class="arrow" marker-end="url(#arr-g2)"/>
+  <!-- registry -->
+  <rect x="690" y="110" width="80" height="46" rx="6" fill="var(--s3)" fill-opacity=".2" stroke="var(--s3)" stroke-width="1.5"/><text x="730" y="129" text-anchor="middle" class="lbl-strong" font-size="11">registry</text><text x="730" y="146" text-anchor="middle" class="lbl" font-size="10">v1.3 · prod</text>
+  <line x1="670" y1="71" x2="690" y2="120" class="arrow" marker-end="url(#arr-g2)"/>
+  <line x1="670" y1="195" x2="690" y2="146" class="arrow" marker-end="url(#arr-g2)"/>
+  <text x="390" y="294" text-anchor="middle" class="lbl" font-size="11">Walk the arrows backwards from "prod" and you can rebuild the model. If any arrow is missing, you cannot.</text>
+</svg>
+<figcaption><strong>Figure 21.2 — The lineage graph.</strong> Four inputs (data version, code commit, environment, config) produce one run; the run produces the model, its metrics, its card and the reference data profile that monitoring will compare against. The registry entry points at all of them.</figcaption>
+</figure>
+
+<h3>Experiment tracking with MLflow</h3>
+<p>An experiment tracker is a database of runs plus a UI. You wrap training in a <em>run</em>, log parameters, metrics and artifacts, and the tracker records who ran what, when, from which commit. <strong>MLflow</strong> is the most common open-source choice; Weights &amp; Biases, Neptune and the cloud vendors' offerings do the same job. The pattern is always the same:</p>
+
+<pre class="code" data-lang="python-noexec"><code><span class="cm"># MLflow: track a run, log artifacts, register the model (needs a running MLflow server or local ./mlruns)</span>
+<span class="kw">import</span> mlflow, mlflow.sklearn
+<span class="kw">from</span> sklearn.pipeline <span class="kw">import</span> make_pipeline
+<span class="kw">from</span> sklearn.preprocessing <span class="kw">import</span> StandardScaler
+<span class="kw">from</span> sklearn.ensemble <span class="kw">import</span> GradientBoostingClassifier
+<span class="kw">from</span> sklearn.metrics <span class="kw">import</span> roc_auc_score
+
+mlflow.set_tracking_uri(<span class="st">"http://mlflow.internal:5000"</span>)      <span class="cm"># or "file:./mlruns" for a laptop</span>
+mlflow.set_experiment(<span class="st">"churn"</span>)
+
+params = {<span class="st">"n_estimators"</span>: <span class="nu">300</span>, <span class="st">"max_depth"</span>: <span class="nu">3</span>, <span class="st">"learning_rate"</span>: <span class="nu">0.05</span>, <span class="st">"random_state"</span>: <span class="nu">0</span>}
+<span class="kw">with</span> mlflow.start_run(run_name=<span class="st">"gbm-depth3"</span>) <span class="kw">as</span> run:
+    mlflow.log_params(params)
+    mlflow.set_tags({<span class="st">"data_snapshot"</span>: <span class="st">"s3://ml-data/churn/2026-09-01"</span>, <span class="st">"git_sha"</span>: <span class="st">"4c1e7b2"</span>})
+    pipe = make_pipeline(StandardScaler(), GradientBoostingClassifier(**params)).fit(X_tr, y_tr)
+    auc = roc_auc_score(y_te, pipe.predict_proba(X_te)[:, <span class="nu">1</span>])
+    mlflow.log_metric(<span class="st">"test_auc"</span>, auc)
+    mlflow.log_artifact(<span class="st">"reports/shap_summary.png"</span>)           <span class="cm"># any file: plots, model card, reference profile</span>
+    mlflow.sklearn.log_model(pipe, artifact_path=<span class="st">"model"</span>,
+                             input_example=X_tr.head(<span class="nu">3</span>),        <span class="cm"># records the input schema (signature)</span>
+                             registered_model_name=<span class="st">"churn"</span>)     <span class="cm"># creates version N in the Model Registry</span>
+
+<span class="cm"># Promote in the registry (MLflow &gt;= 2.9 uses aliases instead of the old Staging/Production stages)</span>
+client = mlflow.MlflowClient()
+client.set_registered_model_alias(<span class="st">"churn"</span>, alias=<span class="st">"staging"</span>, version=<span class="nu">4</span>)
+<span class="cm"># ... run acceptance tests against models:/churn@staging, then:</span>
+client.set_registered_model_alias(<span class="st">"churn"</span>, alias=<span class="st">"production"</span>, version=<span class="nu">4</span>)
+model = mlflow.sklearn.load_model(<span class="st">"models:/churn@production"</span>)   <span class="cm"># what the serving code loads</span></code></pre>
+
+<p>You do not need MLflow to get 80% of the benefit. The essential thing is <em>an append-only record of every run</em> with its parameters, metrics, data fingerprint and library versions. A JSON-lines file in a shared bucket does this in twenty lines, and a small team can run on it for a year before the UI becomes worth the server:</p>
+
+<pre class="code" data-lang="python"><code><span class="cm"># A plain-Python experiment log: one JSON line per run, append-only, greppable</span>
+<span class="kw">import</span> json, time, hashlib, platform, os, tempfile
+<span class="kw">import</span> numpy <span class="kw">as</span> np, sklearn
+<span class="kw">from</span> sklearn.datasets <span class="kw">import</span> load_breast_cancer
+<span class="kw">from</span> sklearn.model_selection <span class="kw">import</span> cross_val_score
+<span class="kw">from</span> sklearn.pipeline <span class="kw">import</span> make_pipeline
+<span class="kw">from</span> sklearn.preprocessing <span class="kw">import</span> StandardScaler
+<span class="kw">from</span> sklearn.linear_model <span class="kw">import</span> LogisticRegression
+<span class="kw">from</span> sklearn.ensemble <span class="kw">import</span> RandomForestClassifier
+
+LOG = os.path.join(tempfile.gettempdir(), <span class="st">"experiments.jsonl"</span>)
+
+<span class="kw">def</span> <span class="fn">log_run</span>(name, params, metrics, data_fingerprint, tags=()):
+    rec = {<span class="st">"run_id"</span>: hashlib.sha1(<span class="st">f"{name}{time.time_ns()}"</span>.encode()).hexdigest()[:<span class="nu">10</span>],
+           <span class="st">"ts"</span>: time.strftime(<span class="st">"%Y-%m-%dT%H:%M:%S"</span>), <span class="st">"name"</span>: name, <span class="st">"params"</span>: params, <span class="st">"metrics"</span>: metrics,
+           <span class="st">"data_sha"</span>: data_fingerprint, <span class="st">"sklearn"</span>: sklearn.__version__, <span class="st">"python"</span>: platform.python_version(),
+           <span class="st">"tags"</span>: <span class="fn">list</span>(tags)}
+    <span class="kw">with</span> <span class="fn">open</span>(LOG, <span class="st">"a"</span>) <span class="kw">as</span> f: f.write(json.dumps(rec) + <span class="st">"\n"</span>)
+    <span class="kw">return</span> rec[<span class="st">"run_id"</span>]
+
+X, y = load_breast_cancer(return_X_y=<span class="kw">True</span>)
+data_sha = hashlib.sha1(np.ascontiguousarray(X).tobytes() + y.tobytes()).hexdigest()[:<span class="nu">12</span>]   <span class="cm"># what data did we train on?</span>
+
+candidates = {
+    <span class="st">"logreg_C1"</span>:  make_pipeline(StandardScaler(), LogisticRegression(C=<span class="nu">1.0</span>, max_iter=<span class="nu">2000</span>)),
+    <span class="st">"logreg_C01"</span>: make_pipeline(StandardScaler(), LogisticRegression(C=<span class="nu">0.1</span>, max_iter=<span class="nu">2000</span>)),
+    <span class="st">"rf_200"</span>:     RandomForestClassifier(n_estimators=<span class="nu">200</span>, random_state=<span class="nu">0</span>),
+}
+<span class="kw">for</span> name, model <span class="kw">in</span> candidates.items():
+    t0 = time.time()
+    auc = cross_val_score(model, X, y, cv=<span class="nu">5</span>, scoring=<span class="st">"roc_auc"</span>)
+    rid = log_run(name, model.get_params(deep=<span class="kw">False</span>) <span class="kw">if</span> <span class="st">"rf"</span> <span class="kw">in</span> name <span class="kw">else</span> {<span class="st">"C"</span>: model[-<span class="nu">1</span>].C},
+                  {<span class="st">"cv_auc_mean"</span>: <span class="fn">round</span>(auc.mean(), <span class="nu">4</span>), <span class="st">"cv_auc_std"</span>: <span class="fn">round</span>(auc.std(), <span class="nu">4</span>), <span class="st">"fit_seconds"</span>: <span class="fn">round</span>(time.time() - t0, <span class="nu">2</span>)},
+                  data_sha, tags=[<span class="st">"baseline-sweep"</span>])
+    <span class="fn">print</span>(<span class="st">f"{rid}  {name:&lt;12} AUC = {auc.mean():.4f} ± {auc.std():.4f}"</span>)
+
+<span class="cm"># Reading the log back is one line of pandas — no server required</span>
+<span class="kw">import</span> pandas <span class="kw">as</span> pd
+runs = pd.read_json(LOG, lines=<span class="kw">True</span>)
+best = runs.loc[runs[<span class="st">"metrics"</span>].apply(<span class="kw">lambda</span> m: m[<span class="st">"cv_auc_mean"</span>]).idxmax()]
+<span class="fn">print</span>(<span class="st">f"\nbest run: {best['name']} (run_id {best['run_id']}, data {best['data_sha']}, sklearn {best['sklearn']})"</span>)
+os.remove(LOG)
+<span class="out"># 17a855bea0  logreg_C1    AUC = 0.9952 ± 0.0040      (run ids are time-based and will differ)</span>
+<span class="out"># 7d74a19c6f  logreg_C01   AUC = 0.9951 ± 0.0047</span>
+<span class="out"># 30c1d24370  rf_200       AUC = 0.9900 ± 0.0087</span>
+<span class="out">#</span>
+<span class="out"># best run: logreg_C1 (run_id 17a855bea0, data 959f826a15c6, sklearn 1.9.1)</span></code></pre>
+
+<div class="callout warn"><div class="title">Common mistake</div>
+<p><strong>Logging the metric but not the data.</strong> "AUC 0.87" is meaningless without the fingerprint of the data it was measured on, because the next extract will have different rows, a different label window, and possibly a different label definition. Hash the training data (or store its version) with every run. When two runs disagree, the first question is always "same data?" and you want the answer in the log, not in Slack.</p>
+</div>
+
+<div class="callout pro"><div class="title">At work</div>
+<p>Start with the JSON log on day one of any project — it is free and it forces the habit. Move to MLflow (or whatever your company runs) when a second person needs to see your runs, or when you have more than ~50 of them. The migration is trivial because the schema is the same: params, metrics, tags, artifacts. What is not trivial is recovering the runs you never logged.</p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s3">3. Packaging a model &amp; the registry</h2>
+
+<p>What exactly is "the model"? Not the estimator. The thing serving needs is the <strong>whole pipeline</strong>: imputation, scaling, encoding, feature construction and the estimator, fitted together, so that raw production rows go in and predictions come out (Chapter 8). If preprocessing lives in a notebook cell and only the estimator is saved, the serving code has to re-implement the preprocessing, and it will do so slightly differently — which is the training–serving skew of Section 5, self-inflicted.</p>
+
+<h3>Pickle and joblib: convenient and dangerous</h3>
+<p>scikit-learn pipelines are saved with <code>joblib.dump</code> (pickle with efficient NumPy arrays). Two risks come with it. <strong>Version coupling:</strong> a pickle stores object internals, not a specification, so loading it under a different scikit-learn version may fail loudly, or — worse — load and predict slightly different numbers. scikit-learn emits an <code>InconsistentVersionWarning</code>; treat it as an error. <strong>Security:</strong> unpickling executes arbitrary code embedded in the file. Never load a pickle you did not produce, and sign or checksum the ones you did. The practical answer is a bundle: the pipeline plus metadata — library versions, model version, feature names, training data fingerprint, expected input schema — saved under a version-stamped filename, with a loader that refuses mismatches.</p>
+
+<pre class="code" data-lang="python"><code><span class="cm"># Packaging: save the WHOLE pipeline with a version-stamped name, and refuse to load under a different sklearn</span>
+<span class="kw">import</span> os, json, tempfile, joblib, sklearn, numpy <span class="kw">as</span> np
+<span class="kw">from</span> sklearn.datasets <span class="kw">import</span> load_breast_cancer
+<span class="kw">from</span> sklearn.model_selection <span class="kw">import</span> train_test_split
+<span class="kw">from</span> sklearn.pipeline <span class="kw">import</span> make_pipeline
+<span class="kw">from</span> sklearn.preprocessing <span class="kw">import</span> StandardScaler
+<span class="kw">from</span> sklearn.linear_model <span class="kw">import</span> LogisticRegression
+
+X, y = load_breast_cancer(return_X_y=<span class="kw">True</span>)
+X_tr, X_te, y_tr, y_te = train_test_split(X, y, test_size=<span class="nu">0.25</span>, random_state=<span class="nu">0</span>)
+pipe = make_pipeline(StandardScaler(), LogisticRegression(max_iter=<span class="nu">2000</span>)).fit(X_tr, y_tr)
+
+MODEL_VERSION = <span class="st">"churn-v1.3.0"</span>                       <span class="cm"># bump on every retrain that ships</span>
+outdir = tempfile.mkdtemp()
+path = os.path.join(outdir, <span class="st">f"{MODEL_VERSION}_sklearn{sklearn.__version__}.joblib"</span>)
+joblib.dump({<span class="st">"pipeline"</span>: pipe, <span class="st">"sklearn_version"</span>: sklearn.__version__, <span class="st">"model_version"</span>: MODEL_VERSION,
+             <span class="st">"n_features"</span>: X_tr.shape[<span class="nu">1</span>], <span class="st">"test_auc"</span>: <span class="fn">float</span>(pipe.score(X_te, y_te))}, path)
+<span class="fn">print</span>(<span class="st">"saved:"</span>, os.path.basename(path), <span class="st">f"({os.path.getsize(path)/1024:.1f} KB)"</span>)
+
+<span class="kw">def</span> <span class="fn">load_model</span>(path, strict=<span class="kw">True</span>):
+    bundle = joblib.load(path)                       <span class="cm"># WARNING: unpickling runs arbitrary code — only load files you trust</span>
+    <span class="kw">if</span> bundle[<span class="st">"sklearn_version"</span>] != sklearn.__version__:
+        msg = <span class="st">f"model pickled with sklearn {bundle['sklearn_version']}, runtime has {sklearn.__version__}"</span>
+        <span class="kw">if</span> strict: <span class="kw">raise</span> RuntimeError(msg)
+        <span class="fn">print</span>(<span class="st">"WARNING:"</span>, msg)
+    <span class="kw">return</span> bundle
+
+b = load_model(path)
+same = np.allclose(b[<span class="st">"pipeline"</span>].predict_proba(X_te), pipe.predict_proba(X_te))
+<span class="fn">print</span>(<span class="st">f"loaded {b['model_version']}: predictions identical to the in-memory model = {same}"</span>)
+
+<span class="cm"># Simulate the failure mode: a bundle saved by a different library version</span>
+b_old = <span class="fn">dict</span>(b, sklearn_version=<span class="st">"1.2.2"</span>)
+joblib.dump(b_old, os.path.join(outdir, <span class="st">"old.joblib"</span>))
+<span class="kw">try</span>:
+    load_model(os.path.join(outdir, <span class="st">"old.joblib"</span>))
+<span class="kw">except</span> RuntimeError <span class="kw">as</span> e:
+    <span class="fn">print</span>(<span class="st">"refused to load:"</span>, e)
+<span class="out"># saved: churn-v1.3.0_sklearn1.9.1.joblib (2.4 KB)</span>
+<span class="out"># loaded churn-v1.3.0: predictions identical to the in-memory model = True</span>
+<span class="out"># refused to load: model pickled with sklearn 1.2.2, runtime has 1.9.1</span></code></pre>
+
+<p><strong>ONNX</strong> (Open Neural Network Exchange) is the alternative for models that must run outside Python or with a frozen runtime: <code>skl2onnx</code> converts most scikit-learn pipelines, and <code>onnxruntime</code> executes them in C++, Java, C# or the browser, typically several times faster than Python and with no version coupling to scikit-learn. The trade-off is that not every transformer converts, and you must verify numerically that the ONNX graph reproduces the Python predictions.</p>
+
+<h3>The model registry</h3>
+<p>A registry is a catalogue of model versions with a lifecycle. Every trained candidate becomes a numbered version; a version is <em>promoted</em> through stages by people or by automated gates; serving code loads "the production version" by alias rather than by file path, so a promotion or a rollback is a metadata change, not a redeploy.</p>
+
+<figure class="fig">
+<svg viewBox="0 0 780 250" role="img" aria-label="Model registry lifecycle: versions move from candidate to staging via automated tests, from staging to production via human approval and a canary, and from production to archived when superseded; a rollback arrow points from production back to the previous version">
+  <defs><marker id="arr-g3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+  <text x="390" y="24" text-anchor="middle" class="lbl-strong" font-size="14">Registry stages for model "churn"</text>
+  <rect x="20" y="60" width="150" height="80" class="box"/><text x="95" y="88" text-anchor="middle" class="lbl-strong">Candidate</text><text x="95" y="108" text-anchor="middle" class="lbl" font-size="11">v5 · every training run</text><text x="95" y="126" text-anchor="middle" class="lbl" font-size="11">nothing loads it</text>
+  <rect x="220" y="60" width="150" height="80" rx="6" fill="var(--s4)" fill-opacity=".18" stroke="var(--s4)" stroke-width="1.5"/><text x="295" y="88" text-anchor="middle" class="lbl-strong">Staging</text><text x="295" y="108" text-anchor="middle" class="lbl" font-size="11">v4 · shadow traffic</text><text x="295" y="126" text-anchor="middle" class="lbl" font-size="11">acceptance tests</text>
+  <rect x="420" y="60" width="150" height="80" rx="6" fill="var(--s3)" fill-opacity=".2" stroke="var(--s3)" stroke-width="2"/><text x="495" y="88" text-anchor="middle" class="lbl-strong">Production</text><text x="495" y="108" text-anchor="middle" class="lbl" font-size="11">v3 · 100% traffic</text><text x="495" y="126" text-anchor="middle" class="lbl" font-size="11">alias "production"</text>
+  <rect x="620" y="60" width="140" height="80" class="box" stroke-dasharray="4 3"/><text x="690" y="88" text-anchor="middle" class="lbl-strong">Archived</text><text x="690" y="108" text-anchor="middle" class="lbl" font-size="11">v1, v2 · kept for</text><text x="690" y="126" text-anchor="middle" class="lbl" font-size="11">audit &amp; rollback</text>
+  <line x1="170" y1="100" x2="218" y2="100" class="arrow" marker-end="url(#arr-g3)"/><text x="194" y="90" text-anchor="middle" class="lbl" font-size="10">tests pass</text>
+  <line x1="370" y1="100" x2="418" y2="100" class="arrow" marker-end="url(#arr-g3)"/><text x="394" y="90" text-anchor="middle" class="lbl" font-size="10">approve +</text><text x="394" y="152" text-anchor="middle" class="lbl" font-size="10">canary</text>
+  <line x1="570" y1="100" x2="618" y2="100" class="arrow" marker-end="url(#arr-g3)"/><text x="594" y="90" text-anchor="middle" class="lbl" font-size="10">superseded</text>
+  <!-- rollback -->
+  <path d="M690,140 C690,200 495,200 495,142" class="arrow" stroke="var(--critical)" stroke-dasharray="6 4" marker-end="url(#arr-g3)"/>
+  <text x="592" y="192" text-anchor="middle" class="lbl-strong" font-size="11" fill="var(--critical)">rollback = re-point the alias (seconds)</text>
+  <text x="390" y="236" text-anchor="middle" class="lbl" font-size="11">Serving code loads models:/churn@production. Promotion and rollback change the alias, never the serving code.</text>
+</svg>
+<figcaption><strong>Figure 21.3 — Registry stages.</strong> Candidates are cheap and numerous; staging gets automated acceptance tests and shadow traffic; production requires a human approval and a canary; archived versions are never deleted, because rollback and audits need them.</figcaption>
+</figure>
+
+<div class="callout eli9"><div class="title">Explain it like I'm 9</div>
+<p>A registry is like the shelf of approved recipes in the bakery kitchen. Anyone can write a new recipe card (candidate), but only the head baker can move a card to the "we bake this" slot (production) — and the old card goes into a drawer, not the bin, in case tonight's cakes come out wrong and you need yesterday's recipe back by morning.</p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s4">4. Serving patterns &amp; the inference service</h2>
+
+<p>"Deploy the model" means one of four very different things, and choosing the wrong one is the most expensive early mistake in MLOps. The question that decides it is not "what is fashionable" but two numbers: <strong>how fast must a prediction be available after the input exists</strong> (latency tolerance), and <strong>how many predictions per second</strong> (throughput).</p>
+
+<div class="grid2">
+  <div class="card accent"><h4>Batch scoring</h4><p>A scheduled job scores every row (all customers, every night) and writes the results to a table. The consumer reads the table. Simplest, cheapest per prediction, easiest to test — and predictions are hours old. Right for the Monday retention list, weekly demand forecasts, monthly risk scores.</p></div>
+  <div class="card accent"><h4>Real-time REST (online)</h4><p>A service loads the model and answers HTTP requests one row at a time in tens of milliseconds. Needed when the input only exists at request time (the customer is on the cancellation page <em>now</em>). Requires a running service, autoscaling, monitoring, on-call.</p></div>
+  <div class="card accent"><h4>Streaming</h4><p>The model sits on a message stream (Kafka, Kinesis, Pub/Sub) and scores every event as it flows through, writing scores to another stream or store. For continuous high-volume events: fraud on every transaction, anomaly detection on sensor data.</p></div>
+  <div class="card accent"><h4>Embedded / edge</h4><p>The model is compiled into the application (mobile app, browser via ONNX, a device, a database UDF). Zero network latency, works offline, hard to update, must be small. Keyboard prediction, on-device vision, in-database scoring.</p></div>
+</div>
+
+<div class="tbl-wrap">
+<table class="tbl">
+<thead><tr><th>Pattern</th><th>Latency</th><th>Throughput</th><th>Cost per prediction</th><th>Complexity</th><th>Use when…</th></tr></thead>
+<tbody>
+<tr><td><strong>Batch</strong></td><td>Hours–days</td><td>Very high (millions/run)</td><td>Lowest</td><td>Low</td><td>The decision is not made at request time; inputs exist ahead of time.</td></tr>
+<tr><td><strong>REST</strong></td><td>10–200 ms</td><td>Tens to thousands/s</td><td>Medium</td><td>Medium</td><td>Inputs arrive with the request; an app or another service is waiting.</td></tr>
+<tr><td><strong>Streaming</strong></td><td>100 ms–seconds</td><td>Thousands to millions/s</td><td>Medium</td><td>High</td><td>Continuous event flow; every event must be scored; consumers are asynchronous.</td></tr>
+<tr><td><strong>Edge / embedded</strong></td><td>&lt; 10 ms</td><td>Per device</td><td>~0 marginal</td><td>High (updates)</td><td>No network, privacy, or sub-10 ms budget; model is small and stable.</td></tr>
+</tbody>
+</table>
+</div>
+
+<figure class="fig">
+<svg viewBox="0 0 780 300" role="img" aria-label="Four serving patterns drawn as data flows: batch reads a table, scores, writes a table; REST answers an app's request; streaming scores events on a message bus; edge runs the model inside a device">
+  <defs><marker id="arr-g4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+  <!-- batch -->
+  <text x="105" y="24" text-anchor="middle" class="lbl-strong" font-size="13">Batch</text>
+  <rect x="30" y="40" width="150" height="34" class="box"/><text x="105" y="62" text-anchor="middle" class="lbl" font-size="11">warehouse table (all rows)</text>
+  <line x1="105" y1="74" x2="105" y2="100" class="arrow" marker-end="url(#arr-g4)"/>
+  <rect x="55" y="102" width="100" height="34" class="box-accent"/><text x="105" y="124" text-anchor="middle" class="lbl-strong" font-size="11">model job 02:00</text>
+  <line x1="105" y1="136" x2="105" y2="162" class="arrow" marker-end="url(#arr-g4)"/>
+  <rect x="30" y="164" width="150" height="34" class="box"/><text x="105" y="186" text-anchor="middle" class="lbl" font-size="11">scores table → CRM, BI</text>
+  <text x="105" y="222" text-anchor="middle" class="lbl" font-size="10">latency: hours · cost: lowest</text>
+  <!-- REST -->
+  <text x="295" y="24" text-anchor="middle" class="lbl-strong" font-size="13">Real-time REST</text>
+  <rect x="220" y="40" width="150" height="34" class="box"/><text x="295" y="62" text-anchor="middle" class="lbl" font-size="11">app: "score customer 42"</text>
+  <line x1="280" y1="74" x2="280" y2="100" class="arrow" marker-end="url(#arr-g4)"/>
+  <line x1="310" y1="100" x2="310" y2="74" class="arrow" marker-end="url(#arr-g4)"/>
+  <rect x="235" y="102" width="120" height="34" class="box-accent"/><text x="295" y="124" text-anchor="middle" class="lbl-strong" font-size="11">POST /predict</text>
+  <line x1="295" y1="136" x2="295" y2="162" class="arrow" marker-end="url(#arr-g4)"/>
+  <rect x="220" y="164" width="150" height="34" class="box"/><text x="295" y="186" text-anchor="middle" class="lbl" font-size="11">feature store (online)</text>
+  <text x="295" y="222" text-anchor="middle" class="lbl" font-size="10">latency: 10–200 ms · needs on-call</text>
+  <!-- streaming -->
+  <text x="485" y="24" text-anchor="middle" class="lbl-strong" font-size="13">Streaming</text>
+  <rect x="410" y="40" width="150" height="34" class="box"/><text x="485" y="62" text-anchor="middle" class="lbl" font-size="11">topic: transactions</text>
+  <line x1="485" y1="74" x2="485" y2="100" class="arrow" marker-end="url(#arr-g4)"/>
+  <rect x="425" y="102" width="120" height="34" class="box-accent"/><text x="485" y="124" text-anchor="middle" class="lbl-strong" font-size="11">stream processor</text>
+  <line x1="485" y1="136" x2="485" y2="162" class="arrow" marker-end="url(#arr-g4)"/>
+  <rect x="410" y="164" width="150" height="34" class="box"/><text x="485" y="186" text-anchor="middle" class="lbl" font-size="11">topic: fraud_scores</text>
+  <text x="485" y="222" text-anchor="middle" class="lbl" font-size="10">latency: ~100 ms · millions/s</text>
+  <!-- edge -->
+  <text x="675" y="24" text-anchor="middle" class="lbl-strong" font-size="13">Embedded / edge</text>
+  <rect x="600" y="40" width="150" height="158" rx="14" class="box"/>
+  <text x="675" y="62" text-anchor="middle" class="lbl" font-size="11">phone / device / browser</text>
+  <rect x="620" y="80" width="110" height="34" class="box-accent"/><text x="675" y="102" text-anchor="middle" class="lbl-strong" font-size="11">model.onnx</text>
+  <rect x="620" y="130" width="110" height="34" class="box"/><text x="675" y="152" text-anchor="middle" class="lbl" font-size="11">sensors / UI</text>
+  <line x1="675" y1="130" x2="675" y2="116" class="arrow" marker-end="url(#arr-g4)"/>
+  <text x="675" y="182" text-anchor="middle" class="lbl" font-size="10">no network round-trip</text>
+  <text x="675" y="222" text-anchor="middle" class="lbl" font-size="10">latency: &lt; 10 ms · hard to update</text>
+  <text x="390" y="262" text-anchor="middle" class="lbl-strong" font-size="12">Start with batch unless the input only exists at request time.</text>
+  <text x="390" y="282" text-anchor="middle" class="lbl" font-size="11">Most "we need real-time" requests are really "we need it by tomorrow morning."</text>
+</svg>
+<figcaption><strong>Figure 21.4 — Four ways to put a model in front of a decision.</strong> The data flow, not the model, is what differs. Batch is the default; the others buy lower latency with more moving parts.</figcaption>
+</figure>
+
+<div class="widget" id="w-serve">
+  <div class="w-title">Interactive: which serving pattern? — set the requirement, read the recommendation</div>
+  <div class="controls">
+    <label>Predictions per second (log) <input type="range" id="sv-rps" min="-2" max="5" step="0.1" value="0" data-out="sv-rps-o"> <output id="sv-rps-o"></output></label>
+    <label>Latency tolerance (log ms) <input type="range" id="sv-lat" min="0" max="8" step="0.1" value="5" data-out="sv-lat-o"> <output id="sv-lat-o"></output></label>
+    <span>Pattern: <span class="readout" id="sv-r">–</span></span>
+  </div>
+  <svg viewBox="0 0 700 290" id="sv-svg" role="img" aria-label="A map of throughput versus latency tolerance with regions for batch, REST, streaming and edge serving, and a marker at the current setting"></svg>
+  <div class="note" id="sv-note">Move the sliders. The map shows how latency tolerance (how long after the input exists you can still use the prediction) and throughput decide the pattern; the text explains the reasoning and the cost you are signing up for.</div>
+</div>
+
+<h3>A real-time inference service</h3>
+<p>When the decision does need to happen at request time, the standard shape is a small HTTP service: load the model bundle once at start-up, validate every request against a schema, predict, log, return. <strong>FastAPI</strong> with <strong>pydantic</strong> gives you the schema validation, an OpenAPI spec and async handling for free. The service below is the entire pattern; everything a real one adds (auth, rate limiting, tracing) is generic web engineering.</p>
+
+<pre class="code" data-lang="python-noexec"><code><span class="cm"># app.py — a minimal, production-shaped inference service (run: uvicorn app:app --host 0.0.0.0 --port 8000)</span>
+<span class="kw">import</span> os, time, logging, uuid
+<span class="kw">import</span> numpy <span class="kw">as</span> np, pandas <span class="kw">as</span> pd, joblib
+<span class="kw">from</span> fastapi <span class="kw">import</span> FastAPI, HTTPException
+<span class="kw">from</span> pydantic <span class="kw">import</span> BaseModel, Field, field_validator
+
+log = logging.getLogger(<span class="st">"churn-api"</span>)
+app = FastAPI(title=<span class="st">"churn-api"</span>)
+BUNDLE = joblib.load(os.environ.get(<span class="st">"MODEL_PATH"</span>, <span class="st">"/models/churn-v1.3.0.joblib"</span>))   <span class="cm"># loaded ONCE, not per request</span>
+PIPE, VERSION = BUNDLE[<span class="st">"pipeline"</span>], BUNDLE[<span class="st">"model_version"</span>]
+
+<span class="kw">class</span> <span class="fn">Customer</span>(BaseModel):                          <span class="cm"># the input schema IS the contract with callers</span>
+    customer_id: <span class="fn">str</span>
+    age: <span class="fn">int</span> = Field(ge=<span class="nu">18</span>, le=<span class="nu">100</span>)
+    monthly_spend: <span class="fn">float</span> = Field(ge=<span class="nu">0</span>, le=<span class="nu">5000</span>)
+    plan: <span class="fn">str</span>
+    support_calls: <span class="fn">int</span> = Field(ge=<span class="nu">0</span>, le=<span class="nu">50</span>, default=<span class="nu">0</span>)
+
+    @field_validator(<span class="st">"plan"</span>)
+    <span class="kw">def</span> <span class="fn">known_plan</span>(cls, v):
+        <span class="kw">if</span> v <span class="kw">not</span> <span class="kw">in</span> {<span class="st">"basic"</span>, <span class="st">"plus"</span>, <span class="st">"premium"</span>}: <span class="kw">raise</span> ValueError(<span class="st">f"unknown plan {v!r}"</span>)
+        <span class="kw">return</span> v
+
+<span class="kw">class</span> <span class="fn">Prediction</span>(BaseModel):
+    customer_id: <span class="fn">str</span>
+    churn_probability: <span class="fn">float</span>
+    model_version: <span class="fn">str</span>
+    request_id: <span class="fn">str</span>
+
+@app.get(<span class="st">"/health"</span>)                                 <span class="cm"># liveness: is the process up?</span>
+<span class="kw">def</span> <span class="fn">health</span>(): <span class="kw">return</span> {<span class="st">"status"</span>: <span class="st">"ok"</span>, <span class="st">"model_version"</span>: VERSION}
+
+@app.get(<span class="st">"/ready"</span>)                                  <span class="cm"># readiness: can it actually predict? (load balancer checks this)</span>
+<span class="kw">def</span> <span class="fn">ready</span>():
+    PIPE.predict_proba(pd.DataFrame([{<span class="st">"age"</span>: <span class="nu">40</span>, <span class="st">"monthly_spend"</span>: <span class="nu">30.0</span>, <span class="st">"plan"</span>: <span class="st">"basic"</span>, <span class="st">"support_calls"</span>: <span class="nu">1</span>}]))
+    <span class="kw">return</span> {<span class="st">"ready"</span>: <span class="kw">True</span>}
+
+@app.post(<span class="st">"/predict"</span>, response_model=Prediction)
+<span class="kw">def</span> <span class="fn">predict</span>(c: Customer):
+    t0 = time.perf_counter(); rid = uuid.uuid4().hex[:<span class="nu">12</span>]
+    X = pd.DataFrame([c.model_dump(exclude={<span class="st">"customer_id"</span>})])
+    <span class="kw">try</span>:
+        p = <span class="fn">float</span>(PIPE.predict_proba(X)[<span class="nu">0</span>, <span class="nu">1</span>])
+    <span class="kw">except</span> Exception <span class="kw">as</span> e:                            <span class="cm"># never leak a stack trace to the caller</span>
+        log.exception(<span class="st">"prediction failed"</span>); <span class="kw">raise</span> HTTPException(status_code=<span class="nu">500</span>, detail=<span class="st">"prediction failed"</span>)
+    <span class="cm"># structured log line = the raw material for monitoring (Section 7): inputs, output, version, latency</span>
+    log.info({<span class="st">"request_id"</span>: rid, <span class="st">"model_version"</span>: VERSION, <span class="st">"features"</span>: X.iloc[<span class="nu">0</span>].to_dict(),
+              <span class="st">"prediction"</span>: p, <span class="st">"latency_ms"</span>: <span class="fn">round</span>((time.perf_counter() - t0) * <span class="nu">1000</span>, <span class="nu">2</span>)})
+    <span class="kw">return</span> Prediction(customer_id=c.customer_id, churn_probability=p, model_version=VERSION, request_id=rid)</code></pre>
+
+<pre class="code" data-lang="dockerfile"><code><span class="cm"># Dockerfile — pin everything; the image tag is the environment version</span>
+FROM python:3.11-slim
+WORKDIR /srv
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt     <span class="cm"># exact pins: scikit-learn==1.9.1, fastapi==0.115.0, ...</span>
+COPY app.py .
+COPY models/churn-v1.3.0.joblib /models/               <span class="cm"># or mount it at runtime and pass MODEL_PATH</span>
+ENV MODEL_PATH=/models/churn-v1.3.0.joblib
+RUN useradd -m api &amp;&amp; chown -R api /srv /models          <span class="cm"># do not run as root</span>
+USER api
+EXPOSE 8000
+HEALTHCHECK --interval=30s --timeout=3s CMD python -c "import urllib.request as u; u.urlopen('http://localhost:8000/ready')"
+CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2"]</code></pre>
+
+<p>Three details in that service are the difference between a demo and a system. The model is loaded <strong>once at start-up</strong>, not per request (loading a joblib file per request is a classic 100× slowdown). There are <strong>two health endpoints</strong>: <code>/health</code> says the process is alive, <code>/ready</code> proves it can predict — Kubernetes and load balancers use the second to decide whether to send traffic, which is what makes zero-downtime deploys possible. And every request writes a <strong>structured log line</strong> with the inputs, the output, the model version and the latency; that log <em>is</em> the monitoring data of Section 7.</p>
+
+<h3>Input validation: the bouncer at the door</h3>
+<p>Pydantic validates types and ranges per request. For batch jobs you need the same discipline applied to a whole table: does it have the expected columns, are the types right, are values in the training range, how many nulls? A batch that fails validation should <strong>stop the pipeline and page someone</strong>, not produce ten thousand confident nonsense scores. The function below is the shape of that check; <code>pandera</code> and <code>great_expectations</code> are the libraries that do it with more ceremony.</p>
+
+<pre class="code" data-lang="python"><code><span class="cm"># Data validation at the door: schema, types, ranges, nulls. Fail loudly BEFORE the model sees bad rows.</span>
+<span class="kw">import</span> numpy <span class="kw">as</span> np, pandas <span class="kw">as</span> pd
+
+SCHEMA = {                                       <span class="cm"># learned from the training data, frozen with the model</span>
+    <span class="st">"age"</span>:           {<span class="st">"dtype"</span>: <span class="st">"number"</span>, <span class="st">"min"</span>: <span class="nu">18</span>,  <span class="st">"max"</span>: <span class="nu">100</span>, <span class="st">"nullable"</span>: <span class="kw">False</span>},
+    <span class="st">"monthly_spend"</span>: {<span class="st">"dtype"</span>: <span class="st">"number"</span>, <span class="st">"min"</span>: <span class="nu">0</span>,   <span class="st">"max"</span>: <span class="nu">5000</span>, <span class="st">"nullable"</span>: <span class="kw">False</span>},
+    <span class="st">"plan"</span>:          {<span class="st">"dtype"</span>: <span class="st">"category"</span>, <span class="st">"values"</span>: {<span class="st">"basic"</span>, <span class="st">"plus"</span>, <span class="st">"premium"</span>}, <span class="st">"nullable"</span>: <span class="kw">False</span>},
+    <span class="st">"support_calls"</span>: {<span class="st">"dtype"</span>: <span class="st">"number"</span>, <span class="st">"min"</span>: <span class="nu">0</span>,   <span class="st">"max"</span>: <span class="nu">50</span>, <span class="st">"nullable"</span>: <span class="kw">True</span>},
+}
+
+<span class="kw">class</span> <span class="fn">DataValidationError</span>(ValueError): <span class="kw">pass</span>
+
+<span class="kw">def</span> <span class="fn">validate</span>(df, schema=SCHEMA, max_null_frac=<span class="nu">0.05</span>, max_out_of_range_frac=<span class="nu">0.01</span>):
+    problems = []
+    missing = <span class="fn">set</span>(schema) - <span class="fn">set</span>(df.columns); extra = <span class="fn">set</span>(df.columns) - <span class="fn">set</span>(schema)
+    <span class="kw">if</span> missing: problems.append(<span class="st">f"missing columns: {sorted(missing)}"</span>)
+    <span class="kw">if</span> extra:   problems.append(<span class="st">f"unexpected columns: {sorted(extra)}"</span>)
+    <span class="kw">for</span> col, rule <span class="kw">in</span> schema.items():
+        <span class="kw">if</span> col <span class="kw">not</span> <span class="kw">in</span> df: <span class="kw">continue</span>
+        s = df[col]; null_frac = s.isna().mean()
+        <span class="kw">if</span> null_frac &gt; (max_null_frac <span class="kw">if</span> rule[<span class="st">"nullable"</span>] <span class="kw">else</span> <span class="nu">0</span>):
+            problems.append(<span class="st">f"{col}: {null_frac:.1%} nulls (nullable={rule['nullable']})"</span>)
+        <span class="kw">if</span> rule[<span class="st">"dtype"</span>] == <span class="st">"number"</span>:
+            <span class="kw">if</span> <span class="kw">not</span> pd.api.types.is_numeric_dtype(s): problems.append(<span class="st">f"{col}: expected numeric, got {s.dtype}"</span>); <span class="kw">continue</span>
+            oor = ((s &lt; rule[<span class="st">"min"</span>]) | (s &gt; rule[<span class="st">"max"</span>])).mean()
+            <span class="kw">if</span> oor &gt; max_out_of_range_frac: problems.append(<span class="st">f"{col}: {oor:.1%} of rows outside [{rule['min']}, {rule['max']}]"</span>)
+        <span class="kw">else</span>:
+            bad = <span class="fn">set</span>(s.dropna().unique()) - rule[<span class="st">"values"</span>]
+            <span class="kw">if</span> bad: problems.append(<span class="st">f"{col}: unknown categories {sorted(bad)}"</span>)
+    <span class="kw">if</span> problems: <span class="kw">raise</span> DataValidationError(<span class="st">"; "</span>.join(problems))
+    <span class="kw">return</span> <span class="kw">True</span>
+
+rng = np.random.default_rng(<span class="nu">0</span>); n = <span class="nu">40</span>
+good = pd.DataFrame({<span class="st">"age"</span>: rng.integers(<span class="nu">18</span>, <span class="nu">80</span>, n), <span class="st">"monthly_spend"</span>: rng.gamma(<span class="nu">2</span>, <span class="nu">20</span>, n).round(<span class="nu">2</span>),
+                     <span class="st">"plan"</span>: rng.choice([<span class="st">"basic"</span>, <span class="st">"plus"</span>, <span class="st">"premium"</span>], n), <span class="st">"support_calls"</span>: rng.integers(<span class="nu">0</span>, <span class="nu">6</span>, n).astype(<span class="fn">float</span>)})
+good.loc[<span class="nu">3</span>, <span class="st">"support_calls"</span>] = np.nan                      <span class="cm"># one null in a nullable column: fine</span>
+<span class="fn">print</span>(<span class="st">"good batch:"</span>, validate(good))
+
+bad = good.copy(); bad.loc[<span class="nu">0</span>, <span class="st">"age"</span>] = <span class="nu">340</span>; bad.loc[<span class="nu">5</span>, <span class="st">"plan"</span>] = <span class="st">"gold"</span>; bad = bad.drop(columns=<span class="st">"support_calls"</span>)
+<span class="kw">try</span>:
+    validate(bad)
+<span class="kw">except</span> DataValidationError <span class="kw">as</span> e:
+    <span class="fn">print</span>(<span class="st">"bad batch rejected -&gt;"</span>, e)
+<span class="out"># good batch: True</span>
+<span class="out"># bad batch rejected -&gt; missing columns: ['support_calls']; age: 2.5% of rows outside [18, 100]; plan: unknown categories ['gold']</span></code></pre>
+
+<div class="callout pro"><div class="title">At work</div>
+<p>Generate the schema <em>from the training data</em> at training time — min, max, categories, null rate per column — and save it in the model bundle. Then validation in production is "does this batch look like what the model was trained on?", which is exactly the right question, and it updates itself automatically on every retrain. Loosen the bounds a little (e.g. 1st–99th percentile ± 20%) so legitimate new extremes don't page you, and log — don't block — soft violations.</p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s5">5. Training–serving skew &amp; feature stores</h2>
+
+<p><strong>Training–serving skew</strong> is the gap between the features the model saw in training and the features it receives in production, and it is the most common cause of "the model was great offline and useless online." The sources are mundane: the training feature <code>spend_last_30d</code> was computed in SQL over a warehouse table, the serving feature is computed in Python from a cache with a different definition of "day"; training used the value <em>as of the label date</em>, serving uses the value <em>now</em>; training filled nulls with the median, serving fills them with zero. Each is a small bug; together they cost more accuracy than any modelling choice.</p>
+
+<div class="callout eli9"><div class="title">Explain it like I'm 9</div>
+<p>You practise for a spelling test with words your teacher reads out slowly. On the day, a different teacher reads them fast with an accent. You knew the words, but the <em>input</em> changed, so you score worse. A model that trained on features computed one way and is served features computed another way has the same problem — and unlike you, it can't tell that the accent changed.</p>
+</div>
+
+<figure class="fig">
+<svg viewBox="0 0 780 320" role="img" aria-label="Feature store diagram: one feature definition feeds both an offline store used for training with point-in-time joins and an online store used for real-time serving, so training and serving see identical feature values">
+  <defs><marker id="arr-g5" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+  <text x="390" y="22" text-anchor="middle" class="lbl-strong" font-size="14">One feature definition, two stores, zero skew</text>
+  <!-- sources -->
+  <rect x="20" y="60" width="130" height="40" class="box"/><text x="85" y="85" text-anchor="middle" class="lbl" font-size="11">events stream</text>
+  <rect x="20" y="120" width="130" height="40" class="box"/><text x="85" y="145" text-anchor="middle" class="lbl" font-size="11">billing table</text>
+  <rect x="20" y="180" width="130" height="40" class="box"/><text x="85" y="205" text-anchor="middle" class="lbl" font-size="11">CRM table</text>
+  <!-- definition -->
+  <rect x="200" y="100" width="180" height="80" class="box-accent"/>
+  <text x="290" y="126" text-anchor="middle" class="lbl-strong" font-size="12">feature definitions</text>
+  <text x="290" y="146" text-anchor="middle" class="lbl" font-size="10">spend_last_30d = sum(amount)</text>
+  <text x="290" y="160" text-anchor="middle" class="lbl" font-size="10">over [t−30d, t) · written ONCE</text>
+  <line x1="150" y1="80" x2="198" y2="120" class="arrow" marker-end="url(#arr-g5)"/>
+  <line x1="150" y1="140" x2="198" y2="140" class="arrow" marker-end="url(#arr-g5)"/>
+  <line x1="150" y1="200" x2="198" y2="160" class="arrow" marker-end="url(#arr-g5)"/>
+  <!-- offline -->
+  <rect x="450" y="44" width="180" height="88" rx="6" fill="var(--s1)" fill-opacity=".12" stroke="var(--s1)" stroke-width="1.5"/>
+  <text x="540" y="66" text-anchor="middle" class="lbl-strong" font-size="12">offline store</text>
+  <text x="540" y="84" text-anchor="middle" class="lbl" font-size="10">warehouse / parquet</text>
+  <text x="540" y="100" text-anchor="middle" class="lbl" font-size="10">history for every entity &amp; time</text>
+  <text x="540" y="118" text-anchor="middle" class="lbl" font-size="10">point-in-time joins for training</text>
+  <line x1="380" y1="120" x2="448" y2="90" class="arrow" marker-end="url(#arr-g5)"/>
+  <text x="410" y="92" text-anchor="middle" class="lbl" font-size="10">backfill</text>
+  <!-- online -->
+  <rect x="450" y="160" width="180" height="88" rx="6" fill="var(--s2)" fill-opacity=".12" stroke="var(--s2)" stroke-width="1.5"/>
+  <text x="540" y="182" text-anchor="middle" class="lbl-strong" font-size="12">online store</text>
+  <text x="540" y="200" text-anchor="middle" class="lbl" font-size="10">Redis / DynamoDB</text>
+  <text x="540" y="216" text-anchor="middle" class="lbl" font-size="10">latest value per entity</text>
+  <text x="540" y="234" text-anchor="middle" class="lbl" font-size="10">read in &lt; 5 ms at request time</text>
+  <line x1="380" y1="160" x2="448" y2="200" class="arrow" marker-end="url(#arr-g5)"/>
+  <text x="410" y="198" text-anchor="middle" class="lbl" font-size="10">materialise</text>
+  <!-- consumers -->
+  <rect x="670" y="64" width="90" height="48" class="box"/><text x="715" y="84" text-anchor="middle" class="lbl-strong" font-size="11">training</text><text x="715" y="100" text-anchor="middle" class="lbl" font-size="10">X_train</text>
+  <rect x="670" y="180" width="90" height="48" class="box"/><text x="715" y="200" text-anchor="middle" class="lbl-strong" font-size="11">serving</text><text x="715" y="216" text-anchor="middle" class="lbl" font-size="10">/predict</text>
+  <line x1="630" y1="88" x2="668" y2="88" class="arrow" marker-end="url(#arr-g5)"/>
+  <line x1="630" y1="204" x2="668" y2="204" class="arrow" marker-end="url(#arr-g5)"/>
+  <!-- point in time -->
+  <rect x="200" y="226" width="430" height="70" rx="6" class="fill-surface2" stroke="var(--border)"/>
+  <text x="415" y="246" text-anchor="middle" class="lbl-strong" font-size="11">Point-in-time correctness (the other half of skew)</text>
+  <text x="415" y="264" text-anchor="middle" class="lbl" font-size="10">Training row for customer 42 labelled on 2026-03-01 must use spend_last_30d as of 2026-03-01,</text>
+  <text x="415" y="280" text-anchor="middle" class="lbl" font-size="10">not today's value. Using today's value leaks the future into training (Chapter 7).</text>
+  <text x="390" y="314" text-anchor="middle" class="lbl" font-size="11">Feast, Tecton, Databricks and SageMaker feature stores implement this pattern; a disciplined SQL view + a cache does too.</text>
+</svg>
+<figcaption><strong>Figure 21.5 — The feature store pattern.</strong> The feature is defined once; the offline store serves training with historically correct (point-in-time) values, the online store serves the same definition at request time. The value is consistency, not the technology.</figcaption>
+</figure>
+
+<p>You do not need a feature-store product to get the benefit. The discipline is: (1) feature logic lives in <em>one</em> piece of code that both training and serving import — the sklearn <code>Pipeline</code> is exactly this for row-level transforms; (2) aggregate features (last-30-day spend, counts, ratios) are computed by one job that writes both the training table and the serving cache; (3) training data is built with <strong>point-in-time joins</strong>, i.e. the feature value as of the label timestamp, never the current value. Then <strong>test the skew</strong>: take a sample of production requests, recompute their features offline, and assert the values match. A skew test that runs in CI catches the "different definition of day" bug before it costs a quarter.</p>
+
+<div class="callout warn"><div class="title">Common mistake</div>
+<p><strong>Computing training features from the current state of the database.</strong> A model that predicts churn from <code>days_since_last_login</code> where the value is today's, but the label is from six months ago, is trained on the future: churned customers have not logged in since they churned, so the feature is a near-perfect leak. Offline AUC 0.98, production AUC 0.62. Point-in-time correctness is not optional.</p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s6">6. CI/CD for ML: tests that matter</h2>
+
+<p>Ordinary software has unit tests: given this input, expect that output. ML systems need those too, for the feature code and the service. But the model itself cannot be tested that way — nobody knows what the "right" probability for customer 42 is. So ML pipelines add three families of tests that ordinary code does not have:</p>
+
+<div class="grid3">
+  <div class="card accent"><h4>Data tests</h4><p>Schema (columns, types), value ranges, null rates, category sets, row counts within expected bounds, no duplicate keys, label rate within a plausible band, no leakage columns (a denylist of names and a check that no feature has AUC &gt; 0.95 alone). Run before every training job and every batch score.</p></div>
+  <div class="card accent"><h4>Model tests</h4><p>Metric on a frozen test set is above a threshold <em>and</em> not worse than the current production model by more than a tolerance. Invariance tests: changing a feature that should not matter (customer ID, name) does not change the prediction. Directional tests: raising <code>support_calls</code> does not <em>lower</em> churn probability. Calibration within tolerance. Prediction latency under budget.</p></div>
+  <div class="card accent"><h4>Pipeline tests</h4><p>The whole train → evaluate → package → load → predict path runs end-to-end on a small sample in under a few minutes. The saved bundle loads in a fresh process and reproduces the in-memory predictions. The service starts, <code>/ready</code> returns 200, and a golden request returns the golden output.</p></div>
+</div>
+
+<pre class="code" data-lang="python-noexec"><code><span class="cm"># tests/test_model.py — model tests that run in CI against the candidate bundle (pytest)</span>
+<span class="kw">import</span> joblib, pandas <span class="kw">as</span> pd, numpy <span class="kw">as</span> np, pytest
+<span class="kw">from</span> sklearn.metrics <span class="kw">import</span> roc_auc_score
+
+CANDIDATE = joblib.load(<span class="st">"artifacts/candidate.joblib"</span>)[<span class="st">"pipeline"</span>]
+PRODUCTION = joblib.load(<span class="st">"artifacts/production.joblib"</span>)[<span class="st">"pipeline"</span>]
+TEST = pd.read_parquet(<span class="st">"data/frozen_test_set.parquet"</span>)      <span class="cm"># frozen: same rows for every CI run</span>
+X, y = TEST.drop(columns=[<span class="st">"churned"</span>]), TEST[<span class="st">"churned"</span>]
+
+<span class="kw">def</span> <span class="fn">test_metric_threshold_and_no_regression</span>():
+    auc_new = roc_auc_score(y, CANDIDATE.predict_proba(X)[:, <span class="nu">1</span>])
+    auc_old = roc_auc_score(y, PRODUCTION.predict_proba(X)[:, <span class="nu">1</span>])
+    <span class="kw">assert</span> auc_new &gt;= <span class="nu">0.80</span>, <span class="st">f"absolute floor: {auc_new:.3f}"</span>
+    <span class="kw">assert</span> auc_new &gt;= auc_old - <span class="nu">0.005</span>, <span class="st">f"regression vs production: {auc_new:.3f} &lt; {auc_old:.3f}"</span>
+
+<span class="kw">def</span> <span class="fn">test_invariance_to_id_like_columns</span>():
+    a = X.head(<span class="nu">200</span>).copy(); b = a.copy(); b[<span class="st">"customer_id"</span>] = <span class="st">"someone-else"</span>
+    <span class="kw">assert</span> np.allclose(CANDIDATE.predict_proba(a), CANDIDATE.predict_proba(b))
+
+<span class="kw">def</span> <span class="fn">test_directional_expectation</span>():
+    a = X.head(<span class="nu">200</span>).copy(); b = a.copy(); b[<span class="st">"support_calls"</span>] = b[<span class="st">"support_calls"</span>] + <span class="nu">5</span>
+    p_a, p_b = CANDIDATE.predict_proba(a)[:, <span class="nu">1</span>], CANDIDATE.predict_proba(b)[:, <span class="nu">1</span>]
+    <span class="kw">assert</span> (p_b &gt;= p_a - <span class="nu">1e-6</span>).mean() &gt; <span class="nu">0.95</span>, <span class="st">"more support calls should not lower churn risk"</span>
+
+<span class="kw">def</span> <span class="fn">test_latency_budget</span>():
+    <span class="kw">import</span> time; row = X.head(<span class="nu">1</span>)
+    t0 = time.perf_counter(); [CANDIDATE.predict_proba(row) <span class="kw">for</span> _ <span class="kw">in</span> <span class="fn">range</span>(<span class="nu">100</span>)]
+    <span class="kw">assert</span> (time.perf_counter() - t0) / <span class="nu">100</span> &lt; <span class="nu">0.02</span>, <span class="st">"single-row prediction must stay under 20 ms"</span></code></pre>
+
+<pre class="code" data-lang="yaml"><code><span class="cm"># .github/workflows/ml.yml — CI on every pull request, CT (continuous training) on a schedule</span>
+name: churn-model
+on:
+  pull_request:
+  schedule:
+    - cron: "0 3 * * 1"          <span class="cm"># retrain candidate every Monday 03:00 UTC</span>
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+      - run: pip install -r requirements.txt        <span class="cm"># exact pins</span>
+      - run: pytest tests/test_features.py tests/test_data.py   <span class="cm"># unit + data tests, seconds</span>
+      - run: python pipelines/train.py --sample 5000 --out artifacts/candidate.joblib   <span class="cm"># smoke train</span>
+      - run: pytest tests/test_model.py tests/test_pipeline.py   <span class="cm"># model + pipeline tests</span>
+  train-and-register:
+    needs: test
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: python pipelines/train.py --full --out artifacts/candidate.joblib
+      - run: pytest tests/test_model.py               <span class="cm"># full-data candidate vs production</span>
+      - run: python pipelines/register.py artifacts/candidate.joblib --alias staging   <span class="cm"># humans promote to production</span></code></pre>
+
+<div class="callout key"><div class="title">Key idea</div>
+<p>The model test that matters most is <strong>"not worse than production on a frozen test set."</strong> An absolute threshold catches disasters; the comparison catches slow decay and the subtle bug where a "fix" to feature code silently drops two AUC points. And the test set must be frozen — if it is regenerated from live data every run, you are comparing models on different exams.</p>
+</div>
+
+<div class="callout pro"><div class="title">At work</div>
+<p>CI for the churn model does not need Kubernetes, Airflow or a feature store. It needs: a frozen test set in object storage, a <code>train.py</code> that runs on a sample in under five minutes, and the four tests above. That setup catches most of the failures that actually happen — broken feature code, leaked columns, a regression versus production — and a two-person team can build it in a week. Continuous training on a schedule comes later, and only if the data actually drifts (Section 7 tells you whether it does).</p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s7">7. Monitoring &amp; drift detection</h2>
+
+<p>A deployed model is a bet that the future looks like the training data. The bet decays. Customers change, products change, a marketing campaign brings in a new segment, an upstream team renames a field, a pandemic happens. Ordinary software monitoring — is the service up, is latency fine — sees none of this. The model keeps returning numbers with the same confidence while their meaning silently drifts away. ML monitoring exists to notice.</p>
+
+<div class="callout eli9"><div class="title">Explain it like I'm 9</div>
+<p>You learned to spot ripe mangoes at the market by colour: yellow means ripe. Then the market starts selling a different variety that is green when ripe. You keep confidently picking yellow ones — and they're all bad. Nothing about <em>you</em> changed; the world did. The only way to notice early is to check what you're seeing (lots of green mangoes lately: <em>input drift</em>), what you're deciding (I'm rejecting almost everything: <em>prediction drift</em>), and, when you finally taste them, how often you were right (<em>performance</em>, which you only learn later).</p>
+</div>
+
+<h3>What to watch</h3>
+<figure class="fig">
+<svg viewBox="0 0 780 360" role="img" aria-label="Monitoring dashboard layout with four panels: system health (latency and error rate), input data drift per feature, prediction distribution over time, and performance with delayed labels showing the label lag gap">
+  <rect x="20" y="16" width="740" height="330" rx="10" fill="var(--surface-2)" stroke="var(--border)"/>
+  <text x="390" y="40" text-anchor="middle" class="lbl-strong" font-size="14">churn-v1.3 — model monitoring (last 30 days)</text>
+  <!-- panel 1: system -->
+  <rect x="36" y="54" width="350" height="130" rx="6" fill="var(--surface)" stroke="var(--border)"/>
+  <text x="46" y="72" class="lbl-strong" font-size="12">① System health</text>
+  <text x="46" y="90" class="lbl" font-size="10">p95 latency (ms)</text>
+  <polyline points="46,120 76,118 106,121 136,117 166,119 196,122 226,118 256,140 286,138 316,141 346,139 376,140" fill="none" stroke="var(--s1)" stroke-width="2"/>
+  <text x="270" y="134" class="lbl" font-size="9" fill="var(--s1)">42 → 71 ms (new feature lookup)</text>
+  <text x="46" y="156" class="lbl" font-size="10">error rate · requests/s · model version live: v1.3 (100%)</text>
+  <polyline points="46,172 106,172 166,172 226,172 256,166 286,172 376,172" fill="none" stroke="var(--s3)" stroke-width="2"/>
+  <text x="290" y="164" class="lbl" font-size="9" fill="var(--s3)">0.1% errors</text>
+  <!-- panel 2: input drift -->
+  <rect x="400" y="54" width="344" height="130" rx="6" fill="var(--surface)" stroke="var(--border)"/>
+  <text x="410" y="72" class="lbl-strong" font-size="12">② Input drift — PSI per feature vs training profile</text>
+  <g class="lbl" font-size="10">
+    <text x="500" y="92" text-anchor="end">monthly_spend</text><rect x="506" y="84" width="180" height="9" fill="var(--critical)"/><text x="690" y="92">0.31 ⚠</text>
+    <text x="500" y="108" text-anchor="end">plan</text><rect x="506" y="100" width="90" height="9" fill="var(--warn)"/><text x="600" y="108">0.14</text>
+    <text x="500" y="124" text-anchor="end">support_calls</text><rect x="506" y="116" width="30" height="9" fill="var(--good)"/><text x="540" y="124">0.04</text>
+    <text x="500" y="140" text-anchor="end">age</text><rect x="506" y="132" width="14" height="9" fill="var(--good)"/><text x="524" y="140">0.02</text>
+    <text x="500" y="156" text-anchor="end">tenure_months</text><rect x="506" y="148" width="10" height="9" fill="var(--good)"/><text x="520" y="156">0.01</text>
+  </g>
+  <text x="410" y="176" class="lbl" font-size="9">alert &gt; 0.25 · investigate 0.10–0.25 · null rate &amp; new categories tracked separately</text>
+  <!-- panel 3: prediction drift -->
+  <rect x="36" y="198" width="350" height="136" rx="6" fill="var(--surface)" stroke="var(--border)"/>
+  <text x="46" y="216" class="lbl-strong" font-size="12">③ Prediction drift — daily share scored "high risk"</text>
+  <line x1="46" y1="316" x2="376" y2="316" class="axis"/>
+  <polyline points="46,290 68,292 90,288 112,291 134,289 156,293 178,290 200,288 222,284 244,276 266,266 288,258 310,252 332,250 354,246 376,244" fill="none" stroke="var(--s2)" stroke-width="2.5"/>
+  <line x1="46" y1="290" x2="376" y2="290" stroke="var(--ink-3)" stroke-dasharray="3 3"/>
+  <text x="50" y="286" class="lbl" font-size="9">training-time rate 14%</text>
+  <text x="300" y="240" class="lbl" font-size="9" fill="var(--s2)">now 23% — with no label yet</text>
+  <text x="46" y="330" class="lbl" font-size="9">mean score · share above threshold · PSI of score distribution</text>
+  <!-- panel 4: delayed performance -->
+  <rect x="400" y="198" width="344" height="136" rx="6" fill="var(--surface)" stroke="var(--border)"/>
+  <text x="410" y="216" class="lbl-strong" font-size="12">④ Performance — AUC by prediction week (labels lag 30 d)</text>
+  <line x1="410" y1="316" x2="734" y2="316" class="axis"/>
+  <polyline points="410,246 450,248 490,244 530,250 570,247 610,262" fill="none" stroke="var(--s1)" stroke-width="2.5"/>
+  <circle cx="610" cy="262" r="4" fill="var(--s1)"/>
+  <rect x="612" y="228" width="122" height="88" fill="var(--warn)" fill-opacity=".15"/>
+  <text x="673" y="262" text-anchor="middle" class="lbl-strong" font-size="10">no labels yet</text>
+  <text x="673" y="276" text-anchor="middle" class="lbl" font-size="9">(last 30 days)</text>
+  <text x="414" y="240" class="lbl" font-size="9">AUC 0.87 → 0.83 ↓</text>
+  <text x="410" y="330" class="lbl" font-size="9">AUC · calibration · fairness gaps per group · all backfilled as labels arrive</text>
+</svg>
+<figcaption><strong>Figure 21.6 — The four-panel monitoring page.</strong> System health tells you the service is up. Input drift and prediction drift are available <em>immediately</em> and are your early warning. Performance is the truth but arrives late — note the shaded "no labels yet" gap. In this snapshot, ② and ③ are already shouting about a shift that ④ will only confirm next month.</figcaption>
+</figure>
+
+<div class="tbl-wrap">
+<table class="tbl">
+<thead><tr><th>Signal</th><th>Available</th><th>Detects</th><th>Metric</th></tr></thead>
+<tbody>
+<tr><td><strong>System health</strong></td><td>Instantly</td><td>Outages, slow feature lookups, wrong model version live</td><td>p95/p99 latency, error rate, throughput, version tag</td></tr>
+<tr><td><strong>Input (data) drift</strong></td><td>Instantly</td><td>Upstream changes, new segments, broken feature pipeline, unit changes</td><td>PSI / KS per feature vs training profile; null rate; new categories</td></tr>
+<tr><td><strong>Prediction drift</strong></td><td>Instantly</td><td>Anything that changes model outputs — the aggregate of all input changes</td><td>Mean score, share above threshold, PSI of score histogram</td></tr>
+<tr><td><strong>Performance</strong></td><td>After labels arrive (days–months)</td><td>Concept drift; the actual business damage</td><td>AUC / log-loss / precision@k by prediction week, calibration, per-group fairness</td></tr>
+</tbody>
+</table>
+</div>
+
+<h3>Drift detection: PSI and the KS test</h3>
+<p>The workhorse for "has this feature's distribution moved?" is the <strong>Population Stability Index</strong>, borrowed from credit scoring. Bin the feature using quantiles of the reference (training) data — ten bins, 10% of reference rows each — count the production sample into the same bins, and compare the two sets of proportions:</p>
+
+<div class="callout math"><div class="title">The math (optional)</div>
+<div class="formula">PSI = ∑<sub>b=1</sub><sup>B</sup> (q<sub>b</sub> − p<sub>b</sub>) · ln(q<sub>b</sub> / p<sub>b</sub>)</div>
+<p>p<sub>b</sub> is the fraction of <em>reference</em> rows in bin b, q<sub>b</sub> the fraction of <em>production</em> rows in the same bin, and B the number of bins (10 is conventional). Each term is non-negative (the sign of the difference matches the sign of the log), so PSI ≥ 0 and equals 0 only when the histograms match. It is a symmetrised KL divergence between the two binned distributions. Because it depends on B and on the sample size, treat the thresholds as conventions, not laws.</p>
+<div class="formula">KS = max<sub>x</sub> | F<sub>ref</sub>(x) − F<sub>prod</sub>(x) |</div>
+<p>The two-sample <strong>Kolmogorov–Smirnov</strong> statistic is the largest vertical gap between the two empirical cumulative distribution functions F. Its p-value tests "could these two samples come from the same distribution?" — which, with production samples of 100,000 rows, is <em>always</em> rejected for trivial shifts. Use the KS statistic as an effect size and PSI for alerting; use the p-value only for small samples.</p>
+</div>
+
+<pre class="code" data-lang="python"><code><span class="cm"># Drift detection: Population Stability Index and the Kolmogorov–Smirnov test</span>
+<span class="kw">import</span> numpy <span class="kw">as</span> np
+<span class="kw">from</span> scipy <span class="kw">import</span> stats
+
+<span class="kw">def</span> <span class="fn">psi</span>(reference, current, bins=<span class="nu">10</span>, eps=<span class="nu">1e-6</span>):
+    <span class="st">"""PSI = sum over bins of (cur% - ref%) * ln(cur% / ref%). Bins are quantiles of the reference."""</span>
+    edges = np.quantile(reference, np.linspace(<span class="nu">0</span>, <span class="nu">1</span>, bins + <span class="nu">1</span>))
+    edges[<span class="nu">0</span>], edges[-<span class="nu">1</span>] = -np.inf, np.inf                          <span class="cm"># catch values outside the reference range</span>
+    ref_pct = np.histogram(reference, edges)[<span class="nu">0</span>] / <span class="fn">len</span>(reference) + eps
+    cur_pct = np.histogram(current, edges)[<span class="nu">0</span>] / <span class="fn">len</span>(current) + eps
+    <span class="kw">return</span> <span class="fn">float</span>(np.sum((cur_pct - ref_pct) * np.log(cur_pct / ref_pct)))
+
+rng = np.random.default_rng(<span class="nu">0</span>)
+ref = rng.normal(loc=<span class="nu">100</span>, scale=<span class="nu">15</span>, size=<span class="nu">20_000</span>)                   <span class="cm"># e.g. "monthly_spend" in the training data</span>
+scenarios = {<span class="st">"same distribution"</span>: rng.normal(<span class="nu">100</span>, <span class="nu">15</span>, <span class="nu">5_000</span>),
+             <span class="st">"small shift (+3)"</span>:  rng.normal(<span class="nu">103</span>, <span class="nu">15</span>, <span class="nu">5_000</span>),
+             <span class="st">"big shift (+12)"</span>:   rng.normal(<span class="nu">112</span>, <span class="nu">15</span>, <span class="nu">5_000</span>),
+             <span class="st">"wider (std 25)"</span>:    rng.normal(<span class="nu">100</span>, <span class="nu">25</span>, <span class="nu">5_000</span>)}
+
+<span class="fn">print</span>(<span class="st">f"{'production sample':&lt;20}{'PSI':&gt;7}{'KS stat':&gt;9}{'KS p-value':&gt;12}   verdict"</span>)
+<span class="kw">for</span> name, cur <span class="kw">in</span> scenarios.items():
+    p = psi(ref, cur); ks = stats.ks_2samp(ref, cur)
+    verdict = <span class="st">"stable"</span> <span class="kw">if</span> p &lt; <span class="nu">0.1</span> <span class="kw">else</span> (<span class="st">"investigate"</span> <span class="kw">if</span> p &lt; <span class="nu">0.25</span> <span class="kw">else</span> <span class="st">"ALERT: retrain candidate"</span>)
+    <span class="fn">print</span>(<span class="st">f"{name:&lt;20}{p:7.3f}{ks.statistic:9.3f}{ks.pvalue:12.2e}   {verdict}"</span>)
+<span class="out"># production sample       PSI  KS stat  KS p-value   verdict</span>
+<span class="out"># same distribution     0.003    0.013    4.75e-01   stable</span>
+<span class="out"># small shift (+3)      0.038    0.078    2.14e-21   stable</span>
+<span class="out"># big shift (+12)       0.603    0.313    0.00e+00   ALERT: retrain candidate</span>
+<span class="out"># wider (std 25)        0.312    0.139    1.53e-67   ALERT: retrain candidate</span></code></pre>
+
+<p>Look at the "small shift" row: a 3-unit move (one fifth of a standard deviation) gives a PSI of 0.04 — stable by every convention — while the KS p-value is 10<sup>−21</sup>. With 5,000 rows the KS test is certain the distributions differ, and it is right; they do. But the difference is too small to matter to the model. This is why alerting on p-values is a recipe for alert fatigue, and why PSI's conventional thresholds are useful despite being arbitrary:</p>
+
+<div class="tbl-wrap">
+<table class="tbl">
+<thead><tr><th>PSI</th><th>Convention</th><th>Action</th></tr></thead>
+<tbody>
+<tr><td class="num">&lt; 0.10</td><td>No meaningful change</td><td>Nothing. Log it.</td></tr>
+<tr><td class="num">0.10 – 0.25</td><td>Moderate shift</td><td>Investigate: which bins moved? Is it a real population change or a pipeline bug? Check prediction drift.</td></tr>
+<tr><td class="num">&gt; 0.25</td><td>Major shift</td><td>Alert. Check for upstream breakage first (unit change, nulls). If real, evaluate a retrain candidate; consider pausing automated decisions if the feature is important.</td></tr>
+<tr><td class="num">KS stat &gt; 0.1</td><td>Effect size, not p-value</td><td>Use alongside PSI for continuous features; the p-value alone will always fire on large samples.</td></tr>
+<tr><td class="num">Null rate Δ &gt; 5 pts, or any new category</td><td>Schema-level drift</td><td>Almost always a pipeline bug. Alert immediately; this is the most common real incident.</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="widget" id="w-drift">
+  <div class="w-title">Interactive: drift simulator — shift production and watch PSI cross the thresholds</div>
+  <div class="controls">
+    <label>Mean shift <input type="range" id="dr-mu" min="-30" max="30" step="1" value="0" data-out="dr-mu-o"> <output id="dr-mu-o"></output></label>
+    <label>Production std <input type="range" id="dr-sd" min="5" max="35" step="1" value="15" data-out="dr-sd-o"> <output id="dr-sd-o"></output></label>
+    <span>PSI: <span class="readout" id="dr-psi">–</span></span>
+    <span>KS: <span class="readout" id="dr-ks">–</span></span>
+    <span>Status: <span class="readout" id="dr-st">–</span></span>
+  </div>
+  <svg viewBox="0 0 700 280" id="dr-svg" role="img" aria-label="Two histograms, reference and production, with the ten reference-quantile bins and the live PSI value coloured by alert level"></svg>
+  <div class="note">Reference = the training distribution of <code>monthly_spend</code>, N(100, 15), in blue. Production in orange. The PSI is computed exactly as in the code above, on ten bins that each hold 10% of the reference. Notice that a mean shift of about 5 already reaches 0.10 ("investigate") and about 9 reaches 0.25 ("alert") — and that widening the spread with no mean change also trips the alarm. PSI has no sign: it does not tell you which way things moved, only that they did.</div>
+</div>
+
+<h3>Concept drift versus data drift</h3>
+<p>Everything above watches the <em>inputs</em>. There is a second, nastier kind of change: the inputs look exactly the same, but the relationship between inputs and outcome has changed. That is <strong>concept drift</strong>. A competitor launches a cheaper plan: the same customers with the same features now churn at twice the rate. No PSI will fire. Only performance, computed once labels arrive, can see it — which is why the delayed-label panel exists even though it is always late.</p>
+
+<figure class="fig">
+<svg viewBox="0 0 780 300" role="img" aria-label="Left: data drift, where the input distribution shifts along the x axis but the decision boundary stays valid. Right: concept drift, where the inputs are unchanged but the true boundary between classes has rotated, so the old model's boundary is now wrong">
+  <defs><marker id="arr-g7" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+  <!-- data drift -->
+  <text x="200" y="22" text-anchor="middle" class="lbl-strong" font-size="14">Data drift: P(X) changes, P(y | X) does not</text>
+  <line x1="40" y1="250" x2="370" y2="250" class="axis" marker-end="url(#arr-g7)"/><line x1="40" y1="250" x2="40" y2="40" class="axis" marker-end="url(#arr-g7)"/>
+  <text x="205" y="272" text-anchor="middle" class="lbl">monthly spend</text>
+  <text x="24" y="145" text-anchor="middle" class="lbl" transform="rotate(-90 24 145)">support calls</text>
+  <line x1="60" y1="60" x2="350" y2="240" stroke="var(--s7)" stroke-width="2.5" stroke-dasharray="7 4"/>
+  <text x="300" y="62" class="lbl-strong" fill="var(--s7)" font-size="11">boundary (still right)</text>
+  <!-- training cloud -->
+  <g fill="var(--s1)" fill-opacity=".5"><circle cx="90" cy="180" r="5"/><circle cx="110" cy="200" r="5"/><circle cx="130" cy="170" r="5"/><circle cx="100" cy="220" r="5"/><circle cx="145" cy="205" r="5"/><circle cx="120" cy="150" r="5"/><circle cx="80" cy="150" r="5"/></g>
+  <g fill="var(--s2)" fill-opacity=".5"><circle cx="150" cy="80" r="5"/><circle cx="170" cy="110" r="5"/><circle cx="130" cy="95" r="5"/><circle cx="190" cy="130" r="5"/><circle cx="160" cy="140" r="5"/><circle cx="200" cy="95" r="5"/></g>
+  <text x="110" y="130" text-anchor="middle" class="lbl" font-size="10">training data</text>
+  <!-- production cloud shifted right -->
+  <g fill="var(--s1)"><circle cx="230" cy="220" r="5"/><circle cx="260" cy="235" r="5"/><circle cx="280" cy="210" r="5"/><circle cx="250" cy="200" r="5"/><circle cx="300" cy="228" r="5"/><circle cx="240" cy="240" r="5"/></g>
+  <g fill="var(--s2)"><circle cx="290" cy="120" r="5"/><circle cx="320" cy="150" r="5"/><circle cx="270" cy="140" r="5"/><circle cx="340" cy="180" r="5"/><circle cx="310" cy="170" r="5"/><circle cx="330" cy="120" r="5"/></g>
+  <line x1="170" y1="165" x2="250" y2="165" class="arrow" stroke-width="2.5" marker-end="url(#arr-g7)"/>
+  <text x="290" y="200" text-anchor="middle" class="lbl-strong" font-size="10">production: richer customers</text>
+  <text x="205" y="292" text-anchor="middle" class="lbl" font-size="11">PSI fires. Model may still be fine — but is now extrapolating.</text>
+
+  <!-- concept drift -->
+  <text x="580" y="22" text-anchor="middle" class="lbl-strong" font-size="14">Concept drift: P(X) same, P(y | X) changes</text>
+  <line x1="420" y1="250" x2="750" y2="250" class="axis" marker-end="url(#arr-g7)"/><line x1="420" y1="250" x2="420" y2="40" class="axis" marker-end="url(#arr-g7)"/>
+  <text x="585" y="272" text-anchor="middle" class="lbl">monthly spend</text>
+  <text x="404" y="145" text-anchor="middle" class="lbl" transform="rotate(-90 404 145)">support calls</text>
+  <line x1="440" y1="60" x2="730" y2="240" stroke="var(--s7)" stroke-width="2.5" stroke-dasharray="7 4"/>
+  <text x="680" y="62" class="lbl-strong" fill="var(--s7)" font-size="11">old boundary</text>
+  <line x1="440" y1="200" x2="730" y2="110" stroke="var(--critical)" stroke-width="2.5"/>
+  <text x="600" y="108" class="lbl-strong" fill="var(--critical)" font-size="11">new true boundary</text>
+  <!-- same cloud, labels changed -->
+  <g fill="var(--s1)"><circle cx="470" cy="180" r="5"/><circle cx="490" cy="200" r="5"/><circle cx="480" cy="220" r="5"/><circle cx="525" cy="205" r="5"/><circle cx="460" cy="150" r="5"/></g>
+  <g fill="var(--s2)"><circle cx="530" cy="80" r="5"/><circle cx="550" cy="110" r="5"/><circle cx="510" cy="95" r="5"/><circle cx="570" cy="130" r="5"/><circle cx="580" cy="95" r="5"/></g>
+  <!-- points that flipped: were blue (below old boundary), now orange -->
+  <g fill="var(--s2)" stroke="var(--critical)" stroke-width="2"><circle cx="510" cy="170" r="5"/><circle cx="540" cy="140" r="5"/><circle cx="500" cy="150" r="5"/><circle cx="560" cy="160" r="5"/></g>
+  <text x="640" y="200" text-anchor="middle" class="lbl-strong" font-size="10">ringed = now churn at the</text>
+  <text x="640" y="214" text-anchor="middle" class="lbl-strong" font-size="10">same features (competitor launch)</text>
+  <text x="585" y="292" text-anchor="middle" class="lbl" font-size="11">PSI is silent. Only delayed-label performance sees it.</text>
+</svg>
+<figcaption><strong>Figure 21.7 — Two drifts, two detectors.</strong> Data drift moves the inputs; the boundary may still be valid but the model is extrapolating, and PSI catches it immediately. Concept drift leaves the inputs alone and moves the truth; nothing in the inputs can reveal it, so only performance on arrived labels can — late.</figcaption>
+</figure>
+
+<pre class="code" data-lang="python"><code><span class="cm"># "Performance with delayed labels": the truth arrives weeks later, so accuracy must be backfilled as labels land</span>
+<span class="kw">import</span> numpy <span class="kw">as</span> np, pandas <span class="kw">as</span> pd
+
+rng = np.random.default_rng(<span class="nu">7</span>)
+DAYS, N, LABEL_DELAY = <span class="nu">90</span>, <span class="nu">300</span>, <span class="nu">21</span>                         <span class="cm"># a churn label is only known 21 days after the prediction</span>
+rows = []
+<span class="kw">for</span> d <span class="kw">in</span> <span class="fn">range</span>(DAYS):
+    p_model = rng.beta(<span class="nu">2</span>, <span class="nu">5</span>, N)                            <span class="cm"># what the model believes (its inputs look the same every day)</span>
+    score = np.clip(p_model + rng.normal(<span class="nu">0</span>, <span class="nu">0.12</span>, N), <span class="nu">0</span>, <span class="nu">1</span>)
+    concept_drift = <span class="nu">0.0</span> <span class="kw">if</span> d &lt; <span class="nu">45</span> <span class="kw">else</span> <span class="nu">0.30</span>                <span class="cm"># from day 45 customers behave differently: CONCEPT drift</span>
+    label = (rng.random(N) &lt; np.clip(p_model + concept_drift, <span class="nu">0</span>, <span class="nu">1</span>)).astype(<span class="fn">int</span>)
+    rows.append(pd.DataFrame({<span class="st">"day"</span>: d, <span class="st">"score"</span>: score, <span class="st">"label"</span>: label, <span class="st">"label_known_on"</span>: d + LABEL_DELAY}))
+log = pd.concat(rows, ignore_index=<span class="kw">True</span>)
+
+<span class="kw">def</span> <span class="fn">dashboard</span>(today):
+    <span class="st">"""What monitoring can show on `today`: prediction rate now, accuracy only for days whose labels have arrived."""</span>
+    seen = log[log.day &lt;= today]
+    pred_rate = seen.groupby(<span class="st">"day"</span>)[<span class="st">"score"</span>].apply(<span class="kw">lambda</span> s: (s &gt; <span class="nu">0.5</span>).mean())            <span class="cm"># available immediately</span>
+    labelled = seen[seen.label_known_on &lt;= today]
+    acc = labelled.groupby(<span class="st">"day"</span>).apply(<span class="kw">lambda</span> g: ((g.score &gt; <span class="nu">0.5</span>).astype(<span class="fn">int</span>) == g.label).mean())
+    <span class="kw">return</span> pred_rate, acc
+
+<span class="kw">for</span> today <span class="kw">in</span> [<span class="nu">44</span>, <span class="nu">60</span>, <span class="nu">75</span>, <span class="nu">89</span>]:
+    pr, acc = dashboard(today)
+    <span class="fn">print</span>(<span class="st">f"day {today:2d}: predicted-churn rate (last 7 d) = {pr.iloc[-7:].mean():.3f} | "</span>
+          <span class="st">f"accuracy known up to day {acc.index.max():2d}, last 7 labelled days = {acc.iloc[-7:].mean():.3f}"</span>)
+pr, acc = dashboard(<span class="nu">89</span>)
+<span class="fn">print</span>(<span class="st">f"\nprediction rate never moved ({pr[:45].mean():.3f} -&gt; {pr[45:].mean():.3f}): input monitoring is blind to concept drift"</span>)
+<span class="fn">print</span>(<span class="st">f"accuracy fell ({acc[:45].mean():.3f} -&gt; {acc[45:].mean():.3f}) but became visible only {LABEL_DELAY} days late"</span>)
+<span class="out"># day 44: predicted-churn rate (last 7 d) = 0.145 | accuracy known up to day 23, last 7 labelled days = 0.717</span>
+<span class="out"># day 60: predicted-churn rate (last 7 d) = 0.150 | accuracy known up to day 39, last 7 labelled days = 0.724</span>
+<span class="out"># day 75: predicted-churn rate (last 7 d) = 0.140 | accuracy known up to day 54, last 7 labelled days = 0.499</span>
+<span class="out"># day 89: predicted-churn rate (last 7 d) = 0.148 | accuracy known up to day 68, last 7 labelled days = 0.521</span>
+<span class="out">#</span>
+<span class="out"># prediction rate never moved (0.147 -&gt; 0.144): input monitoring is blind to concept drift</span>
+<span class="out"># accuracy fell (0.721 -&gt; 0.513) but became visible only 21 days late</span></code></pre>
+
+<p>On day 60, fifteen days after the world changed, the dashboard still shows accuracy 0.72 — because the newest labelled day is 39. On day 75 it finally shows the collapse. The lesson is structural, not statistical: <strong>the label delay is a blind spot the size of the delay</strong>, and the only mitigations are proxies that arrive sooner (a support ticket within 7 days as an early churn signal), a faster label pipeline, or a small labelled sample you pay to get quickly.</p>
+
+<div class="callout key"><div class="title">Key idea</div>
+<p>Monitor at three speeds. <strong>Instant:</strong> inputs and predictions (drift) plus system health. <strong>Delayed:</strong> performance and fairness, backfilled as labels arrive, indexed by prediction date not label date. <strong>Structural:</strong> the reference profile you compare against is an artifact of the training run (Figure 21.2) and must be versioned with the model — comparing v1.4's inputs against v1.2's profile alerts on the wrong thing.</p>
+</div>
+
+<div class="callout warn"><div class="title">Common mistake</div>
+<p><strong>Alerting on everything.</strong> Thirty features × daily PSI × a p-value threshold = a pager that fires every morning, and within a month the team mutes it. Alert only on features with high permutation importance (Chapter 20), only on PSI &gt; 0.25 or a schema violation, and route "investigate" levels to a weekly review, not to on-call. An alert that nobody acts on is worse than no alert, because it trains people to ignore the next real one.</p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s8">8. Retraining &amp; safe rollout</h2>
+
+<h3>When to retrain</h3>
+<p>Monitoring tells you the model is decaying. Retraining is the response, and there are three ways to schedule it:</p>
+
+<div class="tbl-wrap">
+<table class="tbl">
+<thead><tr><th>Strategy</th><th>Trigger</th><th>Pros</th><th>Risks</th></tr></thead>
+<tbody>
+<tr><td><strong>Scheduled</strong></td><td>Calendar: weekly, monthly, quarterly</td><td>Predictable, simple to automate, easy to explain to auditors</td><td>Retrains when nothing changed (waste, churn of versions) and fails to retrain when something changed on day 2 of the month</td></tr>
+<tr><td><strong>Triggered</strong></td><td>Drift alert or performance drop crosses a threshold</td><td>Retrains exactly when needed; cheaper</td><td>Threshold tuning; a broken upstream pipeline can trigger a retrain on garbage; requires trustworthy monitoring</td></tr>
+<tr><td><strong>Continuous / online</strong></td><td>Every batch of new labels updates the model</td><td>Fastest adaptation (ads, recommendations, fraud)</td><td>Feedback loops (the model shapes the data it learns from), no stable version to audit, poisoning risk, hard to roll back</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>For most business models the honest answer is <strong>scheduled retraining with a triggered override</strong>: retrain monthly because the process is then routine and tested, and retrain early when the drift alert fires. Either way, a retrain produces a <em>candidate</em>, never a deployment. The candidate goes through the CI model tests of Section 6 and then the rollout ladder.</p>
+
+<div class="callout warn"><div class="title">Common mistake</div>
+<p><strong>Retraining automatically on drifted data without asking why it drifted.</strong> If PSI fired because an upstream job started writing <code>monthly_spend</code> in cents instead of euros, retraining "fixes" the alert by learning the bug. The first response to a drift alert is a human asking "is the data wrong or is the world different?"; only the second answer justifies a retrain. Data validation (Section 4) is your defence: a unit change should fail validation before it ever reaches a training job.</p>
+</div>
+
+<h3>The rollout ladder</h3>
+<figure class="fig">
+<svg viewBox="0 0 780 320" role="img" aria-label="Rollout ladder: offline evaluation, shadow mode where the new model scores traffic but its outputs are only logged, canary at five percent of traffic, A/B test with a business metric, then full rollout; a rollback arrow returns to the previous version from any rung">
+  <defs><marker id="arr-g8" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+  <text x="390" y="22" text-anchor="middle" class="lbl-strong" font-size="14">Each rung risks more traffic and answers a different question</text>
+  <!-- steps as rising boxes -->
+  <rect x="20" y="230" width="140" height="60" class="box"/><text x="90" y="254" text-anchor="middle" class="lbl-strong" font-size="12">1. Offline eval</text><text x="90" y="272" text-anchor="middle" class="lbl" font-size="10">frozen test set · 0% traffic</text>
+  <rect x="170" y="190" width="140" height="100" class="box"/><text x="240" y="214" text-anchor="middle" class="lbl-strong" font-size="12">2. Shadow</text><text x="240" y="232" text-anchor="middle" class="lbl" font-size="10">scores live requests</text><text x="240" y="246" text-anchor="middle" class="lbl" font-size="10">outputs logged, never used</text><text x="240" y="264" text-anchor="middle" class="lbl" font-size="10">Q: does it run? agree with prod?</text><text x="240" y="280" text-anchor="middle" class="lbl" font-size="10">latency? (0% risk)</text>
+  <rect x="320" y="150" width="140" height="140" rx="6" fill="var(--s4)" fill-opacity=".15" stroke="var(--s4)" stroke-width="1.5"/><text x="390" y="174" text-anchor="middle" class="lbl-strong" font-size="12">3. Canary</text><text x="390" y="192" text-anchor="middle" class="lbl" font-size="10">1–5% of traffic</text><text x="390" y="210" text-anchor="middle" class="lbl" font-size="10">Q: errors, latency,</text><text x="390" y="224" text-anchor="middle" class="lbl" font-size="10">prediction distribution</text><text x="390" y="238" text-anchor="middle" class="lbl" font-size="10">vs prod within tolerance?</text><text x="390" y="264" text-anchor="middle" class="lbl" font-size="10">auto-rollback on</text><text x="390" y="278" text-anchor="middle" class="lbl" font-size="10">error / latency SLO breach</text>
+  <rect x="470" y="110" width="140" height="180" rx="6" fill="var(--s1)" fill-opacity=".12" stroke="var(--s1)" stroke-width="1.5"/><text x="540" y="134" text-anchor="middle" class="lbl-strong" font-size="12">4. A/B test</text><text x="540" y="152" text-anchor="middle" class="lbl" font-size="10">50/50 by customer, not request</text><text x="540" y="170" text-anchor="middle" class="lbl" font-size="10">Q: does the BUSINESS metric</text><text x="540" y="184" text-anchor="middle" class="lbl" font-size="10">improve? (retention rate,</text><text x="540" y="198" text-anchor="middle" class="lbl" font-size="10">revenue — not AUC)</text><text x="540" y="222" text-anchor="middle" class="lbl" font-size="10">pre-registered metric,</text><text x="540" y="236" text-anchor="middle" class="lbl" font-size="10">sample size, duration</text><text x="540" y="264" text-anchor="middle" class="lbl" font-size="10">guardrails: complaints,</text><text x="540" y="278" text-anchor="middle" class="lbl" font-size="10">fairness gaps, latency</text>
+  <rect x="620" y="70" width="140" height="220" rx="6" fill="var(--s3)" fill-opacity=".2" stroke="var(--s3)" stroke-width="2"/><text x="690" y="94" text-anchor="middle" class="lbl-strong" font-size="12">5. Full rollout</text><text x="690" y="112" text-anchor="middle" class="lbl" font-size="10">100% · alias → new version</text><text x="690" y="136" text-anchor="middle" class="lbl" font-size="10">old version stays warm</text><text x="690" y="150" text-anchor="middle" class="lbl" font-size="10">for 1–2 weeks</text><text x="690" y="176" text-anchor="middle" class="lbl" font-size="10">monitoring thresholds</text><text x="690" y="190" text-anchor="middle" class="lbl" font-size="10">reset to new reference</text><text x="690" y="214" text-anchor="middle" class="lbl" font-size="10">model card updated</text><text x="690" y="228" text-anchor="middle" class="lbl" font-size="10">stakeholders told</text>
+  <line x1="160" y1="260" x2="168" y2="260" class="arrow" marker-end="url(#arr-g8)"/><line x1="310" y1="240" x2="318" y2="240" class="arrow" marker-end="url(#arr-g8)"/><line x1="460" y1="200" x2="468" y2="200" class="arrow" marker-end="url(#arr-g8)"/><line x1="610" y1="160" x2="618" y2="160" class="arrow" marker-end="url(#arr-g8)"/>
+  <!-- rollback -->
+  <path d="M690,60 C690,36 90,36 90,222" fill="none" stroke="var(--critical)" stroke-width="2" stroke-dasharray="6 4" marker-end="url(#arr-g8)"/>
+  <text x="390" y="50" text-anchor="middle" class="lbl-strong" font-size="11" fill="var(--critical)">rollback from ANY rung: re-point the alias to the previous version — one command, seconds, rehearsed</text>
+  <text x="390" y="310" text-anchor="middle" class="lbl" font-size="11">Batch models use the same ladder: shadow = write scores to a side table; canary = 5% of customers get the new scores.</text>
+</svg>
+<figcaption><strong>Figure 21.8 — The rollout ladder.</strong> Shadow mode costs nothing and catches crashes and skew. Canary catches operational problems on a sliver of traffic. The A/B test is the only rung that answers the question the business actually asked. Rollback must work from every rung, and must have been rehearsed before it is needed.</figcaption>
+</figure>
+
+<p>Two things about the A/B rung deserve emphasis. First, <strong>randomise by customer, not by request</strong>: a customer who sees the v1.4 score today and the v1.3 score tomorrow gives you a corrupted experiment and a confused customer. Second, <strong>the metric is the business outcome, not the model metric</strong>. A model with a better AUC can lose an A/B test — because the retention team acts on the top 500 scores only and the two models rank that top 500 identically, or because the new model's top 500 are customers who would have stayed anyway. Pre-register the metric, the sample size and the stopping rule (Chapter 22 covers the statistics of experiments and why peeking inflates false positives).</p>
+
+<div class="callout eli9"><div class="title">Explain it like I'm 9</div>
+<p>You've made a new recipe for the bakery. You don't swap it in for all 10,000 cakes tomorrow. First you bake it alongside the old one and just <em>look</em> (shadow). Then you sell it at one counter (canary). Then you sell both at random and count which one customers come back for (A/B). And the whole time, yesterday's recipe is still on the shelf in case tonight's batch is a disaster (rollback).</p>
+</div>
+
+<div class="callout pro"><div class="title">At work: the rollback drill</div>
+<p>Before the first production deployment, do a rollback on purpose: promote v1.3, roll back to v1.2, confirm the service is serving v1.2 (the <code>/health</code> endpoint returns the version — that is why it does). Time it. If it takes more than a few minutes or needs someone who is on holiday, fix that before you need it. Every model incident I have seen become a crisis was one where rollback was theoretically possible and had never been tried.</p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s9">9. Governance, cost &amp; the maturity ladder</h2>
+
+<h3>Governance: the boring parts that keep you employed</h3>
+<ul>
+  <li><strong>Model cards</strong> (Chapter 20) for every production version, generated by the training pipeline, stored with the artifact.</li>
+  <li><strong>Audit log.</strong> For every prediction that drives a decision: input features, output, model version, timestamp, request id. This is the structured log line in the FastAPI service. Retention period set by legal (often years for credit and health). This log is also what makes the delayed-label performance panel possible — you cannot backfill accuracy for predictions you did not store.</li>
+  <li><strong>PII handling.</strong> Features containing personal data are minimised (do you need the full postcode?), pseudonymised where possible, encrypted at rest, and excluded from the monitoring dashboards and experiment tracker (which everyone can see). Hashing an ID is not anonymisation.</li>
+  <li><strong>Access control.</strong> Who can promote a model to production? Who can read the audit log? Who can change a threshold? Two-person approval for production promotion is cheap and prevents most "I was just testing" incidents.</li>
+  <li><strong>Model risk tiers.</strong> Not every model needs the full treatment. A tiering — Tier 1: automated decisions affecting people or money (credit, pricing, hiring); Tier 2: decisions with a human in the loop; Tier 3: internal analytics — sets the required rigour. A Tier 3 dashboard model needs a JSON log and a schema check; a Tier 1 model needs everything in this chapter plus independent validation.</li>
+</ul>
+
+<h3>Cost and latency engineering</h3>
+<p>Once a model works, the next conversation is about money and milliseconds. The levers, in the order to pull them:</p>
+<ol class="steps">
+  <li><strong>Batch what you can.</strong> Moving a decision from real-time to nightly batch reduces cost per prediction by 10–100× and removes the on-call burden. Ask whether the decision truly needs the freshest data.</li>
+  <li><strong>Batch inside the request.</strong> Scoring 256 rows in one <code>predict_proba</code> call costs about the same as scoring one — NumPy and tree libraries are vectorised. Streaming and REST services should accumulate micro-batches (a few ms of waiting) when throughput is high.</li>
+  <li><strong>Cache.</strong> Feature lookups (the slow part of most REST services) and even predictions for entities that change slowly. A five-minute cache on customer features often removes 90% of feature-store reads.</li>
+  <li><strong>Shrink the model.</strong> Fewer trees, lower depth, feature pruning by permutation importance. A 300-tree GBM at depth 6 is rarely better than 150 trees at depth 4 by more than the measurement noise, and it is twice as fast.</li>
+  <li><strong>Quantise and compile.</strong> For neural networks, int8 quantisation cuts memory 4× and latency 2–3× with negligible accuracy loss; ONNX Runtime or TensorRT compiles the graph. For trees, ONNX or Treelite gives 5–10× over Python.</li>
+  <li><strong>Autoscale on the right signal.</strong> Scale on request queue depth or p95 latency, not CPU; set minimum replicas ≥ 2 so a single crash is not an outage.</li>
+</ol>
+
+<h3>The maturity ladder — and what you actually need first</h3>
+<figure class="fig">
+<svg viewBox="0 0 780 320" role="img" aria-label="Three-level MLOps maturity ladder: level 0 manual notebook-to-production, level 1 automated training pipeline with continuous training, level 2 automated CI/CD for pipelines with registry, monitoring and safe rollout">
+  <rect x="20" y="220" width="230" height="80" class="box"/>
+  <text x="135" y="244" text-anchor="middle" class="lbl-strong" font-size="13">Level 0 · Manual</text>
+  <text x="135" y="262" text-anchor="middle" class="lbl" font-size="10">notebook → pickle → someone deploys</text>
+  <text x="135" y="276" text-anchor="middle" class="lbl" font-size="10">retrain when someone remembers</text>
+  <text x="135" y="290" text-anchor="middle" class="lbl" font-size="10">monitoring = complaints</text>
+  <rect x="270" y="140" width="230" height="160" rx="6" fill="var(--s4)" fill-opacity=".15" stroke="var(--s4)" stroke-width="1.5"/>
+  <text x="385" y="164" text-anchor="middle" class="lbl-strong" font-size="13">Level 1 · Pipeline automation</text>
+  <text x="385" y="184" text-anchor="middle" class="lbl" font-size="10">train.py runs end-to-end, reproducibly</text>
+  <text x="385" y="198" text-anchor="middle" class="lbl" font-size="10">experiment log · packaged bundle</text>
+  <text x="385" y="212" text-anchor="middle" class="lbl" font-size="10">data validation · scheduled retrain (CT)</text>
+  <text x="385" y="226" text-anchor="middle" class="lbl" font-size="10">basic drift + performance monitoring</text>
+  <text x="385" y="254" text-anchor="middle" class="lbl-strong" font-size="10" fill="var(--s4)">where most teams should live</text>
+  <text x="385" y="270" text-anchor="middle" class="lbl" font-size="10">1–2 engineers, a few weeks</text>
+  <rect x="520" y="60" width="240" height="240" rx="6" fill="var(--s3)" fill-opacity=".18" stroke="var(--s3)" stroke-width="2"/>
+  <text x="640" y="84" text-anchor="middle" class="lbl-strong" font-size="13">Level 2 · CI/CD for ML</text>
+  <text x="640" y="104" text-anchor="middle" class="lbl" font-size="10">pipeline code is tested &amp; deployed by CI</text>
+  <text x="640" y="118" text-anchor="middle" class="lbl" font-size="10">registry with staged promotion</text>
+  <text x="640" y="132" text-anchor="middle" class="lbl" font-size="10">feature store · shadow / canary / A/B</text>
+  <text x="640" y="146" text-anchor="middle" class="lbl" font-size="10">triggered retraining · auto-rollback</text>
+  <text x="640" y="160" text-anchor="middle" class="lbl" font-size="10">full audit trail · fairness monitoring</text>
+  <text x="640" y="188" text-anchor="middle" class="lbl-strong" font-size="10" fill="var(--s3)">needed when: many models,</text>
+  <text x="640" y="202" text-anchor="middle" class="lbl-strong" font-size="10" fill="var(--s3)">frequent retrains, regulated,</text>
+  <text x="640" y="216" text-anchor="middle" class="lbl-strong" font-size="10" fill="var(--s3)">or real-time at scale</text>
+  <text x="640" y="244" text-anchor="middle" class="lbl" font-size="10">platform team, months</text>
+  <text x="390" y="34" text-anchor="middle" class="lbl-strong" font-size="14">Climb one rung at a time; each rung must pay for itself</text>
+  <text x="390" y="316" text-anchor="middle" class="lbl" font-size="11">Google's original taxonomy; the annotations are this author's opinion from watching teams over-build Level 2 for one model.</text>
+</svg>
+<figcaption><strong>Figure 21.9 — The maturity ladder.</strong> Level 0 is where every project starts and where most projects should not stay. Level 1 — a reproducible pipeline, a packaged bundle, validation, a scheduled retrain and basic monitoring — captures most of the value for most teams. Level 2 is justified by scale, frequency or regulation, not by ambition.</figcaption>
+</figure>
+
+<div class="callout pro"><div class="title">At work: what your team actually needs first</div>
+<p>If you have one or two models and a small team, do these in this order and stop when it is enough: (1) a <code>train.py</code> that reproduces the model from versioned data with a seed; (2) a JSON experiment log; (3) a packaged bundle with a version-checked loader and a schema; (4) data validation at the input of both training and scoring; (5) a frozen test set and the "not worse than production" test in CI; (6) a weekly drift report and a monthly backfilled performance report by email; (7) a rehearsed rollback. That is Level 1, it fits in a month, and it prevents 90% of the incidents you would otherwise have. Feature stores, canaries and triggered retraining come when the pain of not having them is real and specific.</p>
+</div>
+
+<h3>Runbook template: a model incident</h3>
+<p>When the pager goes off at 03:00, nobody should be thinking. A runbook is a checklist written by the calm version of you. This is the template I use; store it next to the model card and rehearse it once.</p>
+
+<div class="tbl-wrap">
+<table class="tbl">
+<thead><tr><th>Step</th><th>Do</th><th>Where / how</th></tr></thead>
+<tbody>
+<tr><td><strong>0. Triage (5 min)</strong></td><td>Is the service down (system alert) or is it serving wrong answers (drift / performance alert)? Who is affected, how many decisions per hour?</td><td>Dashboard panel ①; traffic volume; decision consumers list in the model card.</td></tr>
+<tr><td><strong>1. Stop the bleeding</strong></td><td>If decisions are automated and possibly wrong: roll back to the previous version <em>or</em> switch to the safe fallback (rule, default score, human queue). Do not debug first.</td><td><code>register.py churn --alias production --version 3</code>; feature flag <code>CHURN_MODEL_FALLBACK=rule</code>.</td></tr>
+<tr><td><strong>2. Check the data before the model</strong></td><td>Did validation fail or get bypassed? New nulls, new categories, unit changes, a late/empty upstream table, a schema migration?</td><td>Validation logs; PSI panel per feature; upstream job status; recent deploys of upstream services.</td></tr>
+<tr><td><strong>3. Check the deploy</strong></td><td>Did a model version, container image, config, or threshold change in the last 48 h? Is the version live the one that should be?</td><td><code>/health</code> version; registry history; CI deploy log.</td></tr>
+<tr><td><strong>4. Check the world</strong></td><td>Campaign, price change, outage elsewhere, seasonality, competitor, news? Prediction-drift panel shows <em>when</em> it started.</td><td>Ask product / marketing; compare drift start time with their calendar.</td></tr>
+<tr><td><strong>5. Communicate</strong></td><td>One message to the decision consumers: what happened, what they are getting now (fallback/old version), when the next update comes.</td><td>Consumers list; incident channel; ticket.</td></tr>
+<tr><td><strong>6. Fix forward</strong></td><td>Data bug → fix upstream, re-validate, restore version. Real drift → retrain candidate through the full ladder; do not skip shadow.</td><td>Section 8 ladder.</td></tr>
+<tr><td><strong>7. Post-mortem (within a week)</strong></td><td>Blameless. What signal could have caught it earlier? Add that check. Update the runbook and the model card's limitations.</td><td>Template: timeline, impact, root cause, what worked, action items with owners.</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="callout key"><div class="title">Key idea</div>
+<p>The order of the runbook is the order of probability. In practice, most model incidents are <strong>data pipeline problems</strong> (a null flood, a unit change, a late table), a good share are <strong>deploy problems</strong> (wrong version, wrong config), and only a minority are the model itself or genuine drift. Look at the data first, the deploy second, the model last — and roll back before you look at any of them if decisions are on the line.</p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="quiz">Quiz</h2>
+<div class="quiz">
+  <h3>Check your understanding</h3>
+
+  <div class="q">
+    <p class="question">1. A colleague saved only the fitted GBM estimator (not the pipeline) and re-implemented the scaling in the serving code. Offline AUC is 0.87; production AUC is 0.71. What is the most likely cause?</p>
+    <ul class="opts">
+      <li><button>Concept drift</button></li>
+      <li><button data-correct>Training–serving skew: the serving preprocessing differs from the training preprocessing</button></li>
+      <li><button>The joblib file is corrupted</button></li>
+      <li><button>The production customers are simply harder</button></li>
+    </ul>
+    <div class="explain">Re-implementing preprocessing separately is the textbook source of skew. Package the whole pipeline so the same fitted transformers run in both places, and add a skew test that recomputes production features offline.</div>
+  </div>
+
+  <div class="q">
+    <p class="question">2. A retention team wants a list of at-risk customers each Monday. Which serving pattern should you choose first?</p>
+    <ul class="opts">
+      <li><button>A real-time REST service with autoscaling</button></li>
+      <li><button>A streaming job on the events topic</button></li>
+      <li><button data-correct>A scheduled batch job that writes a scores table</button></li>
+      <li><button>An embedded model in the CRM client</button></li>
+    </ul>
+    <div class="explain">The inputs exist ahead of time and the decision is weekly, so latency tolerance is days. Batch is the cheapest, simplest and easiest to test. Real-time is justified only when the input exists at request time.</div>
+  </div>
+
+  <div class="q">
+    <p class="question">3. PSI for <code>monthly_spend</code> is 0.04 but the KS test p-value is 10<sup>−20</sup> on a 50,000-row production sample. What should you do?</p>
+    <ul class="opts">
+      <li><button>Retrain immediately — the p-value proves drift</button></li>
+      <li><button data-correct>Nothing beyond logging: the shift is statistically real but too small to matter; alert on effect size, not p-values</button></li>
+      <li><button>Increase the number of PSI bins until it agrees with KS</button></li>
+      <li><button>Roll back the model</button></li>
+    </ul>
+    <div class="explain">With large samples, KS rejects for trivial shifts. PSI 0.04 is well under the 0.10 "investigate" convention. Use PSI (or the KS statistic as an effect size) for alerting.</div>
+  </div>
+
+  <div class="q">
+    <p class="question">4. Input drift panels are all green, prediction rates are flat, yet backfilled accuracy for predictions made 30 days ago has dropped from 0.72 to 0.55. What is happening?</p>
+    <ul class="opts">
+      <li><button>Data drift the PSI missed</button></li>
+      <li><button data-correct>Concept drift: the relationship between features and outcome changed while the inputs did not</button></li>
+      <li><button>A bug in the monitoring code</button></li>
+      <li><button>The label pipeline is delayed</button></li>
+    </ul>
+    <div class="explain">Same inputs, different outcomes is the definition of concept drift. No input monitor can see it; only delayed-label performance can, which is why that panel exists despite its lag.</div>
+  </div>
+
+  <div class="q">
+    <p class="question">5. A new model version has a higher AUC on the frozen test set. Which rung of the rollout ladder answers "does it improve retention?"</p>
+    <ul class="opts">
+      <li><button>Shadow mode</button></li>
+      <li><button>Canary at 5%</button></li>
+      <li><button data-correct>An A/B test randomised by customer with retention as the pre-registered metric</button></li>
+      <li><button>Offline evaluation</button></li>
+    </ul>
+    <div class="explain">Shadow and canary answer operational questions (does it run, is it stable). Only a properly randomised A/B test on the business outcome answers whether the model is better for the business. AUC is not the business metric.</div>
+  </div>
+
+  <div class="q">
+    <p class="question">6. The drift alert fires on <code>monthly_spend</code> (PSI 0.9) the morning after the billing team deployed a change. What is the correct first action?</p>
+    <ul class="opts">
+      <li><button>Trigger an automatic retrain on the last 30 days of data</button></li>
+      <li><button data-correct>Check whether the data is wrong (e.g. a unit change) before treating it as a real population shift; the validation step should have caught it</button></li>
+      <li><button>Raise the PSI threshold to 1.0</button></li>
+      <li><button>Ignore it — PSI is only a convention</button></li>
+    </ul>
+    <div class="explain">Retraining on a unit change teaches the model the bug. A drift alert coinciding with an upstream deploy is almost always a pipeline problem. Data first, deploy second, model last.</div>
+  </div>
+</div>
+
+<h2 id="exercises">Exercises</h2>
+
+<div class="exercise"><div class="title">Exercise 21.1 — Make PSI lie</div>
+<p>Using the <code>psi</code> function from Section 7, construct a production sample that has the <em>same mean and standard deviation</em> as the reference but a PSI above 0.25 (hint: a mixture of two normals). Then construct one with a visibly different shape but PSI below 0.10 (hint: change only the tails beyond the reference's 1st and 99th percentiles). What does this tell you about relying on a single statistic?</p>
+<details class="answer"><summary>Show answer</summary>
+<p>A bimodal mixture, e.g. 50% N(85, 5) + 50% N(115, 5), has mean 100 and std ≈ 15.8 but empties the central bins and overfills two others: PSI ≈ 0.3–0.6. Conversely, moving 1% of the mass from the far tails to even further out leaves the ten quantile bins almost unchanged: PSI ≈ 0.01, although the maximum and the mean of the top 1% changed a lot. PSI sees binned proportions and nothing else; monitor summary statistics (mean, std, min/max, null rate) alongside it, and for important features look at the histogram.</p>
+</details>
+</div>
+
+<div class="exercise"><div class="title">Exercise 21.2 — Add a directional test that fails</div>
+<p>Train a <code>GradientBoostingClassifier</code> on <code>load_breast_cancer</code> restricted to five features. Write a pytest-style function asserting that increasing <code>mean radius</code> by one standard deviation never <em>increases</em> the predicted probability of "benign" for more than 5% of test rows. Run it. If it fails, inspect the ICE curves (Chapter 20) for the offending rows: is the model wrong, or is your expectation too strict?</p>
+<details class="answer"><summary>Show answer</summary>
+<p>It typically fails for a few percent of rows: boosted trees are not monotone, and for rows where other features dominate, a small radius change can move the prediction either way by a hair. Two honest fixes: (a) tolerate tiny violations (compare with a tolerance of 0.01 in probability), or (b) enforce the domain knowledge in the model with <code>monotonic_cst</code> in <code>HistGradientBoostingClassifier</code>, which guarantees the direction and makes the test exact. Directional tests are most valuable for encoding what the business knows must be true.</p>
+</details>
+</div>
+
+<div class="exercise"><div class="title">Exercise 21.3 — Audit a model at work against Level 1</div>
+<p>Pick a model that is in production at your company (or the closest thing to it). For each of the seven Level-1 items in the "what your team actually needs first" callout, write: exists / partial / missing, and one sentence of evidence. Then answer: if the model started returning wrong scores tonight, (a) how would you find out, (b) how long until you knew, (c) what is the rollback command, and (d) who would you tell? Bring the answers to your next team meeting.</p>
+<details class="answer"><summary>Show answer</summary>
+<p>There is no universal answer, but a typical honest audit finds: training reproducible from a notebook only (partial), no experiment log (missing), a pickle with no version check (partial), no input validation (missing), a test set that is regenerated each time (partial), no drift monitoring (missing), rollback = "redeploy last week's container, I think" (missing). The four questions usually get: (a) a customer complains, (b) weeks, (c) unknown, (d) unclear. Each "missing" is a one-to-three-day task from this chapter; ordering them by the answers to (a)–(d) is your MLOps roadmap.</p>
+</details>
+</div>
+
+<div class="summary">
+  <h3>Chapter summary</h3>
+  <ul class="checklist">
+    <li>The model is ~5% of an ML system. Data collection, validation, features, serving, monitoring and governance are where production failures live.</li>
+    <li>Reproducibility = seeds + pinned environment + versioned data and code + lineage. An append-only JSON run log gets you most of MLflow's value on day one.</li>
+    <li>Package the whole pipeline in a version-stamped bundle with a loader that refuses library-version mismatches; never unpickle what you didn't produce; use a registry alias so promotion and rollback are metadata changes.</li>
+    <li>Choose the serving pattern by latency tolerance and throughput: batch by default; REST when the input exists only at request time; streaming for continuous high-volume events; edge for no-network or sub-10 ms.</li>
+    <li>An inference service loads the model once, validates inputs with a schema, exposes /health and /ready, and writes a structured log line per prediction — that log is your monitoring data and your audit trail.</li>
+    <li>Training–serving skew and point-in-time leakage are the two feature bugs that destroy offline gains; define features once and test skew.</li>
+    <li>CI for ML = data tests + model tests (threshold, no regression vs production on a frozen set, invariance, direction, latency) + pipeline tests. Continuous training on a schedule comes after.</li>
+    <li>Monitor at three speeds: instant (inputs, predictions, system), delayed (performance, fairness, backfilled by prediction date), structural (versioned reference profile). PSI &gt; 0.25 alerts; p-values do not.</li>
+    <li>Data drift is visible in inputs; concept drift only in delayed labels. A drift alert means "check the data, then the deploy, then the world" — retrain only when the world changed.</li>
+    <li>Roll out via shadow → canary → A/B (by customer, on the business metric) → full; rehearse rollback; build Level 1 before dreaming about Level 2.</li>
+  </ul>
+</div>
+
+<div class="mark-done"></div>
+<nav class="pager"></nav>
+
+</div></main>
+</div>
+
+<script src="../assets/chapters.js"></script>
+<script src="../assets/app.js"></script>
+<script>
+/* Widget: serving-pattern chooser */
+(function () {
+  var svg = document.getElementById("sv-svg"), rps = document.getElementById("sv-rps"), lat = document.getElementById("sv-lat");
+  var rd = document.getElementById("sv-r"), note = document.getElementById("sv-note");
+  if (!svg || !rps || !lat) return;
+  var outR = document.getElementById("sv-rps-o"), outL = document.getElementById("sv-lat-o");
+  var X0 = 70, X1 = 670, Y0 = 230, Y1 = 30;
+  function px(l) { return X0 + l / 8 * (X1 - X0); }          /* l = log10(ms), 0..8 */
+  function py(r) { return Y0 - (r + 2) / 7 * (Y0 - Y1); }    /* r = log10(rps), -2..5 */
+  function fmtMs(l) { var ms = Math.pow(10, l); if (ms < 1000) return Math.round(ms) + " ms"; if (ms < 6e4) return (ms / 1000).toFixed(1) + " s"; if (ms < 3.6e6) return (ms / 6e4).toFixed(1) + " min"; if (ms < 8.64e7) return (ms / 3.6e6).toFixed(1) + " h"; return (ms / 8.64e7).toFixed(1) + " days"; }
+  function fmtRps(r) { var v = Math.pow(10, r); return v < 1 ? v.toFixed(2) + " /s" : v < 1000 ? Math.round(v) + " /s" : (v / 1000).toFixed(1) + "k /s"; }
+  var LB = Math.log10(3.6e6), LE = 1, RS = 3.3;           /* batch if latency >= 1 h; edge if < 10 ms; streaming if rps >= 2000 */
+  function choose(l, r) {
+    if (l >= LB) return ["batch", "Latency tolerance of " + fmtMs(l) + " means the inputs exist long before the decision: score everything on a schedule, write a table. Cheapest per prediction, no on-call, easiest to test. At " + fmtRps(r) + " the nightly job is small."];
+    if (l < LE) return ["edge", "Under 10 ms leaves no room for a network round-trip: the model must run inside the app or device (ONNX / compiled). Accept a small model and a slower update cycle."];
+    if (r >= RS) return ["streaming", "About " + fmtRps(r) + " with a " + fmtMs(l) + " budget is a continuous event flow: put the model on the stream (Kafka/Flink-style), micro-batch predictions, write scores to a topic. Highest operational complexity."];
+    return ["REST", "The input exists only at request time and something is waiting " + fmtMs(l) + " for the answer: a real-time service. At " + fmtRps(r) + " a couple of replicas suffice; add feature caching, /ready checks and on-call."];
+  }
+  function render() {
+    var l = +lat.value, r = +rps.value, c = choose(l, r), s = "";
+    if (outL) outL.textContent = fmtMs(l); if (outR) outR.textContent = fmtRps(r);
+    var regions = [
+      ["batch", px(LB), Y1, X1 - px(LB), Y0 - Y1, "var(--s3)", (px(LB) + X1) / 2, 130],
+      ["edge", X0, Y1, px(LE) - X0, Y0 - Y1, "var(--s4)", (X0 + px(LE)) / 2, 130],
+      ["streaming", px(LE), Y1, px(LB) - px(LE), py(RS) - Y1, "var(--s2)", (px(LE) + px(LB)) / 2, (Y1 + py(RS)) / 2],
+      ["REST", px(LE), py(RS), px(LB) - px(LE), Y0 - py(RS), "var(--s1)", (px(LE) + px(LB)) / 2, (py(RS) + Y0) / 2]
+    ];
+    regions.forEach(function (g) {
+      var on = g[0] === c[0];
+      s += '<rect x="' + g[1] + '" y="' + g[2] + '" width="' + g[3] + '" height="' + g[4] + '" fill="' + g[5] + '" fill-opacity="' + (on ? .35 : .12) + '" stroke="' + g[5] + '" stroke-width="' + (on ? 3 : 1) + '"/>';
+      s += '<text x="' + g[6] + '" y="' + g[7] + '" text-anchor="middle" font-size="13" font-weight="700" fill="' + g[5] + '">' + g[0] + '</text>';
+    });
+    s += '<line x1="' + X0 + '" y1="' + Y0 + '" x2="' + X1 + '" y2="' + Y0 + '" stroke="currentColor" stroke-opacity=".5"/><line x1="' + X0 + '" y1="' + Y0 + '" x2="' + X0 + '" y2="' + Y1 + '" stroke="currentColor" stroke-opacity=".5"/>';
+    [0, 2, 4, 6, 8].forEach(function (t) { s += '<text x="' + px(t) + '" y="' + (Y0 + 16) + '" text-anchor="middle" font-size="11">' + fmtMs(t) + '</text>'; });
+    [-2, 0, 2, 4].forEach(function (t) { s += '<text x="' + (X0 - 6) + '" y="' + (py(t) + 4) + '" text-anchor="end" font-size="11">' + fmtRps(t) + '</text>'; });
+    s += '<text x="' + ((X0 + X1) / 2) + '" y="' + (Y0 + 40) + '" text-anchor="middle" font-size="12">latency tolerance: how long after the input exists may the prediction arrive?</text>';
+    s += '<text x="16" y="130" text-anchor="middle" font-size="12" transform="rotate(-90 16 130)">predictions / second</text>';
+    s += '<circle cx="' + px(l) + '" cy="' + py(r) + '" r="8" fill="var(--s7)" stroke="var(--surface)" stroke-width="2.5"/>';
+    svg.innerHTML = s;
+    rd.textContent = c[0];
+    if (note) note.textContent = c[1] + " (Rules of thumb: batch when tolerance ≥ 1 h; edge when < 10 ms; streaming when ≥ 2k/s continuous; otherwise REST.)";
+  }
+  rps.addEventListener("input", render); lat.addEventListener("input", render); render();
+})();
+
+/* Widget: drift simulator (PSI on reference-quantile bins, computed from the normal CDF) */
+(function () {
+  var svg = document.getElementById("dr-svg"), mu = document.getElementById("dr-mu"), sd = document.getElementById("dr-sd");
+  var oP = document.getElementById("dr-psi"), oK = document.getElementById("dr-ks"), oS = document.getElementById("dr-st");
+  if (!svg || !mu || !sd) return;
+  function erf(x) { var t = 1 / (1 + 0.3275911 * Math.abs(x)); var y = 1 - (((((1.061405429 * t - 1.453152027) * t) + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t * Math.exp(-x * x); return x >= 0 ? y : -y; }
+  function Phi(x, m, s) { return 0.5 * (1 + erf((x - m) / (s * Math.SQRT2))); }
+  var RM = 100, RS = 15, zq = [-1.2816, -0.8416, -0.5244, -0.2533, 0, 0.2533, 0.5244, 0.8416, 1.2816];
+  var X0 = 50, X1 = 680, Y0 = 220, Y1 = 30, LO = 30, HI = 170, NB = 28;
+  function px(v) { return X0 + (v - LO) / (HI - LO) * (X1 - X0); }
+  function render() {
+    var m = RM + (+mu.value), s = +sd.value, psi = 0, ks = 0;
+    var edges = [-Infinity].concat(zq.map(function (z) { return RM + z * RS; })).concat([Infinity]);
+    for (var b = 0; b < 10; b++) {
+      var p = 0.1, q = Phi(edges[b + 1], m, s) - Phi(edges[b], m, s) + 1e-6;
+      psi += (q - p) * Math.log(q / p);
+    }
+    for (var x = LO; x <= HI; x += 0.5) ks = Math.max(ks, Math.abs(Phi(x, RM, RS) - Phi(x, m, s)));
+    var col = psi < 0.1 ? "var(--good)" : psi < 0.25 ? "var(--warn)" : "var(--critical)";
+    var status = psi < 0.1 ? "stable" : psi < 0.25 ? "investigate" : "ALERT";
+    var out = "", w = (HI - LO) / NB, maxh = 0, bars = [];
+    for (var i = 0; i < NB; i++) {
+      var a = LO + i * w, bb = a + w;
+      var pr = Phi(bb, RM, RS) - Phi(a, RM, RS), pq = Phi(bb, m, s) - Phi(a, m, s);
+      bars.push([a, pr, pq]); maxh = Math.max(maxh, pr, pq);
+    }
+    bars.forEach(function (bar) {
+      var hr = bar[1] / maxh * (Y0 - Y1), hq = bar[2] / maxh * (Y0 - Y1), bw = px(bar[0] + w) - px(bar[0]);
+      out += '<rect x="' + px(bar[0]) + '" y="' + (Y0 - hr) + '" width="' + (bw - 1) + '" height="' + hr + '" fill="var(--s1)" fill-opacity=".45"/>';
+      out += '<rect x="' + px(bar[0]) + '" y="' + (Y0 - hq) + '" width="' + (bw - 1) + '" height="' + hq + '" fill="var(--s2)" fill-opacity=".45"/>';
+    });
+    zq.forEach(function (z) { var e = RM + z * RS; out += '<line x1="' + px(e) + '" y1="' + Y1 + '" x2="' + px(e) + '" y2="' + Y0 + '" stroke="currentColor" stroke-opacity=".25" stroke-dasharray="3 3"/>'; });
+    out += '<line x1="' + X0 + '" y1="' + Y0 + '" x2="' + X1 + '" y2="' + Y0 + '" stroke="currentColor" stroke-opacity=".5"/>';
+    [40, 70, 100, 130, 160].forEach(function (t) { out += '<text x="' + px(t) + '" y="' + (Y0 + 16) + '" text-anchor="middle" font-size="11">' + t + '</text>'; });
+    out += '<text x="' + ((X0 + X1) / 2) + '" y="' + (Y0 + 34) + '" text-anchor="middle" font-size="12">monthly_spend · dashed lines = the 10 reference-quantile bins used by PSI</text>';
+    out += '<text x="' + (X0 + 4) + '" y="' + (Y1 + 6) + '" font-size="11" fill="var(--s1)" font-weight="700">reference N(100, 15)</text>';
+    out += '<text x="' + (X0 + 4) + '" y="' + (Y1 + 22) + '" font-size="11" fill="var(--s2)" font-weight="700">production N(' + m + ', ' + s + ')</text>';
+    out += '<rect x="' + (X1 - 150) + '" y="' + (Y1 - 2) + '" width="150" height="46" rx="6" fill="' + col + '" fill-opacity=".18" stroke="' + col + '" stroke-width="2"/>';
+    out += '<text x="' + (X1 - 75) + '" y="' + (Y1 + 17) + '" text-anchor="middle" font-size="13" font-weight="700" fill="' + col + '">PSI = ' + psi.toFixed(3) + '</text>';
+    out += '<text x="' + (X1 - 75) + '" y="' + (Y1 + 35) + '" text-anchor="middle" font-size="12" font-weight="700" fill="' + col + '">' + status + '</text>';
+    out += '<text x="' + ((X0 + X1) / 2) + '" y="' + (Y0 + 54) + '" text-anchor="middle" font-size="11">thresholds: &lt; 0.10 stable · 0.10–0.25 investigate · &gt; 0.25 alert</text>';
+    svg.innerHTML = out;
+    oP.textContent = psi.toFixed(3); oK.textContent = ks.toFixed(3); oS.textContent = status;
+  }
+  mu.addEventListener("input", render); sd.addEventListener("input", render); render();
+})();
+</script>
+</body>
+</html>
