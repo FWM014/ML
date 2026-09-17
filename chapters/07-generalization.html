@@ -1,0 +1,1331 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>07 · Overfitting, Bias–Variance &amp; Validation — ML: Zero to Expert</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body data-chapter="07">
+<header class="topbar"></header>
+<div class="progress-track"><div></div></div>
+<div class="shell">
+<nav class="sidebar"></nav>
+<main class="content"><div class="container">
+
+<header class="ch-header">
+  <div class="kicker">Part I · Foundations · Chapter 07</div>
+  <h1>Overfitting, Bias–Variance &amp; Validation</h1>
+  <p class="lede">A model that scores 99% on the data it was trained on has told you nothing. This chapter is about the only thing that matters — performance on data the model has never seen — and the discipline that makes that number trustworthy: diagnosing bias and variance, regularizing, and validating without fooling yourself.</p>
+  <div class="meta"><span class="level intermediate">Beginner → Intermediate</span> <span>⏱ 80 min read</span> <span>·</span> <span>Prereqs: Ch 5–6</span></div>
+</header>
+
+<div class="objectives">
+  <h3>By the end of this chapter you will be able to</h3>
+  <ul>
+    <li>Explain why training error is a lie, and recognize underfitting and overfitting from a train/test error pair or a learning curve.</li>
+    <li>Define bias and variance precisely, decompose error into bias² + variance + noise, and prescribe the right fix for each.</li>
+    <li>Apply L1, L2 and elastic-net regularization, choose the strength with validation, and explain why L1 produces sparse models.</li>
+    <li>Use early stopping and know why more data is the best regularizer.</li>
+    <li>Pick the right cross-validation scheme (stratified, grouped, time-series) for your data and run it with scikit-learn.</li>
+    <li>Follow the full train / validation / test protocol, touch the test set once, and defend the number you report.</li>
+  </ul>
+</div>
+
+<div class="toc-inline"><strong>In this chapter</strong>
+<ol>
+  <li><a href="#s1">The only thing that matters</a></li>
+  <li><a href="#s2">Underfitting and overfitting</a></li>
+  <li><a href="#s3">Bias and variance, precisely</a></li>
+  <li><a href="#s4">Diagnosis: learning curves and the recipe</a></li>
+  <li><a href="#s5">Regularization: L2, L1 and friends</a></li>
+  <li><a href="#s6">Early stopping and the best regularizer of all</a></li>
+  <li><a href="#s7">Cross-validation done right</a></li>
+  <li><a href="#s8">The full protocol and rules of thumb</a></li>
+  <li><a href="#quiz">Quiz &amp; exercises</a></li>
+</ol></div>
+
+<!-- ============================================================ -->
+<h2 id="s1">1. The only thing that matters</h2>
+
+<p>Chapters 5 and 6 taught you to fit models and to measure them. This chapter asks the question that separates people who build models from people who build models that <em>work</em>: <strong>measured on what?</strong></p>
+
+<p>A model is a function learned from a training set. If you evaluate it on that same training set, you are asking "how well did you memorize the answer key?" The answer is always flattering and almost always irrelevant. The model will be used on <em>tomorrow's</em> customers, <em>next month's</em> transactions, <em>new</em> patients. The number you care about is the error on data the model has never seen — <strong>generalization error</strong> — and the only honest way to estimate it is to hold data back and never let the model learn from it.</p>
+
+<p>Why does training error lie? Because a flexible model can fit two things at once: the real pattern (which repeats in new data) and the random noise in the particular rows it was given (which does not). Training error rewards fitting both. Test error rewards only the first. The gap between them is the model's dishonesty, and everything in this chapter is about measuring and shrinking that gap.</p>
+
+<div class="callout eli9"><div class="title">Explain it like I'm 9</div>
+<p>Two kids study for a math test. One learns how to do the problems. The other memorizes the answers to the practice sheet: "question 3 is 42". Both get 100% on the practice sheet. Only one passes the real test, which has different numbers. Training error is the practice sheet. Test error is the real exam. The memorizer has <em>overfit</em>.</p>
+</div>
+
+<p>Here is the same lesson in numbers. A deep decision tree (Chapter 9) can memorize any training set, so its training accuracy is 100% by construction; its validation accuracy on the breast-cancer data is around 92%. A regularized logistic regression trains to about 98% and validates at about 97%. The tree looks better on the training set and is worse where it counts. If you remember one sentence from this chapter: <strong>never report a training-set number as if it were performance.</strong></p>
+
+<div class="callout key"><div class="title">Key idea</div>
+<p>Three datasets, three jobs. <strong>Training set</strong>: the model learns from it. <strong>Validation set</strong>: <em>you</em> learn from it — which model, which hyperparameters, which threshold. <strong>Test set</strong>: nobody learns from it; it is opened once, at the end, to report the number. If you peek at the test set to make a decision, it has silently become a validation set and you no longer have an honest estimate.</p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s2">2. Underfitting and overfitting</h2>
+
+<p>Take fourteen noisy measurements of a smooth curve and fit polynomials of increasing degree (Chapter 5's <code>PolynomialFeatures</code>). Three regimes appear, and you will meet them in every model family for the rest of the book:</p>
+
+<figure class="fig">
+<svg viewBox="0 0 760 310" role="img" aria-label="Three panels fitting the same noisy points: a straight line underfits, a cubic fits the trend, a degree-9 polynomial wiggles through every point and overfits">
+<defs><marker id="arr-g1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+<text x="140" y="26" class="lbl-strong" text-anchor="middle" font-size="14">Underfit: degree 1</text>
+<text x="140" y="44" class="lbl" text-anchor="middle" fill="var(--s2)">high bias</text>
+<line x1="40" y1="249" x2="245" y2="249" class="axis" marker-end="url(#arr-g1)"/>
+<line x1="40" y1="249" x2="40" y2="55" class="axis" marker-end="url(#arr-g1)"/>
+<path d="M45.0,150.0 L46.6,146.7 L48.2,143.5 L49.8,140.2 L51.4,137.0 L53.0,133.8 L54.6,130.7 L56.2,127.6 L57.8,124.6 L59.4,121.6 L61.0,118.8 L62.6,116.0 L64.2,113.3 L65.8,110.7 L67.4,108.2 L68.9,105.9 L70.5,103.6 L72.1,101.5 L73.7,99.6 L75.3,97.7 L76.9,96.0 L78.5,94.5 L80.1,93.1 L81.7,91.9 L83.3,90.8 L84.9,89.9 L86.5,89.2 L88.1,88.7 L89.7,88.3 L91.3,88.0 L92.9,88.0 L94.5,88.1 L96.1,88.4 L97.7,88.9 L99.3,89.6 L100.9,90.4 L102.5,91.3 L104.1,92.5 L105.7,93.8 L107.3,95.2 L108.9,96.9 L110.5,98.6 L112.1,100.5 L113.7,102.6 L115.3,104.7 L116.8,107.0 L118.4,109.5 L120.0,112.0 L121.6,114.6 L123.2,117.4 L124.8,120.2 L126.4,123.1 L128.0,126.1 L129.6,129.1 L131.2,132.2 L132.8,135.4 L134.4,138.6 L136.0,141.8 L137.6,145.1 L139.2,148.4 L140.8,151.6 L142.4,154.9 L144.0,158.2 L145.6,161.4 L147.2,164.6 L148.8,167.8 L150.4,170.9 L152.0,173.9 L153.6,176.9 L155.2,179.8 L156.8,182.6 L158.4,185.4 L160.0,188.0 L161.6,190.5 L163.2,193.0 L164.7,195.3 L166.3,197.4 L167.9,199.5 L169.5,201.4 L171.1,203.1 L172.7,204.8 L174.3,206.2 L175.9,207.5 L177.5,208.7 L179.1,209.6 L180.7,210.4 L182.3,211.1 L183.9,211.6 L185.5,211.9 L187.1,212.0 L188.7,212.0 L190.3,211.7 L191.9,211.3 L193.5,210.8 L195.1,210.1 L196.7,209.2 L198.3,208.1 L199.9,206.9 L201.5,205.5 L203.1,204.0 L204.7,202.3 L206.3,200.4 L207.9,198.5 L209.5,196.4 L211.1,194.1 L212.6,191.8 L214.2,189.3 L215.8,186.7 L217.4,184.0 L219.0,181.2 L220.6,178.4 L222.2,175.4 L223.8,172.4 L225.4,169.3 L227.0,166.2 L228.6,163.0 L230.2,159.8 L231.8,156.5 L233.4,153.3 L235.0,150.0" fill="none" stroke="var(--ink-3)" stroke-width="1.2" stroke-dasharray="4 3"/>
+<path d="M45.0,90.9 L46.6,91.9 L48.2,93.0 L49.8,94.0 L51.4,95.0 L53.0,96.0 L54.6,97.1 L56.2,98.1 L57.8,99.1 L59.4,100.2 L61.0,101.2 L62.6,102.2 L64.2,103.3 L65.8,104.3 L67.4,105.3 L68.9,106.4 L70.5,107.4 L72.1,108.4 L73.7,109.4 L75.3,110.5 L76.9,111.5 L78.5,112.5 L80.1,113.6 L81.7,114.6 L83.3,115.6 L84.9,116.7 L86.5,117.7 L88.1,118.7 L89.7,119.8 L91.3,120.8 L92.9,121.8 L94.5,122.8 L96.1,123.9 L97.7,124.9 L99.3,125.9 L100.9,127.0 L102.5,128.0 L104.1,129.0 L105.7,130.1 L107.3,131.1 L108.9,132.1 L110.5,133.1 L112.1,134.2 L113.7,135.2 L115.3,136.2 L116.8,137.3 L118.4,138.3 L120.0,139.3 L121.6,140.4 L123.2,141.4 L124.8,142.4 L126.4,143.5 L128.0,144.5 L129.6,145.5 L131.2,146.5 L132.8,147.6 L134.4,148.6 L136.0,149.6 L137.6,150.7 L139.2,151.7 L140.8,152.7 L142.4,153.8 L144.0,154.8 L145.6,155.8 L147.2,156.8 L148.8,157.9 L150.4,158.9 L152.0,159.9 L153.6,161.0 L155.2,162.0 L156.8,163.0 L158.4,164.1 L160.0,165.1 L161.6,166.1 L163.2,167.2 L164.7,168.2 L166.3,169.2 L167.9,170.2 L169.5,171.3 L171.1,172.3 L172.7,173.3 L174.3,174.4 L175.9,175.4 L177.5,176.4 L179.1,177.5 L180.7,178.5 L182.3,179.5 L183.9,180.5 L185.5,181.6 L187.1,182.6 L188.7,183.6 L190.3,184.7 L191.9,185.7 L193.5,186.7 L195.1,187.8 L196.7,188.8 L198.3,189.8 L199.9,190.9 L201.5,191.9 L203.1,192.9 L204.7,193.9 L206.3,195.0 L207.9,196.0 L209.5,197.0 L211.1,198.1 L212.6,199.1 L214.2,200.1 L215.8,201.2 L217.4,202.2 L219.0,203.2 L220.6,204.3 L222.2,205.3 L223.8,206.3 L225.4,207.3 L227.0,208.4 L228.6,209.4 L230.2,210.4 L231.8,211.5 L233.4,212.5 L235.0,213.5" fill="none" stroke="var(--s2)" stroke-width="3"/>
+<circle cx="63.5" cy="140.2" r="4.5" fill="var(--s1)"/>
+<circle cx="80.6" cy="53.6" r="4.5" fill="var(--s1)"/>
+<circle cx="117.5" cy="141.2" r="4.5" fill="var(--s1)"/>
+<circle cx="127.3" cy="105.6" r="4.5" fill="var(--s1)"/>
+<circle cx="135.8" cy="147.2" r="4.5" fill="var(--s1)"/>
+<circle cx="142.1" cy="169.5" r="4.5" fill="var(--s1)"/>
+<circle cx="148.0" cy="177.6" r="4.5" fill="var(--s1)"/>
+<circle cx="159.6" cy="199.1" r="4.5" fill="var(--s1)"/>
+<circle cx="192.7" cy="204.5" r="4.5" fill="var(--s1)"/>
+<circle cx="195.1" cy="212.0" r="4.5" fill="var(--s1)"/>
+<circle cx="207.8" cy="172.8" r="4.5" fill="var(--s1)"/>
+<circle cx="213.4" cy="222.4" r="4.5" fill="var(--s1)"/>
+<circle cx="220.8" cy="178.1" r="4.5" fill="var(--s1)"/>
+<circle cx="226.9" cy="182.0" r="4.5" fill="var(--s1)"/>
+<text x="140" y="272" class="lbl" text-anchor="middle">x</text>
+<text x="380" y="26" class="lbl-strong" text-anchor="middle" font-size="14">Good fit: degree 3</text>
+<text x="380" y="44" class="lbl" text-anchor="middle" fill="var(--s3)">the sweet spot</text>
+<line x1="280" y1="249" x2="485" y2="249" class="axis" marker-end="url(#arr-g1)"/>
+<line x1="280" y1="249" x2="280" y2="55" class="axis" marker-end="url(#arr-g1)"/>
+<path d="M285.0,150.0 L286.6,146.7 L288.2,143.5 L289.8,140.2 L291.4,137.0 L293.0,133.8 L294.6,130.7 L296.2,127.6 L297.8,124.6 L299.4,121.6 L301.0,118.8 L302.6,116.0 L304.2,113.3 L305.8,110.7 L307.4,108.2 L308.9,105.9 L310.5,103.6 L312.1,101.5 L313.7,99.6 L315.3,97.7 L316.9,96.0 L318.5,94.5 L320.1,93.1 L321.7,91.9 L323.3,90.8 L324.9,89.9 L326.5,89.2 L328.1,88.7 L329.7,88.3 L331.3,88.0 L332.9,88.0 L334.5,88.1 L336.1,88.4 L337.7,88.9 L339.3,89.6 L340.9,90.4 L342.5,91.3 L344.1,92.5 L345.7,93.8 L347.3,95.2 L348.9,96.9 L350.5,98.6 L352.1,100.5 L353.7,102.6 L355.3,104.7 L356.8,107.0 L358.4,109.5 L360.0,112.0 L361.6,114.6 L363.2,117.4 L364.8,120.2 L366.4,123.1 L368.0,126.1 L369.6,129.1 L371.2,132.2 L372.8,135.4 L374.4,138.6 L376.0,141.8 L377.6,145.1 L379.2,148.4 L380.8,151.6 L382.4,154.9 L384.0,158.2 L385.6,161.4 L387.2,164.6 L388.8,167.8 L390.4,170.9 L392.0,173.9 L393.6,176.9 L395.2,179.8 L396.8,182.6 L398.4,185.4 L400.0,188.0 L401.6,190.5 L403.2,193.0 L404.7,195.3 L406.3,197.4 L407.9,199.5 L409.5,201.4 L411.1,203.1 L412.7,204.8 L414.3,206.2 L415.9,207.5 L417.5,208.7 L419.1,209.6 L420.7,210.4 L422.3,211.1 L423.9,211.6 L425.5,211.9 L427.1,212.0 L428.7,212.0 L430.3,211.7 L431.9,211.3 L433.5,210.8 L435.1,210.1 L436.7,209.2 L438.3,208.1 L439.9,206.9 L441.5,205.5 L443.1,204.0 L444.7,202.3 L446.3,200.4 L447.9,198.5 L449.5,196.4 L451.1,194.1 L452.6,191.8 L454.2,189.3 L455.8,186.7 L457.4,184.0 L459.0,181.2 L460.6,178.4 L462.2,175.4 L463.8,172.4 L465.4,169.3 L467.0,166.2 L468.6,163.0 L470.2,159.8 L471.8,156.5 L473.4,153.3 L475.0,150.0" fill="none" stroke="var(--ink-3)" stroke-width="1.2" stroke-dasharray="4 3"/>
+<path d="M285.0,173.4 L286.6,167.0 L288.2,160.8 L289.8,154.9 L291.4,149.4 L293.0,144.1 L294.6,139.2 L296.2,134.5 L297.8,130.1 L299.4,125.9 L301.0,122.1 L302.6,118.5 L304.2,115.1 L305.8,112.0 L307.4,109.2 L308.9,106.6 L310.5,104.3 L312.1,102.1 L313.7,100.2 L315.3,98.5 L316.9,97.1 L318.5,95.8 L320.1,94.8 L321.7,93.9 L323.3,93.3 L324.9,92.8 L326.5,92.5 L328.1,92.4 L329.7,92.5 L331.3,92.8 L332.9,93.2 L334.5,93.7 L336.1,94.4 L337.7,95.3 L339.3,96.3 L340.9,97.4 L342.5,98.7 L344.1,100.1 L345.7,101.6 L347.3,103.3 L348.9,105.0 L350.5,106.8 L352.1,108.8 L353.7,110.8 L355.3,113.0 L356.8,115.2 L358.4,117.5 L360.0,119.8 L361.6,122.3 L363.2,124.8 L364.8,127.3 L366.4,129.9 L368.0,132.6 L369.6,135.3 L371.2,138.0 L372.8,140.8 L374.4,143.5 L376.0,146.3 L377.6,149.2 L379.2,152.0 L380.8,154.8 L382.4,157.7 L384.0,160.5 L385.6,163.3 L387.2,166.1 L388.8,168.9 L390.4,171.6 L392.0,174.3 L393.6,177.0 L395.2,179.6 L396.8,182.2 L398.4,184.7 L400.0,187.2 L401.6,189.6 L403.2,191.9 L404.7,194.2 L406.3,196.4 L407.9,198.5 L409.5,200.5 L411.1,202.4 L412.7,204.2 L414.3,205.9 L415.9,207.5 L417.5,208.9 L419.1,210.3 L420.7,211.5 L422.3,212.6 L423.9,213.5 L425.5,214.3 L427.1,214.9 L428.7,215.4 L430.3,215.8 L431.9,215.9 L433.5,215.9 L435.1,215.7 L436.7,215.4 L438.3,214.8 L439.9,214.1 L441.5,213.2 L443.1,212.0 L444.7,210.7 L446.3,209.1 L447.9,207.3 L449.5,205.3 L451.1,203.1 L452.6,200.6 L454.2,197.9 L455.8,195.0 L457.4,191.8 L459.0,188.3 L460.6,184.6 L462.2,180.6 L463.8,176.4 L465.4,171.9 L467.0,167.0 L468.6,162.0 L470.2,156.6 L471.8,150.9 L473.4,144.9 L475.0,138.6" fill="none" stroke="var(--s3)" stroke-width="3"/>
+<circle cx="303.5" cy="140.2" r="4.5" fill="var(--s1)"/>
+<circle cx="320.6" cy="53.6" r="4.5" fill="var(--s1)"/>
+<circle cx="357.5" cy="141.2" r="4.5" fill="var(--s1)"/>
+<circle cx="367.3" cy="105.6" r="4.5" fill="var(--s1)"/>
+<circle cx="375.8" cy="147.2" r="4.5" fill="var(--s1)"/>
+<circle cx="382.1" cy="169.5" r="4.5" fill="var(--s1)"/>
+<circle cx="388.0" cy="177.6" r="4.5" fill="var(--s1)"/>
+<circle cx="399.6" cy="199.1" r="4.5" fill="var(--s1)"/>
+<circle cx="432.7" cy="204.5" r="4.5" fill="var(--s1)"/>
+<circle cx="435.1" cy="212.0" r="4.5" fill="var(--s1)"/>
+<circle cx="447.8" cy="172.8" r="4.5" fill="var(--s1)"/>
+<circle cx="453.4" cy="222.4" r="4.5" fill="var(--s1)"/>
+<circle cx="460.8" cy="178.1" r="4.5" fill="var(--s1)"/>
+<circle cx="466.9" cy="182.0" r="4.5" fill="var(--s1)"/>
+<text x="380" y="272" class="lbl" text-anchor="middle">x</text>
+<text x="620" y="26" class="lbl-strong" text-anchor="middle" font-size="14">Overfit: degree 9</text>
+<text x="620" y="44" class="lbl" text-anchor="middle" fill="var(--critical)">high variance</text>
+<line x1="520" y1="249" x2="725" y2="249" class="axis" marker-end="url(#arr-g1)"/>
+<line x1="520" y1="249" x2="520" y2="55" class="axis" marker-end="url(#arr-g1)"/>
+<path d="M525.0,150.0 L526.6,146.7 L528.2,143.5 L529.8,140.2 L531.4,137.0 L533.0,133.8 L534.6,130.7 L536.2,127.6 L537.8,124.6 L539.4,121.6 L541.0,118.8 L542.6,116.0 L544.2,113.3 L545.8,110.7 L547.4,108.2 L548.9,105.9 L550.5,103.6 L552.1,101.5 L553.7,99.6 L555.3,97.7 L556.9,96.0 L558.5,94.5 L560.1,93.1 L561.7,91.9 L563.3,90.8 L564.9,89.9 L566.5,89.2 L568.1,88.7 L569.7,88.3 L571.3,88.0 L572.9,88.0 L574.5,88.1 L576.1,88.4 L577.7,88.9 L579.3,89.6 L580.9,90.4 L582.5,91.3 L584.1,92.5 L585.7,93.8 L587.3,95.2 L588.9,96.9 L590.5,98.6 L592.1,100.5 L593.7,102.6 L595.3,104.7 L596.8,107.0 L598.4,109.5 L600.0,112.0 L601.6,114.6 L603.2,117.4 L604.8,120.2 L606.4,123.1 L608.0,126.1 L609.6,129.1 L611.2,132.2 L612.8,135.4 L614.4,138.6 L616.0,141.8 L617.6,145.1 L619.2,148.4 L620.8,151.6 L622.4,154.9 L624.0,158.2 L625.6,161.4 L627.2,164.6 L628.8,167.8 L630.4,170.9 L632.0,173.9 L633.6,176.9 L635.2,179.8 L636.8,182.6 L638.4,185.4 L640.0,188.0 L641.6,190.5 L643.2,193.0 L644.7,195.3 L646.3,197.4 L647.9,199.5 L649.5,201.4 L651.1,203.1 L652.7,204.8 L654.3,206.2 L655.9,207.5 L657.5,208.7 L659.1,209.6 L660.7,210.4 L662.3,211.1 L663.9,211.6 L665.5,211.9 L667.1,212.0 L668.7,212.0 L670.3,211.7 L671.9,211.3 L673.5,210.8 L675.1,210.1 L676.7,209.2 L678.3,208.1 L679.9,206.9 L681.5,205.5 L683.1,204.0 L684.7,202.3 L686.3,200.4 L687.9,198.5 L689.5,196.4 L691.1,194.1 L692.6,191.8 L694.2,189.3 L695.8,186.7 L697.4,184.0 L699.0,181.2 L700.6,178.4 L702.2,175.4 L703.8,172.4 L705.4,169.3 L707.0,166.2 L708.6,163.0 L710.2,159.8 L711.8,156.5 L713.4,153.3 L715.0,150.0" fill="none" stroke="var(--ink-3)" stroke-width="1.2" stroke-dasharray="4 3"/>
+<path d="M544.2,47.6" fill="none" stroke="var(--critical)" stroke-width="3"/>
+<path d="M561.7,97.4 L563.3,156.3 L564.9,208.1 L566.5,251.7" fill="none" stroke="var(--critical)" stroke-width="3"/>
+<path d="M587.3,240.3 L588.9,220.8 L590.5,202.1 L592.1,184.7 L593.7,168.8 L595.3,154.8 L596.8,142.7 L598.4,132.8 L600.0,125.0 L601.6,119.3 L603.2,115.7 L604.8,113.9 L606.4,114.0 L608.0,115.6 L609.6,118.6 L611.2,122.7 L612.8,127.8 L614.4,133.6 L616.0,139.9 L617.6,146.5 L619.2,153.1 L620.8,159.7 L622.4,166.0 L624.0,171.9 L625.6,177.4 L627.2,182.3 L628.8,186.6 L630.4,190.2 L632.0,193.2 L633.6,195.5 L635.2,197.2 L636.8,198.3 L638.4,199.0 L640.0,199.1 L641.6,199.0 L643.2,198.5 L644.7,197.9 L646.3,197.2 L647.9,196.4 L649.5,195.7 L651.1,195.2 L652.7,194.8 L654.3,194.6 L655.9,194.7 L657.5,195.0 L659.1,195.5 L660.7,196.3 L662.3,197.3 L663.9,198.4 L665.5,199.7 L667.1,201.0 L668.7,202.2 L670.3,203.4 L671.9,204.3 L673.5,205.1 L675.1,205.6 L676.7,205.7 L678.3,205.5 L679.9,204.9 L681.5,204.0 L683.1,202.8 L684.7,201.3 L686.3,199.7 L687.9,197.9 L689.5,196.2 L691.1,194.6 L692.6,193.3 L694.2,192.2 L695.8,191.5 L697.4,191.1 L699.0,191.0 L700.6,190.8 L702.2,190.2 L703.8,188.5 L705.4,185.0 L707.0,178.5 L708.6,167.3 L710.2,149.4 L711.8,122.3 L713.4,82.7" fill="none" stroke="var(--critical)" stroke-width="3"/>
+<circle cx="543.5" cy="140.2" r="4.5" fill="var(--s1)"/>
+<circle cx="560.6" cy="53.6" r="4.5" fill="var(--s1)"/>
+<circle cx="597.5" cy="141.2" r="4.5" fill="var(--s1)"/>
+<circle cx="607.3" cy="105.6" r="4.5" fill="var(--s1)"/>
+<circle cx="615.8" cy="147.2" r="4.5" fill="var(--s1)"/>
+<circle cx="622.1" cy="169.5" r="4.5" fill="var(--s1)"/>
+<circle cx="628.0" cy="177.6" r="4.5" fill="var(--s1)"/>
+<circle cx="639.6" cy="199.1" r="4.5" fill="var(--s1)"/>
+<circle cx="672.7" cy="204.5" r="4.5" fill="var(--s1)"/>
+<circle cx="675.1" cy="212.0" r="4.5" fill="var(--s1)"/>
+<circle cx="687.8" cy="172.8" r="4.5" fill="var(--s1)"/>
+<circle cx="693.4" cy="222.4" r="4.5" fill="var(--s1)"/>
+<circle cx="700.8" cy="178.1" r="4.5" fill="var(--s1)"/>
+<circle cx="706.9" cy="182.0" r="4.5" fill="var(--s1)"/>
+<text x="620" y="272" class="lbl" text-anchor="middle">x</text>
+<text x="380" y="298" class="lbl" text-anchor="middle">dots = training data · dashed grey = the true curve (unknown in practice) · colour = the model</text>
+</svg>
+<figcaption><strong>Figure 7.1 — Same data, three model capacities.</strong> A straight line cannot bend enough to follow the truth (underfitting: it is wrong even on the training points). A cubic follows the trend and ignores the wobble. A degree-9 polynomial passes near every training point by swinging wildly between them (overfitting: perfect on the training data, terrible one step away from it).</figcaption>
+</figure>
+
+<div class="grid3">
+  <div class="card bad"><h4>Underfitting</h4><p>The model is too simple to capture the pattern. <strong>Both</strong> training and test error are high. Symptom: adding more data does not help; the model has already learned everything it is capable of learning.</p></div>
+  <div class="card good"><h4>Good fit</h4><p>The model captures the repeatable pattern and ignores the noise. Training error is a bit below test error (a small gap is normal and healthy), and test error is close to the irreducible noise floor.</p></div>
+  <div class="card bad"><h4>Overfitting</h4><p>The model is flexible enough to memorize noise. Training error is near zero; test error is high and <em>rising</em> with complexity. Symptom: a large train–test gap that shrinks when you add data or simplify the model.</p></div>
+</div>
+
+<p>Plot both errors against model complexity and you get the most important picture in applied ML: training error falls forever, test error is <strong>U-shaped</strong>, and the job is to find the bottom of the U.</p>
+
+<figure class="fig">
+<svg viewBox="0 0 760 320" role="img" aria-label="Training error falls steadily as model complexity grows while test error is U-shaped, with an underfitting zone on the left, a sweet spot in the middle and an overfitting zone on the right">
+<defs><marker id="arr-g2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+<rect x="80.0" y="50" width="164" height="210" fill="var(--s2)" fill-opacity=".07"/>
+<rect x="407" y="50" width="273" height="210" fill="var(--critical)" fill-opacity=".07"/>
+<rect x="244" y="50" width="164" height="210" fill="var(--s3)" fill-opacity=".10"/>
+<line x1="80" y1="260" x2="720" y2="260" class="axis" marker-end="url(#arr-g2)"/><line x1="80" y1="260" x2="80" y2="30" class="axis" marker-end="url(#arr-g2)"/>
+<text x="390" y="292" class="lbl" text-anchor="middle">model complexity (polynomial degree, tree depth, network size, …) →</text>
+<text x="40" y="150" class="lbl" text-anchor="middle" transform="rotate(-90 40 150)">error</text>
+<text x="80.0" y="276" class="lbl" text-anchor="middle">1</text>
+<text x="134.54545454545456" y="276" class="lbl" text-anchor="middle">2</text>
+<text x="189.0909090909091" y="276" class="lbl" text-anchor="middle">3</text>
+<text x="243.63636363636363" y="276" class="lbl" text-anchor="middle">4</text>
+<text x="298.1818181818182" y="276" class="lbl" text-anchor="middle">5</text>
+<text x="352.7272727272727" y="276" class="lbl" text-anchor="middle">6</text>
+<text x="407.27272727272725" y="276" class="lbl" text-anchor="middle">7</text>
+<text x="461.8181818181818" y="276" class="lbl" text-anchor="middle">8</text>
+<text x="516.3636363636364" y="276" class="lbl" text-anchor="middle">9</text>
+<text x="570.909090909091" y="276" class="lbl" text-anchor="middle">10</text>
+<text x="625.4545454545454" y="276" class="lbl" text-anchor="middle">11</text>
+<text x="680.0" y="276" class="lbl" text-anchor="middle">12</text>
+<line x1="80" y1="186" x2="700" y2="186" stroke="var(--ink-3)" stroke-dasharray="4 4"/>
+<text x="86" y="180.5" class="lbl" text-anchor="start" fill="var(--ink-3)">irreducible noise floor</text>
+<path d="M80.0,71.0 L134.5,113.0 L189.1,165.5 L243.6,186.5 L298.2,197.0 L352.7,205.4 L407.3,213.8 L461.8,220.1 L516.4,226.4 L570.9,232.7 L625.5,236.9 L680.0,241.1" fill="none" stroke="var(--s1)" stroke-width="3"/>
+<path d="M80.0,60.5 L134.5,102.5 L189.1,155.0 L243.6,171.8 L298.2,176.0 L352.7,171.8 L407.3,161.3 L461.8,144.5 L516.4,123.5 L570.9,96.2 L625.5,71.0 L680.0,50.0" fill="none" stroke="var(--s2)" stroke-width="3"/>
+<text x="543.6363636363636" y="218.5" class="lbl-strong" text-anchor="middle" fill="var(--s1)">training error keeps falling</text>
+<text x="581.8181818181818" y="150" class="lbl-strong" text-anchor="middle" fill="var(--s2)">test error turns back up</text>
+<text x="161.8181818181818" y="68" class="lbl-strong" text-anchor="middle" fill="var(--s2)">underfitting</text>
+<text x="161.8181818181818" y="84" class="lbl" text-anchor="middle">both errors high</text>
+<text x="325.4545454545455" y="68" class="lbl-strong" text-anchor="middle" fill="var(--s3)">sweet spot</text>
+<text x="325.4545454545455" y="84" class="lbl" text-anchor="middle">test error lowest</text>
+<text x="543.6363636363636" y="68" class="lbl-strong" text-anchor="middle" fill="var(--critical)">overfitting</text>
+<text x="543.6363636363636" y="84" class="lbl" text-anchor="middle">gap grows</text>
+<circle cx="298.2" cy="176.0" r="6" fill="var(--s7)"/>
+</svg>
+<figcaption><strong>Figure 7.2 — The U-shaped test error.</strong> As capacity grows, training error (blue) only ever goes down: a bigger model can always fit the training set at least as well. Test error (orange) falls while the model learns real structure, bottoms out, then climbs as the model starts fitting noise. Note the training error dropping <em>below</em> the noise floor — that is memorization, not skill. Every hyperparameter that controls capacity (degree, depth, number of trees, layers, C, alpha) traces this curve.</figcaption>
+</figure>
+
+<p>Drive it yourself. The widget fits a polynomial to 30 noisy training points (blue) and evaluates it on 30 held-out test points (orange) that came from the same curve. Watch the bars as you raise the degree: the blue bar (training error) only ever shrinks; the orange bar (test error) bottoms out around degree 3–5 and then explodes.</p>
+
+<div class="widget" id="w-poly">
+  <div class="w-title">Interactive: polynomial degree vs. train and test error</div>
+  <div class="controls">
+    <label>degree <input type="range" id="pd-deg" min="1" max="12" step="1" value="1" data-out="pd-deg-out"> <output id="pd-deg-out"></output></label>
+    <span>train MSE <span class="readout" id="pd-tr">–</span></span>
+    <span>test MSE <span class="readout" id="pd-te">–</span></span>
+  </div>
+  <svg viewBox="0 0 760 320" id="pd-svg" role="img" aria-label="A polynomial of adjustable degree fitted to noisy training points, with bars showing training and test mean squared error"></svg>
+  <div class="note">Blue dots = training data (the model sees these). Orange dots = test data (it does not). Dashed = the true curve. From degree ≈ 8 upward the curve starts to whip between points and the test bar shoots off the chart while the train bar keeps shrinking. That divergence <em>is</em> overfitting.</div>
+</div>
+
+<p>Here is the same experiment in scikit-learn, using <code>validation_curve</code>, which fits the model at each value of a hyperparameter with cross-validation (Section 7) and returns both scores. Note that the polynomial features go <em>inside</em> the pipeline, so they are recomputed correctly for every fold.</p>
+
+<pre class="code" data-lang="python"><code><span class="cm"># Polynomial degree sweep: training error falls forever; validation error turns back up</span>
+<span class="kw">import</span> numpy <span class="kw">as</span> np
+<span class="kw">from</span> sklearn.pipeline <span class="kw">import</span> make_pipeline
+<span class="kw">from</span> sklearn.preprocessing <span class="kw">import</span> PolynomialFeatures, StandardScaler
+<span class="kw">from</span> sklearn.linear_model <span class="kw">import</span> LinearRegression
+<span class="kw">from</span> sklearn.model_selection <span class="kw">import</span> validation_curve, KFold
+
+rng = np.random.default_rng(<span class="nu">0</span>)
+X = rng.uniform(<span class="nu">0</span>, <span class="nu">1</span>, <span class="nu">40</span>)[:, <span class="kw">None</span>]<span class="cm">                            # 40 points on [0, 1]</span>
+y = np.sin(<span class="nu">2</span> * np.pi * X.ravel()) + rng.normal(<span class="nu">0</span>, <span class="nu">0.3</span>, <span class="nu">40</span>)<span class="cm">    # true curve + noise</span>
+
+model = make_pipeline(PolynomialFeatures(), StandardScaler(), LinearRegression())
+degrees = [<span class="nu">1</span>, <span class="nu">2</span>, <span class="nu">3</span>, <span class="nu">5</span>, <span class="nu">9</span>, <span class="nu">12</span>]
+cv = KFold(n_splits=<span class="nu">5</span>, shuffle=<span class="kw">True</span>, random_state=<span class="nu">0</span>)
+tr, va = validation_curve(model, X, y, param_name=<span class="st">&quot;polynomialfeatures__degree&quot;</span>,
+                          param_range=degrees, cv=cv, scoring=<span class="st">&quot;neg_mean_squared_error&quot;</span>)
+<span class="fn">print</span>(<span class="st">&quot;degree   train MSE   valid MSE&quot;</span>)
+<span class="kw">for</span> d, t, v <span class="kw">in</span> <span class="fn">zip</span>(degrees, -tr.mean(axis=<span class="nu">1</span>), -va.mean(axis=<span class="nu">1</span>)):
+    <span class="fn">print</span>(<span class="st">f&quot;{d:6d}   {t:9.3f}   {v:9.3f}&quot;</span>)
+<span class="fn">print</span>(<span class="st">&quot;(noise variance is 0.3² = 0.09: no model can beat that on validation)&quot;</span>)
+<span class="out"># degree   train MSE   valid MSE</span>
+<span class="out">#      1       0.368       0.397</span>
+<span class="out">#      2       0.362       0.431</span>
+<span class="out">#      3       0.098       0.117</span>
+<span class="out">#      5       0.093       0.142</span>
+<span class="out">#      9       0.087       0.165</span>
+<span class="out">#     12       0.086       0.187</span>
+<span class="out"># (noise variance is 0.3² = 0.09: no model can beat that on validation)</span></code></pre>
+
+<div class="callout warn"><div class="title">Common mistake</div>
+<p>Reading "degree 12 has the lowest training error" as "degree 12 is the best model". In the output above the training MSE keeps falling all the way to degree 12 while the validation MSE has been climbing since degree 3. Choose hyperparameters by the <em>validation</em> column, always. The training column is only useful for diagnosing the gap.</p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s3">3. Bias and variance, precisely</h2>
+
+<p>"Underfitting" and "overfitting" describe symptoms. <strong>Bias</strong> and <strong>variance</strong> name the two underlying causes of error, and naming them tells you what to do about them. The classic picture is a dartboard.</p>
+
+<figure class="fig">
+<svg viewBox="0 0 760 330" role="img" aria-label="Four dartboards: low bias low variance darts cluster at the bull, high variance darts scatter widely, high bias darts cluster off-centre, and high bias plus high variance darts are both scattered and off-centre">
+<circle cx="110" cy="150" r="62" fill="var(--surface-2)" stroke="var(--ink-3)" stroke-width="1"/>
+<circle cx="110" cy="150" r="44" fill="var(--surface)" stroke="var(--ink-3)" stroke-width="1"/>
+<circle cx="110" cy="150" r="26" fill="var(--surface-2)" stroke="var(--ink-3)" stroke-width="1"/>
+<circle cx="110" cy="150" r="10" fill="var(--accent-soft)" stroke="var(--ink-3)" stroke-width="1"/>
+<circle cx="110.9" cy="152.2" r="4.5" fill="var(--s3)" stroke="var(--surface)" stroke-width="1"/>
+<circle cx="110.9" cy="146.4" r="4.5" fill="var(--s3)" stroke="var(--surface)" stroke-width="1"/>
+<circle cx="112.5" cy="151.2" r="4.5" fill="var(--s3)" stroke="var(--surface)" stroke-width="1"/>
+<circle cx="108.5" cy="151.6" r="4.5" fill="var(--s3)" stroke="var(--surface)" stroke-width="1"/>
+<circle cx="111.0" cy="150.8" r="4.5" fill="var(--s3)" stroke="var(--surface)" stroke-width="1"/>
+<circle cx="110.1" cy="151.5" r="4.5" fill="var(--s3)" stroke="var(--surface)" stroke-width="1"/>
+<circle cx="108.0" cy="149.6" r="4.5" fill="var(--s3)" stroke="var(--surface)" stroke-width="1"/>
+<circle cx="108.7" cy="151.6" r="4.5" fill="var(--s3)" stroke="var(--surface)" stroke-width="1"/>
+<circle cx="110.1" cy="149.2" r="4.5" fill="var(--s3)" stroke="var(--surface)" stroke-width="1"/>
+<text x="110" y="36" class="lbl-strong" text-anchor="middle">Low bias, low variance</text>
+<text x="110" y="54" class="lbl" text-anchor="middle" fill="var(--s3)">what we want</text>
+<circle cx="290" cy="150" r="62" fill="var(--surface-2)" stroke="var(--ink-3)" stroke-width="1"/>
+<circle cx="290" cy="150" r="44" fill="var(--surface)" stroke="var(--ink-3)" stroke-width="1"/>
+<circle cx="290" cy="150" r="26" fill="var(--surface-2)" stroke="var(--ink-3)" stroke-width="1"/>
+<circle cx="290" cy="150" r="10" fill="var(--accent-soft)" stroke="var(--ink-3)" stroke-width="1"/>
+<circle cx="281.5" cy="147.2" r="4.5" fill="var(--s2)" stroke="var(--surface)" stroke-width="1"/>
+<circle cx="290.1" cy="147.0" r="4.5" fill="var(--s2)" stroke="var(--surface)" stroke-width="1"/>
+<circle cx="304.1" cy="161.0" r="4.5" fill="var(--s2)" stroke="var(--surface)" stroke-width="1"/>
+<circle cx="260.4" cy="129.4" r="4.5" fill="var(--s2)" stroke="var(--surface)" stroke-width="1"/>
+<circle cx="288.1" cy="145.4" r="4.5" fill="var(--s2)" stroke="var(--surface)" stroke-width="1"/>
+<circle cx="292.3" cy="152.4" r="4.5" fill="var(--s2)" stroke="var(--surface)" stroke-width="1"/>
+<circle cx="313.1" cy="137.9" r="4.5" fill="var(--s2)" stroke="var(--surface)" stroke-width="1"/>
+<circle cx="285.9" cy="172.3" r="4.5" fill="var(--s2)" stroke="var(--surface)" stroke-width="1"/>
+<circle cx="297.1" cy="157.2" r="4.5" fill="var(--s2)" stroke="var(--surface)" stroke-width="1"/>
+<text x="290" y="36" class="lbl-strong" text-anchor="middle">Low bias, high variance</text>
+<text x="290" y="54" class="lbl" text-anchor="middle" fill="var(--s2)">overfitting</text>
+<circle cx="470" cy="150" r="62" fill="var(--surface-2)" stroke="var(--ink-3)" stroke-width="1"/>
+<circle cx="470" cy="150" r="44" fill="var(--surface)" stroke="var(--ink-3)" stroke-width="1"/>
+<circle cx="470" cy="150" r="26" fill="var(--surface-2)" stroke="var(--ink-3)" stroke-width="1"/>
+<circle cx="470" cy="150" r="10" fill="var(--accent-soft)" stroke="var(--ink-3)" stroke-width="1"/>
+<circle cx="496.6" cy="123.5" r="4.5" fill="var(--s2)" stroke="var(--surface)" stroke-width="1"/>
+<circle cx="498.5" cy="128.3" r="4.5" fill="var(--s2)" stroke="var(--surface)" stroke-width="1"/>
+<circle cx="494.7" cy="126.1" r="4.5" fill="var(--s2)" stroke="var(--surface)" stroke-width="1"/>
+<circle cx="497.8" cy="125.4" r="4.5" fill="var(--s2)" stroke="var(--surface)" stroke-width="1"/>
+<circle cx="497.7" cy="128.3" r="4.5" fill="var(--s2)" stroke="var(--surface)" stroke-width="1"/>
+<circle cx="498.1" cy="126.6" r="4.5" fill="var(--s2)" stroke="var(--surface)" stroke-width="1"/>
+<circle cx="499.6" cy="130.4" r="4.5" fill="var(--s2)" stroke="var(--surface)" stroke-width="1"/>
+<circle cx="498.9" cy="125.8" r="4.5" fill="var(--s2)" stroke="var(--surface)" stroke-width="1"/>
+<circle cx="500.0" cy="126.6" r="4.5" fill="var(--s2)" stroke="var(--surface)" stroke-width="1"/>
+<text x="470" y="36" class="lbl-strong" text-anchor="middle">High bias, low variance</text>
+<text x="470" y="54" class="lbl" text-anchor="middle" fill="var(--s2)">underfitting</text>
+<circle cx="650" cy="150" r="62" fill="var(--surface-2)" stroke="var(--ink-3)" stroke-width="1"/>
+<circle cx="650" cy="150" r="44" fill="var(--surface)" stroke="var(--ink-3)" stroke-width="1"/>
+<circle cx="650" cy="150" r="26" fill="var(--surface-2)" stroke="var(--ink-3)" stroke-width="1"/>
+<circle cx="650" cy="150" r="10" fill="var(--accent-soft)" stroke="var(--ink-3)" stroke-width="1"/>
+<circle cx="687.6" cy="116.3" r="4.5" fill="var(--critical)" stroke="var(--surface)" stroke-width="1"/>
+<circle cx="688.0" cy="127.8" r="4.5" fill="var(--critical)" stroke="var(--surface)" stroke-width="1"/>
+<circle cx="664.4" cy="124.6" r="4.5" fill="var(--critical)" stroke="var(--surface)" stroke-width="1"/>
+<circle cx="678.6" cy="131.0" r="4.5" fill="var(--critical)" stroke="var(--surface)" stroke-width="1"/>
+<circle cx="667.3" cy="115.9" r="4.5" fill="var(--critical)" stroke="var(--surface)" stroke-width="1"/>
+<circle cx="680.2" cy="122.9" r="4.5" fill="var(--critical)" stroke="var(--surface)" stroke-width="1"/>
+<circle cx="680.6" cy="136.3" r="4.5" fill="var(--critical)" stroke="var(--surface)" stroke-width="1"/>
+<circle cx="660.0" cy="130.8" r="4.5" fill="var(--critical)" stroke="var(--surface)" stroke-width="1"/>
+<circle cx="691.4" cy="124.8" r="4.5" fill="var(--critical)" stroke="var(--surface)" stroke-width="1"/>
+<text x="650" y="36" class="lbl-strong" text-anchor="middle">High bias, high variance</text>
+<text x="650" y="54" class="lbl" text-anchor="middle" fill="var(--critical)">wrong model + noisy fit</text>
+<text x="200" y="262" class="lbl-strong" text-anchor="middle">Bias = how far the darts' average lands from the bull.</text>
+<text x="200" y="282" class="lbl" text-anchor="middle">A systematic miss: the model family cannot represent the truth.</text>
+<text x="560" y="262" class="lbl-strong" text-anchor="middle">Variance = how much the darts scatter around their average.</text>
+<text x="560" y="282" class="lbl" text-anchor="middle">Sensitivity to which particular training rows you happened to get.</text>
+<text x="380" y="312" class="lbl" text-anchor="middle">Each dart = the same model type trained on a different random training sample, evaluated at one test point.</text>
+</svg>
+<figcaption><strong>Figure 7.3 — Bias and variance on a dartboard.</strong> Imagine training the same kind of model many times, each on a different random sample of training data, and asking each one to predict at a single test point. Bias is how far their <em>average</em> prediction is from the truth (the bull). Variance is how much the predictions <em>scatter</em> around their average. An underfit model is high-bias (systematically wrong, but stable). An overfit model is high-variance (right on average, but each individual fit is all over the place).</figcaption>
+</figure>
+
+<div class="callout eli9"><div class="title">Explain it like I'm 9</div>
+<p>You weigh yourself on two bathroom scales ten times each. Scale A always says 3 kg too much, every time: that is <strong>bias</strong> — consistently wrong in the same direction. Scale B is right on average, but each reading is off by a random few kilos: that is <strong>variance</strong> — unreliable from try to try. A great scale has neither. A cheap one has both.</p>
+</div>
+
+<p>Now the precise version. Fix a test input x. Imagine drawing many training sets, fitting your model to each, and looking at the spread of predictions f̂(x). The expected squared error at x splits cleanly into three pieces:</p>
+
+<div class="callout math"><div class="title">The math (optional)</div>
+<div class="formula">E[(y − f̂(x))²] = <span class="var">Bias</span>[f̂(x)]² + <span class="var">Var</span>[f̂(x)] + σ²</div>
+<div class="formula">Bias[f̂(x)] = E[f̂(x)] − f(x)      Var[f̂(x)] = E[(f̂(x) − E[f̂(x)])²]</div>
+<p><strong>f(x)</strong> is the true (unknown) function; <strong>y = f(x) + ε</strong> is what we observe, with noise ε of variance <strong>σ²</strong>. <strong>f̂(x)</strong> is our model's prediction, which is random because the training set is random; <strong>E[·]</strong> averages over all the training sets we might have drawn. <strong>Bias</strong> is the systematic gap between the average prediction and the truth: a model family too simple to represent f has bias no amount of data can remove. <strong>Variance</strong> is how much the prediction jumps around from one training set to another: a model flexible enough to chase noise has high variance, and more data or regularization shrinks it. <strong>σ²</strong> is the irreducible noise: no model, however good, beats it (the dashed floor in Figure 7.2). The three terms add, so total error can only be reduced by attacking bias or variance — and most levers that lower one raise the other. That is the <strong>bias–variance tradeoff</strong>.</p>
+</div>
+
+<p>Why this matters in practice: the decomposition tells you that "make the model bigger" and "make the model smaller" are not opposites of one lever but two different cures for two different diseases. Bigger models lower bias and raise variance; smaller models (and regularization) lower variance and raise bias; more data lowers variance without touching bias. Get the diagnosis right and the treatment is obvious. Get it wrong and you will spend a week collecting data for a model that was underfitting all along.</p>
+
+<div class="callout key"><div class="title">Key idea</div>
+<p>Modern flexible models (boosted trees, neural networks) live on the high-variance side by default. The practical craft of ML is therefore mostly <em>variance control</em>: regularization, early stopping, ensembling (Chapter 10 — averaging many high-variance models is a direct attack on the variance term), and getting more data. Bias problems are rarer and usually show up as "I need a better feature", which is Chapter 8.</p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s4">4. Diagnosis: learning curves and the recipe</h2>
+
+<p>You have a model that is not good enough. Is it bias or variance? Two numbers usually settle it: the training score and the validation score. But the most informative tool is the <strong>learning curve</strong>: train on 10%, 25%, 50%, 100% of the data and plot both scores against the training-set size.</p>
+
+<figure class="fig">
+<svg viewBox="0 0 760 330" role="img" aria-label="Two learning-curve panels. Left, high bias: training and validation error converge quickly to a high plateau. Right, high variance: training error stays low, validation error is high, and a large gap closes slowly with more data">
+<defs><marker id="arr-g4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+<text x="195" y="26" class="lbl-strong" text-anchor="middle" font-size="14">High bias (underfitting)</text>
+<line x1="60" y1="250" x2="350" y2="250" class="axis" marker-end="url(#arr-g4)"/><line x1="60" y1="250" x2="60" y2="40" class="axis" marker-end="url(#arr-g4)"/>
+<text x="195" y="274" class="lbl" text-anchor="middle">number of training examples →</text>
+<text x="38" y="150" class="lbl" text-anchor="middle" transform="rotate(-90 38 150)">error</text>
+<line x1="60" y1="190" x2="330" y2="190" stroke="var(--ink-3)" stroke-dasharray="4 4"/>
+<text x="66" y="185.0" class="lbl" text-anchor="start" fill="var(--ink-3)">desired error</text>
+<path d="M73.5,136.8 L82.3,134.2 L91.2,132.0 L100.0,130.2 L108.9,128.7 L117.7,127.5 L126.6,126.6 L135.4,125.7 L144.3,125.1 L153.1,124.5 L161.9,124.1 L170.8,123.7 L179.6,123.4 L188.5,123.2 L197.3,122.9 L206.2,122.8 L215.0,122.6 L223.9,122.5 L232.7,122.4 L241.6,122.4 L250.4,122.3 L259.2,122.2 L268.1,122.2 L276.9,122.2 L285.8,122.1 L294.6,122.1 L303.5,122.1 L312.3,122.1 L321.2,122.1 L330.0,122.0" fill="none" stroke="var(--s1)" stroke-width="3"/>
+<path d="M73.5,39.9 L82.3,53.1 L91.2,64.0 L100.0,72.9 L108.9,80.3 L117.7,86.3 L126.6,91.2 L135.4,95.3 L144.3,98.6 L153.1,101.4 L161.9,103.6 L170.8,105.5 L179.6,107.0 L188.5,108.2 L197.3,109.3 L206.2,110.1 L215.0,110.8 L223.9,111.4 L232.7,111.8 L241.6,112.2 L250.4,112.5 L259.2,112.8 L268.1,113.0 L276.9,113.2 L285.8,113.3 L294.6,113.5 L303.5,113.6 L312.3,113.6 L321.2,113.7 L330.0,113.8" fill="none" stroke="var(--s2)" stroke-width="3"/>
+<text x="324.6" y="140.04957504353334" class="lbl-strong" text-anchor="end" fill="var(--s1)">training</text>
+<text x="324.6" y="105.75212478233337" class="lbl-strong" text-anchor="end" fill="var(--s2)">validation</text>
+<text x="195" y="300" class="lbl" text-anchor="middle">both curves plateau high, small gap</text>
+<text x="195" y="318" class="lbl-strong" text-anchor="middle" fill="var(--s2)">more data will NOT help</text>
+<text x="181.5" y="160.0" class="lbl-strong" text-anchor="middle" fill="var(--s7)">plateau = bias</text>
+<text x="565" y="26" class="lbl-strong" text-anchor="middle" font-size="14">High variance (overfitting)</text>
+<line x1="430" y1="250" x2="720" y2="250" class="axis" marker-end="url(#arr-g4)"/><line x1="430" y1="250" x2="430" y2="40" class="axis" marker-end="url(#arr-g4)"/>
+<text x="565" y="274" class="lbl" text-anchor="middle">number of training examples →</text>
+<text x="408" y="150" class="lbl" text-anchor="middle" transform="rotate(-90 408 150)">error</text>
+<line x1="430" y1="190" x2="700" y2="190" stroke="var(--ink-3)" stroke-dasharray="4 4"/>
+<text x="436" y="185.0" class="lbl" text-anchor="start" fill="var(--ink-3)">desired error</text>
+<path d="M443.5,233.0 L452.3,232.3 L461.2,231.7 L470.0,231.0 L478.9,230.4 L487.7,229.7 L496.6,229.1 L505.4,228.4 L514.3,227.8 L523.1,227.1 L531.9,226.4 L540.8,225.8 L549.6,225.1 L558.5,224.5 L567.3,223.8 L576.2,223.2 L585.0,222.5 L593.9,221.9 L602.7,221.2 L611.6,220.6 L620.4,219.9 L629.2,219.2 L638.1,218.6 L646.9,217.9 L655.8,217.3 L664.6,216.6 L673.5,216.0 L682.3,215.3 L691.2,214.7 L700.0,214.0" fill="none" stroke="var(--s1)" stroke-width="3"/>
+<path d="M443.5,119.1 L452.3,124.5 L461.2,128.6 L470.0,132.1 L478.9,135.0 L487.7,137.5 L496.6,139.7 L505.4,141.7 L514.3,143.5 L523.1,145.1 L531.9,146.6 L540.8,148.0 L549.6,149.3 L558.5,150.5 L567.3,151.7 L576.2,152.7 L585.0,153.8 L593.9,154.7 L602.7,155.6 L611.6,156.5 L620.4,157.4 L629.2,158.2 L638.1,158.9 L646.9,159.7 L655.8,160.4 L664.6,161.1 L673.5,161.7 L682.3,162.4 L691.2,163.0 L700.0,163.6" fill="none" stroke="var(--s2)" stroke-width="3"/>
+<text x="694.6" y="232.0" class="lbl-strong" text-anchor="end" fill="var(--s1)">training</text>
+<text x="694.6" y="155.6" class="lbl-strong" text-anchor="end" fill="var(--s2)">validation</text>
+<text x="565" y="300" class="lbl" text-anchor="middle">large gap that closes slowly</text>
+<text x="565" y="318" class="lbl-strong" text-anchor="middle" fill="var(--critical)">more data WILL help</text>
+<line x1="565" y1="224" x2="565" y2="151" stroke="var(--s7)" stroke-width="2" stroke-dasharray="3 3"/>
+<text x="571.0" y="173.67984085943425" class="lbl-strong" fill="var(--s7)">gap = variance</text>
+</svg>
+<figcaption><strong>Figure 7.4 — Learning curves are the X-ray for bias vs. variance.</strong> Left: high bias. Training and validation error converge quickly to a plateau well above what you need, with a small gap. The model has learned all it can; feeding it more rows changes nothing. Right: high variance. Training error is tiny, validation error is high, and the gap closes only slowly as data grows. More data (or regularization) will help. Read the curve before deciding what to spend a month on.</figcaption>
+</figure>
+
+<pre class="code" data-lang="python"><code><span class="cm"># Learning curves: does more data help? (high variance → yes; high bias → no)</span>
+<span class="kw">import</span> numpy <span class="kw">as</span> np
+<span class="kw">from</span> sklearn.datasets <span class="kw">import</span> load_breast_cancer
+<span class="kw">from</span> sklearn.model_selection <span class="kw">import</span> learning_curve, StratifiedKFold
+<span class="kw">from</span> sklearn.pipeline <span class="kw">import</span> make_pipeline
+<span class="kw">from</span> sklearn.preprocessing <span class="kw">import</span> StandardScaler
+<span class="kw">from</span> sklearn.linear_model <span class="kw">import</span> LogisticRegression
+<span class="kw">from</span> sklearn.tree <span class="kw">import</span> DecisionTreeClassifier
+
+X, y = load_breast_cancer(return_X_y=<span class="kw">True</span>)
+cv = StratifiedKFold(n_splits=<span class="nu">5</span>, shuffle=<span class="kw">True</span>, random_state=<span class="nu">0</span>)
+sizes = np.array([<span class="nu">0.1</span>, <span class="nu">0.25</span>, <span class="nu">0.5</span>, <span class="nu">0.75</span>, <span class="nu">1.0</span>])
+
+<span class="kw">for</span> name, model <span class="kw">in</span> [(<span class="st">&quot;logistic (C=0.1)&quot;</span>, make_pipeline(StandardScaler(), LogisticRegression(C=<span class="nu">0.1</span>, max_iter=<span class="nu">1000</span>))),
+                    (<span class="st">&quot;deep tree&quot;</span>, DecisionTreeClassifier(random_state=<span class="nu">0</span>))]:
+    n, tr, va = learning_curve(model, X, y, train_sizes=sizes, cv=cv, scoring=<span class="st">&quot;accuracy&quot;</span>, random_state=<span class="nu">0</span>)
+    <span class="fn">print</span>(name)
+    <span class="fn">print</span>(<span class="st">&quot;  n_train :&quot;</span>, n)
+    <span class="fn">print</span>(<span class="st">&quot;  train   :&quot;</span>, np.<span class="fn">round</span>(tr.mean(axis=<span class="nu">1</span>), <span class="nu">3</span>))
+    <span class="fn">print</span>(<span class="st">&quot;  valid   :&quot;</span>, np.<span class="fn">round</span>(va.mean(axis=<span class="nu">1</span>), <span class="nu">3</span>))
+<span class="out"># logistic (C=0.1)</span>
+<span class="out">#   n_train : [ 45 113 227 341 455]</span>
+<span class="out">#   train   : [0.978 0.973 0.977 0.983 0.982]</span>
+<span class="out">#   valid   : [0.807 0.953 0.97  0.975 0.975]</span>
+<span class="out"># deep tree</span>
+<span class="out">#   n_train : [ 45 113 227 341 455]</span>
+<span class="out">#   train   : [1. 1. 1. 1. 1.]</span>
+<span class="out">#   valid   : [0.81  0.884 0.912 0.907 0.926]</span></code></pre>
+
+<p>Read the output: the logistic model's training and validation accuracies meet at about 0.98 — small gap, no plateau problem, the model is fine. The deep tree's training accuracy is 1.000 at every size while validation lags 8–19 points behind: textbook high variance, and the gap is still closing at the largest size, so more data (or pruning, Chapter 9) would help.</p>
+
+<h3>The recipe</h3>
+
+<div class="tbl-wrap">
+<table class="tbl">
+<thead><tr><th>Diagnosis</th><th>What you see</th><th>Do this</th><th>Do <em>not</em> do this</th></tr></thead>
+<tbody>
+<tr><td><strong>High bias</strong> (underfitting)</td><td>Train error high, validation error about as high; learning curves plateau early with a small gap</td><td>Add features or interactions; use a more flexible model (higher degree, deeper trees, boosting, a network); reduce regularization; train longer</td><td>Collect more data (the plateau will not move); add regularization</td></tr>
+<tr><td><strong>High variance</strong> (overfitting)</td><td>Train error low, validation error much higher; large gap that shrinks with more data</td><td>Get more data; regularize (larger alpha / smaller C, shallower trees, dropout); remove noisy features; simplify the model; ensemble; early stopping</td><td>Make the model bigger; tune until the validation set is overfit too</td></tr>
+<tr><td><strong>Both</strong></td><td>Validation error high and the gap is large</td><td>Fix variance first (it is cheaper), then reassess bias</td><td>Panic</td></tr>
+<tr><td><strong>Neither</strong></td><td>Validation error near the noise floor, small gap</td><td>Ship it; move effort to the data and the business problem</td><td>Keep tuning for a 0.2% gain the test set cannot even resolve</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="callout pro"><div class="title">At work</div>
+<p>Before any modeling meeting, produce two numbers per candidate model: cross-validated score and training score. The pair tells the whole story in five seconds and stops the most common argument in the room ("let's try a bigger model" when the problem is variance, or "let's get more data" when the problem is bias). If you can add a learning curve on one slide, do; it is the most persuasive argument for or against a data-collection budget.</p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s5">5. Regularization: L2, L1 and friends</h2>
+
+<p><strong>Regularization</strong> is the general name for any change to training that trades a little bias for a lot of variance reduction. The most important form adds a <em>penalty on the size of the weights</em> to the loss. The intuition: a model that fits noise typically does so with large, delicately balanced coefficients (look at how a high-degree polynomial swings). Charging rent for every unit of coefficient makes those wild fits expensive, so the optimizer prefers smaller, smoother solutions.</p>
+
+<div class="callout eli9"><div class="title">Explain it like I'm 9</div>
+<p>Regularization is a budget. Your model can "spend" coefficient size to fit the data, but every coin it spends costs something. With a small budget it can only afford the big, obvious patterns. With an unlimited budget it buys every wiggle in the data, including the ones that were just noise. The penalty strength sets the budget.</p>
+</div>
+
+<h3>L2 (Ridge): shrink everything</h3>
+
+<div class="callout math"><div class="title">The math (optional)</div>
+<div class="formula">Loss<sub>ridge</sub>(w) = ∑<sub>i</sub> (y<sub>i</sub> − ŷ<sub>i</sub>)² + α ∑<sub>j</sub> w<sub>j</sub>²</div>
+<p><strong>∑<sub>i</sub>(y<sub>i</sub> − ŷ<sub>i</sub>)²</strong> is the ordinary data-fit term from Chapter 5. <strong>∑<sub>j</sub> w<sub>j</sub>²</strong> is the squared L2 norm of the weight vector (the bias/intercept w<sub>0</sub> is <em>not</em> penalized). <strong>α</strong> (alpha; some books write λ) is the regularization strength: α = 0 gives ordinary least squares; α → ∞ drives every weight to zero and predicts the mean. Because the penalty is smooth, Ridge has a closed-form solution, w = (XᵀX + αI)⁻¹Xᵀy, and the "+αI" is also what makes it numerically stable when features are correlated. For logistic regression scikit-learn uses the same L2 penalty but parameterizes it as <strong>C = 1/α</strong>: <em>smaller C means stronger regularization</em>, which trips everyone up at least once.</p>
+</div>
+
+<h3>L1 (Lasso): shrink, and switch some off</h3>
+
+<div class="callout math"><div class="title">The math (optional)</div>
+<div class="formula">Loss<sub>lasso</sub>(w) = ∑<sub>i</sub> (y<sub>i</sub> − ŷ<sub>i</sub>)² + α ∑<sub>j</sub> |w<sub>j</sub>|</div>
+<div class="formula">Loss<sub>elastic</sub>(w) = ∑<sub>i</sub> (y<sub>i</sub> − ŷ<sub>i</sub>)² + α [ ρ ∑<sub>j</sub> |w<sub>j</sub>| + (1 − ρ) ∑<sub>j</sub> w<sub>j</sub>² ]</div>
+<p>Lasso replaces the squared penalty with the <strong>absolute value</strong> (the L1 norm). The consequence is dramatic: as α grows, coefficients do not merely shrink, they hit <em>exactly zero</em> one after another, so Lasso performs automatic feature selection. The absolute value has no derivative at zero, so there is no closed form; it is solved by coordinate descent. <strong>Elastic net</strong> mixes the two with a ratio <strong>ρ</strong> (<code>l1_ratio</code> in sklearn): it keeps Lasso's sparsity but, when several features are highly correlated, tends to keep them as a group rather than arbitrarily picking one — usually the safer choice on real business data.</p>
+</div>
+
+<h3>Why L1 makes zeros: the geometric picture</h3>
+
+<p>Penalizing the weights is equivalent to fitting the data as well as possible <em>subject to a budget</em> on the weights' size. Draw the budget region in weight space and the loss as contour ellipses around the unpenalized optimum; the solution is where the smallest contour first touches the region.</p>
+
+<figure class="fig">
+<svg viewBox="0 0 760 330" role="img" aria-label="Two panels with elliptical loss contours around the unconstrained optimum. Left: the L2 constraint is a circle and the solution touches it at a point where both weights are nonzero. Right: the L1 constraint is a diamond and the contours hit a corner, so one weight is exactly zero">
+<defs><marker id="arr-g5" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+<text x="180" y="26" class="lbl-strong" text-anchor="middle" font-size="14">L2 (Ridge): circular budget</text>
+<line x1="70" y1="185" x2="320" y2="185" class="axis" marker-end="url(#arr-g5)"/><line x1="180" y1="295" x2="180" y2="60" class="axis" marker-end="url(#arr-g5)"/>
+<text x="320" y="201" class="lbl" text-anchor="end">w₁</text>
+<text x="188" y="73" class="lbl">w₂</text>
+<ellipse cx="262" cy="115" rx="14" ry="8" transform="rotate(-25 262 115)" fill="none" stroke="var(--s2)" stroke-width="1.4" opacity="1.0"/>
+<ellipse cx="262" cy="115" rx="34" ry="20" transform="rotate(-25 262 115)" fill="none" stroke="var(--s2)" stroke-width="1.4" opacity="0.85"/>
+<ellipse cx="262" cy="115" rx="56" ry="33" transform="rotate(-25 262 115)" fill="none" stroke="var(--s2)" stroke-width="1.4" opacity="0.7"/>
+<ellipse cx="262" cy="115" rx="80" ry="47" transform="rotate(-25 262 115)" fill="none" stroke="var(--s2)" stroke-width="1.4" opacity="0.55"/>
+<circle cx="262" cy="115" r="4" fill="var(--s2)"/>
+<text x="262" y="51" class="lbl" text-anchor="middle" fill="var(--s2)">unpenalized (OLS) fit</text>
+<circle cx="180" cy="185" r="48" fill="var(--s1)" fill-opacity=".18" stroke="var(--s1)" stroke-width="2"/>
+<circle cx="216.8" cy="154.1" r="6" fill="var(--s7)"/>
+<text x="206.77013326971095" y="142.14619473504612" class="lbl-strong" text-anchor="end" fill="var(--s7)">solution</text>
+<text x="80" y="285" class="lbl" fill="var(--s1)">budget: ‖w‖₂² ≤ s</text>
+<text x="195" y="312" class="lbl" text-anchor="middle">touches the round edge → both weights shrink, neither is zero</text>
+<text x="550" y="26" class="lbl-strong" text-anchor="middle" font-size="14">L1 (Lasso): diamond budget</text>
+<line x1="440" y1="185" x2="690" y2="185" class="axis" marker-end="url(#arr-g5)"/><line x1="550" y1="295" x2="550" y2="60" class="axis" marker-end="url(#arr-g5)"/>
+<text x="690" y="201" class="lbl" text-anchor="end">w₁</text>
+<text x="558" y="73" class="lbl">w₂</text>
+<ellipse cx="632" cy="115" rx="14" ry="8" transform="rotate(-25 632 115)" fill="none" stroke="var(--s2)" stroke-width="1.4" opacity="1.0"/>
+<ellipse cx="632" cy="115" rx="34" ry="20" transform="rotate(-25 632 115)" fill="none" stroke="var(--s2)" stroke-width="1.4" opacity="0.85"/>
+<ellipse cx="632" cy="115" rx="56" ry="33" transform="rotate(-25 632 115)" fill="none" stroke="var(--s2)" stroke-width="1.4" opacity="0.7"/>
+<ellipse cx="632" cy="115" rx="80" ry="47" transform="rotate(-25 632 115)" fill="none" stroke="var(--s2)" stroke-width="1.4" opacity="0.55"/>
+<circle cx="632" cy="115" r="4" fill="var(--s2)"/>
+<text x="632" y="51" class="lbl" text-anchor="middle" fill="var(--s2)">unpenalized (OLS) fit</text>
+<polygon points="598,185 550,137 502,185 550,233" fill="var(--s1)" fill-opacity=".18" stroke="var(--s1)" stroke-width="2"/>
+<circle cx="550.0" cy="137.0" r="6" fill="var(--s7)"/>
+<text x="542" y="127" class="lbl-strong" text-anchor="end" fill="var(--s7)">solution</text>
+<text x="450" y="285" class="lbl" fill="var(--s1)">budget: |w₁| + |w₂| ≤ s</text>
+<text x="565" y="312" class="lbl" text-anchor="middle">hits a corner → w₁ = 0 exactly (sparsity)</text>
+</svg>
+<figcaption><strong>Figure 7.5 — A circle has no corners; a diamond does.</strong> The orange ellipses are equal-loss contours around the unpenalized fit. The blue region is the coefficient budget. For L2 the budget is a circle, and the ellipse touches it at a generic point where both weights are nonzero but shrunk. For L1 the budget is a diamond whose corners lie on the axes; ellipses hit corners far more often than edges, and at a corner one weight is exactly zero. In ten dimensions the diamond has corners, edges and faces where many weights vanish at once.</figcaption>
+</figure>
+
+<h3>The strength knob and the coefficient path</h3>
+
+<p>α is a hyperparameter, chosen by validation like any other. The most instructive way to see what it does is to fit at many values and plot every coefficient against α. Here are the real paths on the diabetes dataset (10 standardized features):</p>
+
+<figure class="fig">
+<svg viewBox="0 0 760 340" role="img" aria-label="Coefficient paths on the diabetes data. Left, Ridge: all ten coefficients shrink smoothly toward zero as alpha grows but none reaches zero. Right, Lasso: coefficients hit exactly zero one after another as alpha grows">
+<defs><marker id="arr-g6" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+<text x="190" y="26" class="lbl-strong" text-anchor="middle" font-size="14">Ridge (L2) paths</text>
+<line x1="60" y1="165" x2="330" y2="165" class="axis"/>
+<line x1="60" y1="285" x2="345" y2="285" class="axis" marker-end="url(#arr-g6)"/><line x1="60" y1="285" x2="60" y2="40" class="axis" marker-end="url(#arr-g6)"/>
+<text x="54" y="274.0" class="lbl" text-anchor="end">-40</text>
+<text x="54" y="221.5" class="lbl" text-anchor="end">-20</text>
+<text x="54" y="169.0" class="lbl" text-anchor="end">0</text>
+<text x="54" y="116.5" class="lbl" text-anchor="end">20</text>
+<text x="54" y="64.0" class="lbl" text-anchor="end">40</text>
+<text x="60.0" y="300" class="lbl" text-anchor="middle">0.01</text>
+<text x="112.0" y="300" class="lbl" text-anchor="middle">0.1</text>
+<text x="164.0" y="300" class="lbl" text-anchor="middle">1</text>
+<text x="216.0" y="300" class="lbl" text-anchor="middle">10</text>
+<text x="268.0" y="300" class="lbl" text-anchor="middle">100</text>
+<text x="320.0" y="300" class="lbl" text-anchor="middle">1000</text>
+<text x="195" y="318" class="lbl" text-anchor="middle">alpha (log scale) → stronger penalty</text>
+<text x="22" y="165" class="lbl" text-anchor="middle" transform="rotate(-90 22 165)">coefficient</text>
+<path d="M60.0,166.2 L66.7,166.2 L73.3,166.2 L80.0,166.2 L86.7,166.2 L93.3,166.2 L100.0,166.2 L106.7,166.2 L113.3,166.2 L120.0,166.2 L126.7,166.2 L133.3,166.2 L140.0,166.2 L146.7,166.2 L153.3,166.2 L160.0,166.1 L166.7,166.1 L173.3,166.1 L180.0,166.0 L186.7,166.0 L193.3,165.9 L200.0,165.9 L206.7,165.8 L213.3,165.7 L220.0,165.6 L226.7,165.5 L233.3,165.3 L240.0,165.2 L246.7,164.9 L253.3,164.7 L260.0,164.3 L266.7,163.9 L273.3,163.5 L280.0,163.0 L286.7,162.4 L293.3,161.9 L300.0,161.4 L306.7,161.1 L313.3,160.8 L320.0,160.8" fill="none" stroke="var(--s1)" stroke-width="2"/>
+<path d="M60.0,194.9 L66.7,194.9 L73.3,194.9 L80.0,194.9 L86.7,194.9 L93.3,194.9 L100.0,194.9 L106.7,194.9 L113.3,194.9 L120.0,194.9 L126.7,194.9 L133.3,194.9 L140.0,194.9 L146.7,194.8 L153.3,194.8 L160.0,194.8 L166.7,194.7 L173.3,194.7 L180.0,194.6 L186.7,194.5 L193.3,194.4 L200.0,194.2 L206.7,194.0 L213.3,193.8 L220.0,193.5 L226.7,193.2 L233.3,192.7 L240.0,192.1 L246.7,191.3 L253.3,190.3 L260.0,189.0 L266.7,187.5 L273.3,185.6 L280.0,183.5 L286.7,181.1 L293.3,178.6 L300.0,176.0 L306.7,173.5 L313.3,171.3 L320.0,169.4" fill="none" stroke="var(--s2)" stroke-width="2"/>
+<path d="M60.0,100.1 L66.7,100.1 L73.3,100.1 L80.0,100.1 L86.7,100.1 L93.3,100.1 L100.0,100.1 L106.7,100.1 L113.3,100.1 L120.0,100.1 L126.7,100.1 L133.3,100.1 L140.0,100.0 L146.7,100.0 L153.3,100.0 L160.0,100.0 L166.7,100.0 L173.3,99.9 L180.0,99.9 L186.7,99.9 L193.3,100.0 L200.0,100.0 L206.7,100.1 L213.3,100.3 L220.0,100.6 L226.7,101.0 L233.3,101.6 L240.0,102.3 L246.7,103.3 L253.3,104.6 L260.0,106.3 L266.7,108.4 L273.3,111.0 L280.0,114.0 L286.7,117.5 L293.3,121.5 L300.0,125.7 L306.7,130.1 L313.3,134.6 L320.0,138.9" fill="none" stroke="var(--s3)" stroke-width="2"/>
+<path d="M60.0,124.5 L66.7,124.5 L73.3,124.5 L80.0,124.5 L86.7,124.5 L93.3,124.5 L100.0,124.5 L106.7,124.5 L113.3,124.5 L120.0,124.5 L126.7,124.5 L133.3,124.5 L140.0,124.6 L146.7,124.6 L153.3,124.6 L160.0,124.6 L166.7,124.7 L173.3,124.7 L180.0,124.8 L186.7,124.8 L193.3,124.9 L200.0,125.0 L206.7,125.1 L213.3,125.3 L220.0,125.5 L226.7,125.8 L233.3,126.1 L240.0,126.5 L246.7,127.0 L253.3,127.7 L260.0,128.6 L266.7,129.7 L273.3,131.1 L280.0,132.7 L286.7,134.7 L293.3,136.8 L300.0,139.2 L306.7,141.8 L313.3,144.4 L320.0,147.1" fill="none" stroke="var(--s4)" stroke-width="2"/>
+<path d="M60.0,263.7 L66.7,263.6 L73.3,263.5 L80.0,263.3 L86.7,263.1 L93.3,262.8 L100.0,262.5 L106.7,262.0 L113.3,261.3 L120.0,260.5 L126.7,259.3 L133.3,257.8 L140.0,255.9 L146.7,253.5 L153.3,250.4 L160.0,246.6 L166.7,242.1 L173.3,236.7 L180.0,230.6 L186.7,224.0 L193.3,217.0 L200.0,210.0 L206.7,203.2 L213.3,197.0 L220.0,191.4 L226.7,186.6 L233.3,182.5 L240.0,179.2 L246.7,176.5 L253.3,174.2 L260.0,172.3 L266.7,170.7 L273.3,169.3 L280.0,168.0 L286.7,166.8 L293.3,165.6 L300.0,164.5 L306.7,163.5 L313.3,162.7 L320.0,162.2" fill="none" stroke="var(--s5)" stroke-width="2"/>
+<path d="M60.0,105.7 L66.7,105.7 L73.3,105.8 L80.0,106.0 L86.7,106.1 L93.3,106.3 L100.0,106.6 L106.7,107.0 L113.3,107.5 L120.0,108.2 L126.7,109.1 L133.3,110.3 L140.0,111.8 L146.7,113.7 L153.3,116.2 L160.0,119.2 L166.7,122.8 L173.3,127.1 L180.0,131.9 L186.7,137.2 L193.3,142.7 L200.0,148.2 L206.7,153.5 L213.3,158.4 L220.0,162.8 L226.7,166.4 L233.3,169.4 L240.0,171.7 L246.7,173.3 L253.3,174.4 L260.0,174.8 L266.7,174.8 L273.3,174.3 L280.0,173.4 L286.7,172.1 L293.3,170.7 L300.0,169.1 L306.7,167.5 L313.3,166.1 L320.0,164.9" fill="none" stroke="var(--s6)" stroke-width="2"/>
+<path d="M60.0,152.5 L66.7,152.5 L73.3,152.6 L80.0,152.7 L86.7,152.7 L93.3,152.9 L100.0,153.0 L106.7,153.2 L113.3,153.5 L120.0,153.9 L126.7,154.4 L133.3,155.1 L140.0,155.9 L146.7,157.0 L153.3,158.3 L160.0,160.0 L166.7,162.0 L173.3,164.4 L180.0,167.0 L186.7,169.9 L193.3,172.9 L200.0,175.9 L206.7,178.7 L213.3,181.3 L220.0,183.5 L226.7,185.3 L233.3,186.7 L240.0,187.7 L246.7,188.4 L253.3,188.7 L260.0,188.8 L266.7,188.6 L273.3,188.2 L280.0,187.6 L286.7,186.7 L293.3,185.6 L300.0,184.3 L306.7,182.8 L313.3,181.1 L320.0,179.4" fill="none" stroke="var(--s7)" stroke-width="2"/>
+<path d="M60.0,142.9 L66.7,142.9 L73.3,142.9 L80.0,143.0 L86.7,143.0 L93.3,143.0 L100.0,143.1 L106.7,143.1 L113.3,143.2 L120.0,143.3 L126.7,143.4 L133.3,143.6 L140.0,143.8 L146.7,144.1 L153.3,144.5 L160.0,144.9 L166.7,145.5 L173.3,146.1 L180.0,146.8 L186.7,147.5 L193.3,148.3 L200.0,149.0 L206.7,149.6 L213.3,150.1 L220.0,150.5 L226.7,150.7 L233.3,150.8 L240.0,150.8 L246.7,150.6 L253.3,150.4 L260.0,150.2 L266.7,150.0 L273.3,149.9 L280.0,149.8 L286.7,149.8 L293.3,149.9 L300.0,150.2 L306.7,150.8 L313.3,151.5 L320.0,152.5" fill="none" stroke="var(--s8)" stroke-width="2"/>
+<path d="M60.0,71.3 L66.7,71.3 L73.3,71.4 L80.0,71.4 L86.7,71.5 L93.3,71.6 L100.0,71.8 L106.7,71.9 L113.3,72.2 L120.0,72.5 L126.7,72.9 L133.3,73.5 L140.0,74.2 L146.7,75.2 L153.3,76.3 L160.0,77.8 L166.7,79.5 L173.3,81.6 L180.0,83.9 L186.7,86.5 L193.3,89.3 L200.0,92.1 L206.7,94.8 L213.3,97.5 L220.0,100.0 L226.7,102.3 L233.3,104.5 L240.0,106.6 L246.7,108.7 L253.3,110.8 L260.0,113.1 L266.7,115.5 L273.3,118.2 L280.0,121.2 L286.7,124.4 L293.3,127.8 L300.0,131.3 L306.7,135.0 L313.3,138.6 L320.0,142.1" fill="none" stroke="var(--ink-3)" stroke-width="2"/>
+<path d="M60.0,156.6 L66.7,156.6 L73.3,156.6 L80.0,156.6 L86.7,156.6 L93.3,156.5 L100.0,156.5 L106.7,156.5 L113.3,156.5 L120.0,156.5 L126.7,156.5 L133.3,156.5 L140.0,156.5 L146.7,156.5 L153.3,156.5 L160.0,156.4 L166.7,156.4 L173.3,156.4 L180.0,156.3 L186.7,156.3 L193.3,156.2 L200.0,156.1 L206.7,156.0 L213.3,155.8 L220.0,155.6 L226.7,155.4 L233.3,155.1 L240.0,154.8 L246.7,154.4 L253.3,153.9 L260.0,153.3 L266.7,152.7 L273.3,152.1 L280.0,151.5 L286.7,151.1 L293.3,150.9 L300.0,151.0 L306.7,151.4 L313.3,152.0 L320.0,153.0" fill="none" stroke="var(--ink-2)" stroke-width="2"/>
+<text x="64.0" y="75.29234111810122" class="lbl-strong" fill="var(--ink-3)" font-size="11">s5</text>
+<text x="64.0" y="104.09103228578054" class="lbl-strong" fill="var(--s3)" font-size="11">bmi</text>
+<text x="64.0" y="119.09103228578054" class="lbl-strong" fill="var(--s6)" font-size="11">s2</text>
+<text x="64.0" y="134.09103228578056" class="lbl-strong" fill="var(--s4)" font-size="11">bp</text>
+<text x="64.0" y="198.94083407782014" class="lbl-strong" fill="var(--s2)" font-size="11">sex</text>
+<text x="64.0" y="267.65863021437394" class="lbl-strong" fill="var(--s5)" font-size="11">s1</text>
+<text x="320" y="52" class="lbl" text-anchor="end" fill="var(--ink-2)">all 10 stay nonzero</text>
+<text x="560" y="26" class="lbl-strong" text-anchor="middle" font-size="14">Lasso (L1) paths</text>
+<line x1="430" y1="165" x2="700" y2="165" class="axis"/>
+<line x1="430" y1="285" x2="715" y2="285" class="axis" marker-end="url(#arr-g6)"/><line x1="430" y1="285" x2="430" y2="40" class="axis" marker-end="url(#arr-g6)"/>
+<text x="424" y="274.0" class="lbl" text-anchor="end">-40</text>
+<text x="424" y="221.5" class="lbl" text-anchor="end">-20</text>
+<text x="424" y="169.0" class="lbl" text-anchor="end">0</text>
+<text x="424" y="116.5" class="lbl" text-anchor="end">20</text>
+<text x="424" y="64.0" class="lbl" text-anchor="end">40</text>
+<text x="430.0" y="300" class="lbl" text-anchor="middle">0.01</text>
+<text x="502.22222222222223" y="300" class="lbl" text-anchor="middle">0.1</text>
+<text x="574.4444444444445" y="300" class="lbl" text-anchor="middle">1</text>
+<text x="646.6666666666666" y="300" class="lbl" text-anchor="middle">10</text>
+<text x="565" y="318" class="lbl" text-anchor="middle">alpha (log scale) → stronger penalty</text>
+<text x="392" y="165" class="lbl" text-anchor="middle" transform="rotate(-90 392 165)">coefficient</text>
+<path d="M430.0,166.2 L436.7,166.2 L443.3,166.2 L450.0,166.1 L456.7,166.1 L463.3,166.1 L470.0,166.0 L476.7,166.0 L483.3,165.9 L490.0,165.9 L496.7,165.8 L503.3,165.7 L510.0,165.6 L516.7,165.4 L523.3,165.2 L530.0,165.0 L536.7,165.0 L543.3,165.0 L550.0,165.0 L556.7,165.0 L563.3,165.0 L570.0,165.0 L576.7,165.0 L583.3,165.0 L590.0,165.0 L596.7,165.0 L603.3,165.0 L610.0,165.0 L616.7,165.0 L623.3,165.0 L630.0,165.0 L636.7,165.0 L643.3,165.0 L650.0,165.0 L656.7,165.0 L663.3,165.0 L670.0,165.0 L676.7,165.0 L683.3,165.0 L690.0,165.0" fill="none" stroke="var(--s1)" stroke-width="2"/>
+<path d="M430.0,194.9 L436.7,194.9 L443.3,194.9 L450.0,194.8 L456.7,194.8 L463.3,194.8 L470.0,194.7 L476.7,194.7 L483.3,194.6 L490.0,194.6 L496.7,194.4 L503.3,194.3 L510.0,194.1 L516.7,193.9 L523.3,193.7 L530.0,193.4 L536.7,193.0 L543.3,192.7 L550.0,192.2 L556.7,191.7 L563.3,191.0 L570.0,190.1 L576.7,189.1 L583.3,188.0 L590.0,186.5 L596.7,184.7 L603.3,182.5 L610.0,179.8 L616.7,176.2 L623.3,171.8 L630.0,166.5 L636.7,165.0 L643.3,165.0 L650.0,165.0 L656.7,165.0 L663.3,165.0 L670.0,165.0 L676.7,165.0 L683.3,165.0 L690.0,165.0" fill="none" stroke="var(--s2)" stroke-width="2"/>
+<path d="M430.0,100.1 L436.7,100.1 L443.3,100.1 L450.0,100.0 L456.7,100.0 L463.3,100.0 L470.0,100.0 L476.7,100.0 L483.3,100.0 L490.0,99.9 L496.7,99.8 L503.3,99.7 L510.0,99.7 L516.7,99.6 L523.3,99.4 L530.0,99.3 L536.7,99.3 L543.3,99.3 L550.0,99.4 L556.7,99.5 L563.3,99.6 L570.0,99.7 L576.7,99.9 L583.3,100.0 L590.0,100.2 L596.7,100.4 L603.3,100.6 L610.0,101.0 L616.7,101.1 L623.3,101.3 L630.0,101.7 L636.7,102.9 L643.3,104.7 L650.0,106.8 L656.7,109.4 L663.3,113.5 L670.0,119.1 L676.7,127.9 L683.3,139.1 L690.0,153.0" fill="none" stroke="var(--s3)" stroke-width="2"/>
+<path d="M430.0,124.6 L436.7,124.6 L443.3,124.6 L450.0,124.6 L456.7,124.6 L463.3,124.7 L470.0,124.7 L476.7,124.8 L483.3,124.8 L490.0,124.9 L496.7,124.9 L503.3,125.0 L510.0,125.1 L516.7,125.3 L523.3,125.5 L530.0,125.7 L536.7,125.9 L543.3,126.1 L550.0,126.4 L556.7,126.7 L563.3,127.1 L570.0,127.6 L576.7,128.2 L583.3,128.8 L590.0,129.6 L596.7,130.5 L603.3,131.6 L610.0,133.1 L616.7,134.8 L623.3,137.2 L630.0,140.3 L636.7,142.8 L643.3,145.6 L650.0,148.9 L656.7,153.1 L663.3,158.1 L670.0,164.2 L676.7,165.0 L683.3,165.0 L690.0,165.0" fill="none" stroke="var(--s4)" stroke-width="2"/>
+<path d="M430.0,259.6 L436.7,258.6 L443.3,257.4 L450.0,255.8 L456.7,253.9 L463.3,251.5 L470.0,248.6 L476.7,245.0 L483.3,240.5 L490.0,237.0 L496.7,235.7 L503.3,234.0 L510.0,226.9 L516.7,218.2 L523.3,207.4 L530.0,194.1 L536.7,188.7 L543.3,187.5 L550.0,186.1 L556.7,184.3 L563.3,182.0 L570.0,179.3 L576.7,177.3 L583.3,175.9 L590.0,174.1 L596.7,172.0 L603.3,169.3 L610.0,166.0 L616.7,165.0 L623.3,165.0 L630.0,165.0 L636.7,165.0 L643.3,165.0 L650.0,165.0 L656.7,165.0 L663.3,165.0 L670.0,165.0 L676.7,165.0 L683.3,165.0 L690.0,165.0" fill="none" stroke="var(--s5)" stroke-width="2"/>
+<path d="M430.0,108.8 L436.7,109.5 L443.3,110.5 L450.0,111.7 L456.7,113.2 L463.3,115.0 L470.0,117.2 L476.7,120.0 L483.3,123.5 L490.0,126.3 L496.7,127.6 L503.3,129.4 L510.0,135.0 L516.7,142.0 L523.3,150.6 L530.0,161.2 L536.7,165.0 L543.3,165.0 L550.0,165.0 L556.7,165.0 L563.3,165.0 L570.0,165.0 L576.7,165.0 L583.3,165.0 L590.0,165.0 L596.7,165.0 L603.3,165.0 L610.0,165.0 L616.7,165.0 L623.3,165.0 L630.0,165.0 L636.7,165.0 L643.3,165.0 L650.0,165.0 L656.7,165.0 L663.3,165.0 L670.0,165.0 L676.7,165.0 L683.3,165.0 L690.0,165.0" fill="none" stroke="var(--s6)" stroke-width="2"/>
+<path d="M430.0,154.4 L436.7,154.9 L443.3,155.5 L450.0,156.2 L456.7,157.2 L463.3,158.3 L470.0,159.7 L476.7,161.4 L483.3,163.5 L490.0,165.0 L496.7,165.0 L503.3,165.1 L510.0,168.1 L516.7,171.8 L523.3,176.4 L530.0,182.0 L536.7,184.6 L543.3,185.5 L550.0,186.6 L556.7,188.1 L563.3,189.8 L570.0,191.9 L576.7,192.8 L583.3,192.4 L590.0,191.9 L596.7,191.3 L603.3,190.6 L610.0,189.7 L616.7,187.5 L623.3,184.3 L630.0,180.3 L636.7,177.5 L643.3,174.7 L650.0,171.3 L656.7,167.1 L663.3,165.0 L670.0,165.0 L676.7,165.0 L683.3,165.0 L690.0,165.0" fill="none" stroke="var(--s7)" stroke-width="2"/>
+<path d="M430.0,143.6 L436.7,143.8 L443.3,144.0 L450.0,144.3 L456.7,144.6 L463.3,145.1 L470.0,145.6 L476.7,146.2 L483.3,147.0 L490.0,147.4 L496.7,146.9 L503.3,146.4 L510.0,147.3 L516.7,148.3 L523.3,149.6 L530.0,151.2 L536.7,152.5 L543.3,153.9 L550.0,155.6 L556.7,157.7 L563.3,160.3 L570.0,163.5 L576.7,165.0 L583.3,165.0 L590.0,165.0 L596.7,165.0 L603.3,165.0 L610.0,165.0 L616.7,165.0 L623.3,165.0 L630.0,165.0 L636.7,165.0 L643.3,165.0 L650.0,165.0 L656.7,165.0 L663.3,165.0 L670.0,165.0 L676.7,165.0 L683.3,165.0 L690.0,165.0" fill="none" stroke="var(--s8)" stroke-width="2"/>
+<path d="M430.0,72.7 L436.7,73.1 L443.3,73.6 L450.0,74.1 L456.7,74.8 L463.3,75.7 L470.0,76.7 L476.7,78.0 L483.3,79.6 L490.0,80.9 L496.7,81.5 L503.3,82.3 L510.0,84.9 L516.7,88.2 L523.3,92.2 L530.0,97.1 L536.7,98.9 L543.3,99.1 L550.0,99.4 L556.7,99.7 L563.3,100.1 L570.0,100.5 L576.7,101.1 L583.3,102.0 L590.0,103.0 L596.7,104.3 L603.3,105.9 L610.0,107.9 L616.7,108.6 L623.3,109.1 L630.0,109.9 L636.7,111.1 L643.3,112.7 L650.0,114.6 L656.7,117.0 L663.3,121.0 L670.0,126.6 L676.7,135.5 L683.3,146.6 L690.0,160.5" fill="none" stroke="var(--ink-3)" stroke-width="2"/>
+<path d="M430.0,156.6 L436.7,156.6 L443.3,156.6 L450.0,156.6 L456.7,156.6 L463.3,156.6 L470.0,156.6 L476.7,156.6 L483.3,156.6 L490.0,156.6 L496.7,156.7 L503.3,156.7 L510.0,156.8 L516.7,156.8 L523.3,156.9 L530.0,156.9 L536.7,157.0 L543.3,157.1 L550.0,157.3 L556.7,157.5 L563.3,157.7 L570.0,158.0 L576.7,158.4 L583.3,159.0 L590.0,159.7 L596.7,160.6 L603.3,161.7 L610.0,163.1 L616.7,164.4 L623.3,165.0 L630.0,165.0 L636.7,165.0 L643.3,165.0 L650.0,165.0 L656.7,165.0 L663.3,165.0 L670.0,165.0 L676.7,165.0 L683.3,165.0 L690.0,165.0" fill="none" stroke="var(--ink-2)" stroke-width="2"/>
+<text x="434.0" y="76.73762453785386" class="lbl-strong" fill="var(--ink-3)" font-size="11">s5</text>
+<text x="434.0" y="104.06777510715146" class="lbl-strong" fill="var(--s3)" font-size="11">bmi</text>
+<text x="434.0" y="119.06777510715146" class="lbl-strong" fill="var(--s6)" font-size="11">s2</text>
+<text x="434.0" y="134.06777510715148" class="lbl-strong" fill="var(--s4)" font-size="11">bp</text>
+<text x="434.0" y="198.88842696113193" class="lbl-strong" fill="var(--s2)" font-size="11">sex</text>
+<text x="434.0" y="263.63769358280547" class="lbl-strong" fill="var(--s5)" font-size="11">s1</text>
+<text x="536.6809795075312" y="52" class="lbl" text-anchor="middle" fill="var(--ink-2)">8 nonzero</text>
+<line x1="537" y1="58" x2="537" y2="285" stroke="var(--border)" stroke-dasharray="3 3"/>
+<text x="608.9032017297534" y="52" class="lbl" text-anchor="middle" fill="var(--ink-2)">7 nonzero</text>
+<line x1="609" y1="58" x2="609" y2="285" stroke="var(--border)" stroke-dasharray="3 3"/>
+<text x="668.4077219090652" y="52" class="lbl" text-anchor="middle" fill="var(--ink-2)">3 nonzero</text>
+<line x1="668" y1="58" x2="668" y2="285" stroke="var(--border)" stroke-dasharray="3 3"/>
+</svg>
+<figcaption><strong>Figure 7.6 — Coefficient paths on the diabetes data.</strong> Ridge (left) shrinks all ten coefficients smoothly toward zero as α grows, and the two strongly correlated cholesterol features (s1, s2) — which take huge opposite signs when unpenalized — are pulled together first. None reaches exactly zero. Lasso (right) drives coefficients to exactly zero one by one: ten, then eight, then seven, then three survivors (bmi, s5, bp), giving a model a clinician can read. Always standardize before either: the penalty treats a coefficient on "age in years" and one on "income in dollars" as the same size.</figcaption>
+</figure>
+
+<p>Now try it. The widget below fits eight coefficients to a synthetic dataset in which only four features really matter (their true weights are shown as hollow outlines). Move the strength slider and flip between L1 and L2; watch which bars shrink, which vanish, and how fast.</p>
+
+<div class="widget" id="w-reg">
+  <div class="w-title">Interactive: regularization strength vs. coefficient size</div>
+  <div class="controls">
+    <label>penalty <select id="rg-type"><option value="l2">L2 (Ridge)</option><option value="l1">L1 (Lasso)</option></select></label>
+    <label>strength (log scale) <input type="range" id="rg-lam" min="0" max="100" step="1" value="0"> <output id="rg-lam-out"></output></label>
+    <span>nonzero coefficients <span class="readout" id="rg-nz">–</span></span>
+    <span>‖w‖₂ <span class="readout" id="rg-norm">–</span></span>
+  </div>
+  <svg viewBox="0 0 760 300" id="rg-svg" role="img" aria-label="Bar chart of eight fitted coefficients that shrink as regularization strength increases; L1 drives some exactly to zero"></svg>
+  <div class="note">Features x₄ and x₇ are noisy copies of x₁ and x₂ (correlated features). Notice how unpenalized OLS splits the credit between the copies unpredictably, L2 shares it, and L1 picks one and zeroes the other. Features x₅ and x₈ have true weight 0: L1 kills them almost immediately; L2 only ever shrinks them.</div>
+</div>
+
+<pre class="code" data-lang="python"><code><span class="cm"># Ridge (L2) vs Lasso (L1): watch coefficients shrink as alpha grows; Lasso zeroes them out</span>
+<span class="kw">import</span> numpy <span class="kw">as</span> np
+<span class="kw">from</span> sklearn.datasets <span class="kw">import</span> load_diabetes
+<span class="kw">from</span> sklearn.preprocessing <span class="kw">import</span> StandardScaler
+<span class="kw">from</span> sklearn.linear_model <span class="kw">import</span> Ridge, Lasso
+<span class="kw">from</span> sklearn.model_selection <span class="kw">import</span> cross_val_score
+
+X, y = load_diabetes(return_X_y=<span class="kw">True</span>)
+names = load_diabetes().feature_names
+Xs = StandardScaler().fit_transform(X)<span class="cm">      # always scale before penalizing!</span>
+
+np.set_printoptions(precision=<span class="nu">1</span>, suppress=<span class="kw">True</span>, linewidth=<span class="nu">130</span>)
+<span class="fn">print</span>(<span class="st">&quot;features:&quot;</span>, names)
+<span class="kw">for</span> alpha <span class="kw">in</span> [<span class="nu">0.01</span>, <span class="nu">1</span>, <span class="nu">10</span>, <span class="nu">100</span>]:
+    r = Ridge(alpha=alpha).fit(Xs, y)
+    <span class="fn">print</span>(<span class="st">f&quot;Ridge alpha={alpha:&lt;5} coef:&quot;</span>, r.coef_, <span class="st">&quot; |w|₂ =&quot;</span>, <span class="fn">round</span>(np.linalg.norm(r.coef_), <span class="nu">1</span>))
+<span class="fn">print</span>()
+<span class="kw">for</span> alpha <span class="kw">in</span> [<span class="nu">0.01</span>, <span class="nu">1</span>, <span class="nu">5</span>, <span class="nu">20</span>]:
+    l = Lasso(alpha=alpha, max_iter=<span class="nu">20000</span>).fit(Xs, y)
+    <span class="fn">print</span>(<span class="st">f&quot;Lasso alpha={alpha:&lt;5} coef:&quot;</span>, l.coef_, <span class="st">&quot; nonzero =&quot;</span>, <span class="fn">int</span>((l.coef_ != <span class="nu">0</span>).<span class="fn">sum</span>()))
+
+<span class="cm"># Which alpha generalizes best? Let cross-validation decide (Chapter 13 automates this)</span>
+<span class="kw">for</span> alpha <span class="kw">in</span> [<span class="nu">0.01</span>, <span class="nu">1</span>, <span class="nu">5</span>, <span class="nu">20</span>]:
+    s = cross_val_score(Lasso(alpha=alpha, max_iter=<span class="nu">20000</span>), Xs, y, cv=<span class="nu">5</span>, scoring=<span class="st">&quot;r2&quot;</span>).mean()
+    <span class="fn">print</span>(<span class="st">f&quot;Lasso alpha={alpha:&lt;5} CV R² = {s:.3f}&quot;</span>)
+<span class="out"># features: [&#x27;age&#x27;, &#x27;sex&#x27;, &#x27;bmi&#x27;, &#x27;bp&#x27;, &#x27;s1&#x27;, &#x27;s2&#x27;, &#x27;s3&#x27;, &#x27;s4&#x27;, &#x27;s5&#x27;, &#x27;s6&#x27;]</span>
+<span class="out"># Ridge alpha=0.01  coef: [ -0.5 -11.4  24.7  15.4 -37.6  22.6   4.8   8.4  35.7   3.2]  |w|₂ = 65.4</span>
+<span class="out"># Ridge alpha=1     coef: [ -0.4 -11.3  24.8  15.4 -30.1  16.7   1.5   7.5  32.8   3.3]  |w|₂ = 57.5</span>
+<span class="out"># Ridge alpha=10    coef: [ -0.3 -10.9  24.6  15.1 -11.3   1.8  -6.6   5.6  25.3   3.5]  |w|₂ = 42.6</span>
+<span class="out"># Ridge alpha=100   coef: [ 0.4 -8.4 21.4 13.3 -2.1 -3.7 -9.   5.7 18.7  4.7]  |w|₂ = 34.8</span>
+<span class="out">#</span>
+<span class="out"># Lasso alpha=0.01  coef: [ -0.5 -11.4  24.7  15.4 -36.1  21.4   4.    8.1  35.1   3.2]  nonzero = 10</span>
+<span class="out"># Lasso alpha=1     coef: [ -0.   -9.3  24.8  14.1  -4.8  -0.  -10.6   0.   24.4   2.6]  nonzero = 7</span>
+<span class="out"># Lasso alpha=5     coef: [ 0.  -2.2 24.2 10.3 -0.  -0.  -7.   0.  21.2  0. ]  nonzero = 5</span>
+<span class="out"># Lasso alpha=20    coef: [ 0.  -0.  18.   0.9  0.   0.  -0.   0.  15.2  0. ]  nonzero = 3</span>
+<span class="out"># Lasso alpha=0.01  CV R² = 0.482</span>
+<span class="out"># Lasso alpha=1     CV R² = 0.482</span>
+<span class="out"># Lasso alpha=5     CV R² = 0.466</span>
+<span class="out"># Lasso alpha=20    CV R² = 0.348</span></code></pre>
+
+<div class="callout warn"><div class="title">Common mistake</div>
+<p>Regularizing unscaled features. The penalty charges the same rent per unit of coefficient, but a coefficient on a feature measured in thousands is naturally tiny and one on a feature in [0, 1] is naturally large. Without <code>StandardScaler</code> (inside the pipeline!), the penalty silently punishes small-unit features and ignores large-unit ones. The second most common mistake: forgetting that sklearn's <code>LogisticRegression</code> regularizes by default (<code>C=1.0</code>), and that <em>smaller</em> C is <em>more</em> regularization.</p>
+</div>
+
+<h3>Regularization in other model families</h3>
+
+<p>Every model has a capacity knob, and every capacity knob is a regularizer in disguise:</p>
+
+<div class="tbl-wrap">
+<table class="tbl">
+<thead><tr><th>Model family</th><th>What "more regularization" means</th><th>sklearn / library knob</th></tr></thead>
+<tbody>
+<tr><td>Linear / logistic</td><td>Smaller coefficients (L2), fewer nonzero coefficients (L1)</td><td><code>alpha</code> ↑ (Ridge/Lasso), <code>C</code> ↓ (LogisticRegression, SVM)</td></tr>
+<tr><td>Decision trees (Ch 9)</td><td>Shallower trees, more samples per leaf, pruning</td><td><code>max_depth</code> ↓, <code>min_samples_leaf</code> ↑, <code>ccp_alpha</code> ↑</td></tr>
+<tr><td>Gradient boosting (Ch 10)</td><td>Fewer/shallower trees, smaller learning rate, subsampling</td><td><code>n_estimators</code> ↓, <code>learning_rate</code> ↓, <code>subsample</code> &lt; 1, <code>reg_lambda</code> ↑</td></tr>
+<tr><td>k-nearest neighbours (Ch 11)</td><td>Averaging over more neighbours</td><td><code>n_neighbors</code> ↑</td></tr>
+<tr><td>Neural networks (Ch 16)</td><td>Weight decay (= L2), <strong>dropout</strong> (randomly silencing units during training so no single unit can be relied on), smaller nets, data augmentation</td><td><code>weight_decay</code>, <code>nn.Dropout(p)</code>, early stopping</td></tr>
+</tbody>
+</table>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s6">6. Early stopping and the best regularizer of all</h2>
+
+<h3>Early stopping</h3>
+
+<p>Any model trained iteratively — gradient descent on a network, rounds of boosting — traces the U-curve <em>over time</em>: early on it learns the broad pattern, later it starts memorizing noise. Evaluate on the validation set after every epoch and stop when validation loss stops improving. This is <strong>early stopping</strong>, and it is regularization with a clock instead of a penalty: fewer steps means the weights have had less opportunity to grow large.</p>
+
+<figure class="fig">
+<svg viewBox="0 0 760 300" role="img" aria-label="Training loss falls monotonically over epochs while validation loss falls then rises again; a vertical line marks the epoch of minimum validation loss where training should stop">
+<defs><marker id="arr-g7" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+<line x1="80" y1="250" x2="720" y2="250" class="axis" marker-end="url(#arr-g7)"/><line x1="80" y1="250" x2="80" y2="30" class="axis" marker-end="url(#arr-g7)"/>
+<text x="390" y="282" class="lbl" text-anchor="middle">training epochs (or boosting rounds, or gradient steps) →</text>
+<text x="40" y="140" class="lbl" text-anchor="middle" transform="rotate(-90 40 140)">loss</text>
+<text x="80.0" y="266" class="lbl" text-anchor="middle">0</text>
+<text x="230.0" y="266" class="lbl" text-anchor="middle">25</text>
+<text x="380.0" y="266" class="lbl" text-anchor="middle">50</text>
+<text x="530.0" y="266" class="lbl" text-anchor="middle">75</text>
+<text x="680.0" y="266" class="lbl" text-anchor="middle">100</text>
+<rect x="350" y="40" width="330" height="210" fill="var(--critical)" fill-opacity=".06"/>
+<path d="M80.0,55.6 L86.0,65.3 L92.0,74.5 L98.0,83.2 L104.0,91.5 L110.0,99.3 L116.0,106.6 L122.0,113.6 L128.0,120.2 L134.0,126.4 L140.0,132.3 L146.0,137.9 L152.0,143.2 L158.0,148.2 L164.0,152.9 L170.0,157.4 L176.0,161.6 L182.0,165.6 L188.0,169.4 L194.0,173.0 L200.0,176.3 L206.0,179.5 L212.0,182.6 L218.0,185.4 L224.0,188.2 L230.0,190.7 L236.0,193.1 L242.0,195.4 L248.0,197.6 L254.0,199.7 L260.0,201.6 L266.0,203.4 L272.0,205.2 L278.0,206.8 L284.0,208.4 L290.0,209.8 L296.0,211.2 L302.0,212.6 L308.0,213.8 L314.0,215.0 L320.0,216.1 L326.0,217.1 L332.0,218.1 L338.0,219.1 L344.0,220.0 L350.0,220.8 L356.0,221.6 L362.0,222.4 L368.0,223.1 L374.0,223.8 L380.0,224.4 L386.0,225.0 L392.0,225.6 L398.0,226.1 L404.0,226.6 L410.0,227.1 L416.0,227.6 L422.0,228.0 L428.0,228.4 L434.0,228.8 L440.0,229.2 L446.0,229.5 L452.0,229.9 L458.0,230.2 L464.0,230.5 L470.0,230.7 L476.0,231.0 L482.0,231.2 L488.0,231.5 L494.0,231.7 L500.0,231.9 L506.0,232.1 L512.0,232.3 L518.0,232.5 L524.0,232.6 L530.0,232.8 L536.0,233.0 L542.0,233.1 L548.0,233.2 L554.0,233.4 L560.0,233.5 L566.0,233.6 L572.0,233.7 L578.0,233.8 L584.0,233.9 L590.0,234.0 L596.0,234.1 L602.0,234.2 L608.0,234.2 L614.0,234.3 L620.0,234.4 L626.0,234.5 L632.0,234.5 L638.0,234.6 L644.0,234.6 L650.0,234.7 L656.0,234.7 L662.0,234.8 L668.0,234.8 L674.0,234.9 L680.0,234.9" fill="none" stroke="var(--s1)" stroke-width="3"/>
+<path d="M80.0,30.4 L86.0,40.1 L92.0,49.3 L98.0,58.0 L104.0,66.3 L110.0,74.1 L116.0,81.4 L122.0,88.4 L128.0,95.0 L134.0,101.2 L140.0,107.1 L146.0,112.7 L152.0,118.0 L158.0,123.0 L164.0,127.7 L170.0,132.2 L176.0,136.4 L182.0,140.4 L188.0,144.2 L194.0,147.8 L200.0,151.1 L206.0,154.3 L212.0,157.4 L218.0,160.2 L224.0,163.0 L230.0,165.5 L236.0,167.9 L242.0,170.2 L248.0,172.4 L254.0,174.5 L260.0,176.4 L266.0,177.4 L272.0,178.4 L278.0,179.2 L284.0,179.9 L290.0,180.6 L296.0,181.2 L302.0,181.7 L308.0,182.1 L314.0,182.5 L320.0,182.8 L326.0,183.0 L332.0,183.2 L338.0,183.4 L344.0,183.4 L350.0,183.5 L356.0,183.5 L362.0,183.4 L368.0,183.3 L374.0,183.2 L380.0,183.0 L386.0,182.8 L392.0,182.6 L398.0,182.3 L404.0,182.0 L410.0,181.7 L416.0,181.3 L422.0,180.9 L428.0,180.5 L434.0,180.1 L440.0,179.7 L446.0,179.2 L452.0,178.7 L458.0,178.2 L464.0,177.7 L470.0,177.2 L476.0,176.6 L482.0,176.1 L488.0,175.5 L494.0,174.9 L500.0,174.3 L506.0,173.7 L512.0,173.1 L518.0,172.5 L524.0,171.8 L530.0,171.2 L536.0,170.5 L542.0,169.8 L548.0,169.2 L554.0,168.5 L560.0,167.8 L566.0,167.1 L572.0,166.4 L578.0,165.7 L584.0,165.0 L590.0,164.2 L596.0,163.5 L602.0,162.8 L608.0,162.1 L614.0,161.3 L620.0,160.6 L626.0,159.8 L632.0,159.1 L638.0,158.3 L644.0,157.6 L650.0,156.8 L656.0,156.1 L662.0,155.3 L668.0,154.5 L674.0,153.8 L680.0,153.0" fill="none" stroke="var(--s2)" stroke-width="3"/>
+<line x1="350" y1="40" x2="350" y2="250" stroke="var(--s7)" stroke-width="2" stroke-dasharray="6 3"/>
+<circle cx="350" cy="183" r="6" fill="var(--s7)"/>
+<text x="358.0" y="56" class="lbl-strong" fill="var(--s7)">stop here (epoch 45): validation loss minimal</text>
+<text x="668.0" y="226.9041343748949" class="lbl-strong" text-anchor="end" fill="var(--s1)">training loss keeps falling</text>
+<text x="668.0" y="145.0041343748949" class="lbl-strong" text-anchor="end" fill="var(--s2)">validation loss rises: memorizing noise</text>
+<text x="358.0" y="74" class="lbl">(keep the checkpoint from this epoch, with some patience)</text>
+</svg>
+<figcaption><strong>Figure 7.7 — Early stopping picks the epoch, not the model.</strong> Training loss (blue) falls forever. Validation loss (orange) bottoms out and then rises as the model memorizes noise. Keep the checkpoint from the best epoch, with a "patience" of a few epochs so a single noisy uptick does not stop you early. In gradient boosting this is <code>early_stopping_rounds</code>; in PyTorch you write the loop yourself (Chapter 16).</figcaption>
+</figure>
+
+<h3>More data: the regularizer that lowers variance for free</h3>
+
+<p>Look back at the variance term. Every regularizer above lowers it by <em>constraining the model</em>, which costs a little bias. More training data lowers variance <em>without</em> adding bias: with more rows, noise averages out and the model has less room to mistake a fluke for a pattern. That is why the learning curve is the first thing to check: if the validation curve is still climbing at 100% of your data, the cheapest improvement may be a bigger extract from the warehouse, not a smarter algorithm.</p>
+
+<div class="callout pro"><div class="title">At work</div>
+<p>When a stakeholder asks "would more data help?", do not guess. Run <code>learning_curve</code> on what you have and show them Figure 7.4's shape. A flat validation curve means "no, we need better features or a different model". A still-rising one means "yes, and roughly this much". This single plot has saved more budget in my career than any hyperparameter search.</p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s7">7. Cross-validation done right</h2>
+
+<h3>Why one split is not enough</h3>
+
+<p>The simplest honest evaluation is a single hold-out split: train on 80%, validate on 20%. It works, but the validation score depends on <em>which</em> 20% you happened to hold out. On 569 rows, a 20% validation set has 114 examples, so a single misclassified row moves accuracy by almost a full point, and different random splits give visibly different answers. Choosing between two models on a difference of 0.5% with one split is choosing by coin flip.</p>
+
+<p><strong>k-fold cross-validation</strong> fixes this by using every row for validation exactly once. Shuffle the development data, cut it into k equal folds, and run k rounds: in round i, fold i is the validation set and the other k−1 folds are the training set. You get k scores; report their mean (a much steadier estimate) <em>and</em> their standard deviation (which tells you how much to trust a difference between models).</p>
+
+<figure class="fig">
+<svg viewBox="0 0 760 330" role="img" aria-label="Five-fold cross-validation: the training data is cut into five blocks; in each of five rounds a different block is the validation fold and the other four train the model; the test set sits apart, untouched, until the very end">
+<defs><marker id="arr-g8" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+<text x="20" y="26" class="lbl-strong">All labelled data (shuffled once, stratified)</text>
+<rect x="20" y="36" width="520" height="26" fill="var(--s1)" fill-opacity=".25" stroke="var(--s1)"/>
+<text x="280" y="54" class="lbl" text-anchor="middle">development set (train + validation) ≈ 80%</text>
+<rect x="548" y="36" width="190" height="26" fill="var(--s7)" fill-opacity=".25" stroke="var(--s7)"/>
+<text x="643" y="54" class="lbl-strong" text-anchor="middle">test set ≈ 20%: locked 🔒</text>
+<path d="M280,62 L280,84" class="arrow" marker-end="url(#arr-g8)"/>
+<text x="20" y="110" class="lbl-strong">Round 1</text>
+<rect x="90" y="92" width="86" height="26" rx="4" fill="var(--s2)" fill-opacity=".8" stroke="var(--s2)"/>
+<text x="133" y="110" class="lbl" text-anchor="middle" fill="#fff" font-weight="700">validate</text>
+<rect x="180" y="92" width="86" height="26" rx="4" fill="var(--s1)" fill-opacity=".3" stroke="var(--s1)"/>
+<text x="223" y="110" class="lbl" text-anchor="middle" fill="var(--ink)" font-weight="400">train</text>
+<rect x="270" y="92" width="86" height="26" rx="4" fill="var(--s1)" fill-opacity=".3" stroke="var(--s1)"/>
+<text x="313" y="110" class="lbl" text-anchor="middle" fill="var(--ink)" font-weight="400">train</text>
+<rect x="360" y="92" width="86" height="26" rx="4" fill="var(--s1)" fill-opacity=".3" stroke="var(--s1)"/>
+<text x="403" y="110" class="lbl" text-anchor="middle" fill="var(--ink)" font-weight="400">train</text>
+<rect x="450" y="92" width="86" height="26" rx="4" fill="var(--s1)" fill-opacity=".3" stroke="var(--s1)"/>
+<text x="493" y="110" class="lbl" text-anchor="middle" fill="var(--ink)" font-weight="400">train</text>
+<text x="560" y="110" class="lbl">→ score 1</text>
+<text x="20" y="146" class="lbl-strong">Round 2</text>
+<rect x="90" y="128" width="86" height="26" rx="4" fill="var(--s1)" fill-opacity=".3" stroke="var(--s1)"/>
+<text x="133" y="146" class="lbl" text-anchor="middle" fill="var(--ink)" font-weight="400">train</text>
+<rect x="180" y="128" width="86" height="26" rx="4" fill="var(--s2)" fill-opacity=".8" stroke="var(--s2)"/>
+<text x="223" y="146" class="lbl" text-anchor="middle" fill="#fff" font-weight="700">validate</text>
+<rect x="270" y="128" width="86" height="26" rx="4" fill="var(--s1)" fill-opacity=".3" stroke="var(--s1)"/>
+<text x="313" y="146" class="lbl" text-anchor="middle" fill="var(--ink)" font-weight="400">train</text>
+<rect x="360" y="128" width="86" height="26" rx="4" fill="var(--s1)" fill-opacity=".3" stroke="var(--s1)"/>
+<text x="403" y="146" class="lbl" text-anchor="middle" fill="var(--ink)" font-weight="400">train</text>
+<rect x="450" y="128" width="86" height="26" rx="4" fill="var(--s1)" fill-opacity=".3" stroke="var(--s1)"/>
+<text x="493" y="146" class="lbl" text-anchor="middle" fill="var(--ink)" font-weight="400">train</text>
+<text x="560" y="146" class="lbl">→ score 2</text>
+<text x="20" y="182" class="lbl-strong">Round 3</text>
+<rect x="90" y="164" width="86" height="26" rx="4" fill="var(--s1)" fill-opacity=".3" stroke="var(--s1)"/>
+<text x="133" y="182" class="lbl" text-anchor="middle" fill="var(--ink)" font-weight="400">train</text>
+<rect x="180" y="164" width="86" height="26" rx="4" fill="var(--s1)" fill-opacity=".3" stroke="var(--s1)"/>
+<text x="223" y="182" class="lbl" text-anchor="middle" fill="var(--ink)" font-weight="400">train</text>
+<rect x="270" y="164" width="86" height="26" rx="4" fill="var(--s2)" fill-opacity=".8" stroke="var(--s2)"/>
+<text x="313" y="182" class="lbl" text-anchor="middle" fill="#fff" font-weight="700">validate</text>
+<rect x="360" y="164" width="86" height="26" rx="4" fill="var(--s1)" fill-opacity=".3" stroke="var(--s1)"/>
+<text x="403" y="182" class="lbl" text-anchor="middle" fill="var(--ink)" font-weight="400">train</text>
+<rect x="450" y="164" width="86" height="26" rx="4" fill="var(--s1)" fill-opacity=".3" stroke="var(--s1)"/>
+<text x="493" y="182" class="lbl" text-anchor="middle" fill="var(--ink)" font-weight="400">train</text>
+<text x="560" y="182" class="lbl">→ score 3</text>
+<text x="20" y="218" class="lbl-strong">Round 4</text>
+<rect x="90" y="200" width="86" height="26" rx="4" fill="var(--s1)" fill-opacity=".3" stroke="var(--s1)"/>
+<text x="133" y="218" class="lbl" text-anchor="middle" fill="var(--ink)" font-weight="400">train</text>
+<rect x="180" y="200" width="86" height="26" rx="4" fill="var(--s1)" fill-opacity=".3" stroke="var(--s1)"/>
+<text x="223" y="218" class="lbl" text-anchor="middle" fill="var(--ink)" font-weight="400">train</text>
+<rect x="270" y="200" width="86" height="26" rx="4" fill="var(--s1)" fill-opacity=".3" stroke="var(--s1)"/>
+<text x="313" y="218" class="lbl" text-anchor="middle" fill="var(--ink)" font-weight="400">train</text>
+<rect x="360" y="200" width="86" height="26" rx="4" fill="var(--s2)" fill-opacity=".8" stroke="var(--s2)"/>
+<text x="403" y="218" class="lbl" text-anchor="middle" fill="#fff" font-weight="700">validate</text>
+<rect x="450" y="200" width="86" height="26" rx="4" fill="var(--s1)" fill-opacity=".3" stroke="var(--s1)"/>
+<text x="493" y="218" class="lbl" text-anchor="middle" fill="var(--ink)" font-weight="400">train</text>
+<text x="560" y="218" class="lbl">→ score 4</text>
+<text x="20" y="254" class="lbl-strong">Round 5</text>
+<rect x="90" y="236" width="86" height="26" rx="4" fill="var(--s1)" fill-opacity=".3" stroke="var(--s1)"/>
+<text x="133" y="254" class="lbl" text-anchor="middle" fill="var(--ink)" font-weight="400">train</text>
+<rect x="180" y="236" width="86" height="26" rx="4" fill="var(--s1)" fill-opacity=".3" stroke="var(--s1)"/>
+<text x="223" y="254" class="lbl" text-anchor="middle" fill="var(--ink)" font-weight="400">train</text>
+<rect x="270" y="236" width="86" height="26" rx="4" fill="var(--s1)" fill-opacity=".3" stroke="var(--s1)"/>
+<text x="313" y="254" class="lbl" text-anchor="middle" fill="var(--ink)" font-weight="400">train</text>
+<rect x="360" y="236" width="86" height="26" rx="4" fill="var(--s1)" fill-opacity=".3" stroke="var(--s1)"/>
+<text x="403" y="254" class="lbl" text-anchor="middle" fill="var(--ink)" font-weight="400">train</text>
+<rect x="450" y="236" width="86" height="26" rx="4" fill="var(--s2)" fill-opacity=".8" stroke="var(--s2)"/>
+<text x="493" y="254" class="lbl" text-anchor="middle" fill="#fff" font-weight="700">validate</text>
+<text x="560" y="254" class="lbl">→ score 5</text>
+<rect x="548" y="92" width="190" height="170" fill="none" stroke="var(--s7)" stroke-dasharray="5 4"/>
+<text x="643" y="280" class="lbl" text-anchor="middle" fill="var(--s7)">test set not touched</text>
+<text x="90" y="296" class="lbl-strong">Every row is validated exactly once. Report mean ± std of the 5 scores; pick hyperparameters by the mean.</text>
+<text x="90" y="316" class="lbl">Only after all choices are frozen: retrain on the whole development set, score the test set once.</text>
+</svg>
+<figcaption><strong>Figure 7.8 — Five-fold cross-validation.</strong> The test set is split off first and locked. The remaining development set is cut into five folds; each fold takes one turn as the validation set. Five scores give a mean and a spread. Nothing in this loop ever touches the test set — that happens exactly once, after every decision is frozen.</figcaption>
+</figure>
+
+<pre class="code" data-lang="python"><code><span class="cm"># Cross-validation: one split is a noisy estimate; k-fold gives a mean AND a spread</span>
+<span class="kw">import</span> numpy <span class="kw">as</span> np
+<span class="kw">from</span> sklearn.datasets <span class="kw">import</span> load_breast_cancer
+<span class="kw">from</span> sklearn.model_selection <span class="kw">import</span> train_test_split, StratifiedKFold, cross_val_score
+<span class="kw">from</span> sklearn.pipeline <span class="kw">import</span> make_pipeline
+<span class="kw">from</span> sklearn.preprocessing <span class="kw">import</span> StandardScaler
+<span class="kw">from</span> sklearn.linear_model <span class="kw">import</span> LogisticRegression
+
+X, y = load_breast_cancer(return_X_y=<span class="kw">True</span>)
+model = make_pipeline(StandardScaler(), LogisticRegression(C=<span class="nu">0.1</span>, max_iter=<span class="nu">1000</span>))
+
+<span class="cm"># 1) Five different single hold-out splits → five different &quot;answers&quot;</span>
+singles = []
+<span class="kw">for</span> seed <span class="kw">in</span> <span class="fn">range</span>(<span class="nu">5</span>):
+    X_tr, X_te, y_tr, y_te = train_test_split(X, y, test_size=<span class="nu">0.2</span>, stratify=y, random_state=seed)
+    singles.append(model.fit(X_tr, y_tr).score(X_te, y_te))
+<span class="fn">print</span>(<span class="st">&quot;single-split accuracies:&quot;</span>, np.<span class="fn">round</span>(singles, <span class="nu">3</span>), <span class="st">&quot;→ spread&quot;</span>, <span class="fn">round</span>(<span class="fn">max</span>(singles) - <span class="fn">min</span>(singles), <span class="nu">3</span>))
+
+<span class="cm"># 2) Stratified 5-fold CV: every row is validated exactly once</span>
+cv = StratifiedKFold(n_splits=<span class="nu">5</span>, shuffle=<span class="kw">True</span>, random_state=<span class="nu">0</span>)
+scores = cross_val_score(model, X, y, cv=cv, scoring=<span class="st">&quot;accuracy&quot;</span>)
+<span class="fn">print</span>(<span class="st">&quot;5-fold accuracies:      &quot;</span>, np.<span class="fn">round</span>(scores, <span class="nu">3</span>))
+<span class="fn">print</span>(<span class="st">f&quot;mean = {scores.mean():.3f} ± {scores.std():.3f}&quot;</span>)
+
+<span class="cm"># 3) Repeated k-fold shrinks the noise further (5 x 5 = 25 fits)</span>
+<span class="kw">from</span> sklearn.model_selection <span class="kw">import</span> RepeatedStratifiedKFold
+rcv = RepeatedStratifiedKFold(n_splits=<span class="nu">5</span>, n_repeats=<span class="nu">5</span>, random_state=<span class="nu">0</span>)
+rs = cross_val_score(model, X, y, cv=rcv, scoring=<span class="st">&quot;accuracy&quot;</span>)
+<span class="fn">print</span>(<span class="st">f&quot;5x5 repeated: mean = {rs.mean():.3f} ± {rs.std():.3f}  ({len(rs)} fits)&quot;</span>)
+<span class="out"># single-split accuracies: [0.965 0.982 0.982 0.974 0.974] → spread 0.018</span>
+<span class="out"># 5-fold accuracies:       [0.956 0.991 0.974 0.982 0.973]</span>
+<span class="out"># mean = 0.975 ± 0.012</span>
+<span class="out"># 5x5 repeated: mean = 0.975 ± 0.014  (25 fits)</span></code></pre>
+
+<div class="callout eli9"><div class="title">Explain it like I'm 9</div>
+<p>To find out how good a goalkeeper is, you don't watch one penalty kick — the shooter might have slipped. You watch many kicks from many shooters and average. k-fold is "many kicks": every part of the data gets a turn at being the surprise.</p>
+</div>
+
+<h3>The family of splitters, and which one to use at work</h3>
+
+<p>Plain k-fold assumes rows are independent and identically distributed. Real business data usually breaks that assumption in one of two ways — <strong>groups</strong> (many rows per customer, patient, device) or <strong>time</strong> — and using the wrong splitter produces validation scores that are confidently, invisibly wrong.</p>
+
+<div class="tbl-wrap">
+<table class="tbl">
+<thead><tr><th>Splitter</th><th>How it splits</th><th>Use when</th><th>sklearn</th></tr></thead>
+<tbody>
+<tr><td><strong>Hold-out</strong></td><td>One random train/validation split</td><td>Data is huge (validation set has tens of thousands of rows) or training is very expensive</td><td><code>train_test_split</code></td></tr>
+<tr><td><strong>k-fold</strong></td><td>k rounds, each fold validates once</td><td>Default for regression on i.i.d. rows; k = 5 or 10</td><td><code>KFold(shuffle=True)</code></td></tr>
+<tr><td><strong>Stratified k-fold</strong></td><td>k-fold, but each fold keeps the class proportions</td><td>Default for classification, essential when a class is rare (otherwise a fold may contain zero positives)</td><td><code>StratifiedKFold</code></td></tr>
+<tr><td><strong>Repeated k-fold</strong></td><td>k-fold run r times with different shuffles</td><td>Small datasets where the fold assignment itself is noise; comparing models that differ by little</td><td><code>RepeatedStratifiedKFold</code></td></tr>
+<tr><td><strong>Leave-one-out</strong></td><td>k = number of rows</td><td>Tiny datasets (&lt; 100 rows); nearly unbiased but slow and high-variance</td><td><code>LeaveOneOut</code></td></tr>
+<tr><td><strong>Group k-fold</strong></td><td>All rows of a group land in the same fold</td><td>Multiple rows per patient / customer / device / document; the model will be used on <em>new</em> groups</td><td><code>GroupKFold</code>, <code>StratifiedGroupKFold</code></td></tr>
+<tr><td><strong>Time-series split</strong></td><td>Train on the past, validate on the next block; folds move forward</td><td>Anything with a timestamp where the model predicts the future: churn, demand, fraud, prices</td><td><code>TimeSeriesSplit</code></td></tr>
+</tbody>
+</table>
+</div>
+
+<p><strong>Groups.</strong> If a patient contributes ten rows and three land in the validation fold while seven train the model, the model has effectively seen that patient already; the validation score measures "how well do we predict for patients we know" when the business question is "how well do we predict for patients we have never met". <code>GroupKFold</code> keeps every group on one side of the line.</p>
+
+<p><strong>Time.</strong> If you shuffle time-stamped rows, the model trains on March and June to predict April — it learns from the future. Scores look wonderful; the deployed model, which only ever has the past, disappoints. <code>TimeSeriesSplit</code> respects the arrow of time; Chapter 14 builds on it.</p>
+
+<figure class="fig">
+<svg viewBox="0 0 760 290" role="img" aria-label="TimeSeriesSplit: on a timeline, each round trains on all data up to a cutoff and validates on the block immediately after it; later data is never used to predict earlier data. A final row shows shuffled k-fold mixing future rows into training, which leaks">
+<defs><marker id="arr-g9" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+<line x1="90" y1="34" x2="720" y2="34" class="axis" marker-end="url(#arr-g9)"/>
+<text x="400" y="24" class="lbl" text-anchor="middle">time →</text>
+<text x="92" y="24" class="lbl">Jan</text>
+<text x="700" y="24" class="lbl" text-anchor="end">Dec</text>
+<text x="20" y="68" class="lbl-strong">Round 1</text>
+<rect x="90.0" y="50" width="49.5" height="26" rx="3" fill="var(--s1)" fill-opacity=".35" stroke="var(--border)"/>
+<rect x="142.5" y="50" width="49.5" height="26" rx="3" fill="var(--s1)" fill-opacity=".35" stroke="var(--border)"/>
+<rect x="195.0" y="50" width="49.5" height="26" rx="3" fill="var(--s1)" fill-opacity=".35" stroke="var(--border)"/>
+<rect x="247.5" y="50" width="49.5" height="26" rx="3" fill="var(--s1)" fill-opacity=".35" stroke="var(--border)"/>
+<rect x="300.0" y="50" width="49.5" height="26" rx="3" fill="var(--s2)" fill-opacity=".8" stroke="var(--border)"/>
+<rect x="352.5" y="50" width="49.5" height="26" rx="3" fill="var(--s2)" fill-opacity=".8" stroke="var(--border)"/>
+<rect x="405.0" y="50" width="49.5" height="26" rx="3" fill="var(--surface-3)" fill-opacity="1" stroke="var(--border)"/>
+<rect x="457.5" y="50" width="49.5" height="26" rx="3" fill="var(--surface-3)" fill-opacity="1" stroke="var(--border)"/>
+<rect x="510.0" y="50" width="49.5" height="26" rx="3" fill="var(--surface-3)" fill-opacity="1" stroke="var(--border)"/>
+<rect x="562.5" y="50" width="49.5" height="26" rx="3" fill="var(--surface-3)" fill-opacity="1" stroke="var(--border)"/>
+<rect x="615.0" y="50" width="49.5" height="26" rx="3" fill="var(--surface-3)" fill-opacity="1" stroke="var(--border)"/>
+<rect x="667.5" y="50" width="49.5" height="26" rx="3" fill="var(--surface-3)" fill-opacity="1" stroke="var(--border)"/>
+<text x="351.0" y="68" class="lbl-strong" text-anchor="middle" fill="#fff">val</text>
+<text x="195.0" y="68" class="lbl" text-anchor="middle">train</text>
+<text x="411.0" y="68" class="lbl" fill="var(--ink-3)">future: unused</text>
+<text x="20" y="104" class="lbl-strong">Round 2</text>
+<rect x="90.0" y="86" width="49.5" height="26" rx="3" fill="var(--s1)" fill-opacity=".35" stroke="var(--border)"/>
+<rect x="142.5" y="86" width="49.5" height="26" rx="3" fill="var(--s1)" fill-opacity=".35" stroke="var(--border)"/>
+<rect x="195.0" y="86" width="49.5" height="26" rx="3" fill="var(--s1)" fill-opacity=".35" stroke="var(--border)"/>
+<rect x="247.5" y="86" width="49.5" height="26" rx="3" fill="var(--s1)" fill-opacity=".35" stroke="var(--border)"/>
+<rect x="300.0" y="86" width="49.5" height="26" rx="3" fill="var(--s1)" fill-opacity=".35" stroke="var(--border)"/>
+<rect x="352.5" y="86" width="49.5" height="26" rx="3" fill="var(--s1)" fill-opacity=".35" stroke="var(--border)"/>
+<rect x="405.0" y="86" width="49.5" height="26" rx="3" fill="var(--s2)" fill-opacity=".8" stroke="var(--border)"/>
+<rect x="457.5" y="86" width="49.5" height="26" rx="3" fill="var(--s2)" fill-opacity=".8" stroke="var(--border)"/>
+<rect x="510.0" y="86" width="49.5" height="26" rx="3" fill="var(--surface-3)" fill-opacity="1" stroke="var(--border)"/>
+<rect x="562.5" y="86" width="49.5" height="26" rx="3" fill="var(--surface-3)" fill-opacity="1" stroke="var(--border)"/>
+<rect x="615.0" y="86" width="49.5" height="26" rx="3" fill="var(--surface-3)" fill-opacity="1" stroke="var(--border)"/>
+<rect x="667.5" y="86" width="49.5" height="26" rx="3" fill="var(--surface-3)" fill-opacity="1" stroke="var(--border)"/>
+<text x="456.0" y="104" class="lbl-strong" text-anchor="middle" fill="#fff">val</text>
+<text x="247.5" y="104" class="lbl" text-anchor="middle">train</text>
+<text x="516.0" y="104" class="lbl" fill="var(--ink-3)">future: unused</text>
+<text x="20" y="140" class="lbl-strong">Round 3</text>
+<rect x="90.0" y="122" width="49.5" height="26" rx="3" fill="var(--s1)" fill-opacity=".35" stroke="var(--border)"/>
+<rect x="142.5" y="122" width="49.5" height="26" rx="3" fill="var(--s1)" fill-opacity=".35" stroke="var(--border)"/>
+<rect x="195.0" y="122" width="49.5" height="26" rx="3" fill="var(--s1)" fill-opacity=".35" stroke="var(--border)"/>
+<rect x="247.5" y="122" width="49.5" height="26" rx="3" fill="var(--s1)" fill-opacity=".35" stroke="var(--border)"/>
+<rect x="300.0" y="122" width="49.5" height="26" rx="3" fill="var(--s1)" fill-opacity=".35" stroke="var(--border)"/>
+<rect x="352.5" y="122" width="49.5" height="26" rx="3" fill="var(--s1)" fill-opacity=".35" stroke="var(--border)"/>
+<rect x="405.0" y="122" width="49.5" height="26" rx="3" fill="var(--s1)" fill-opacity=".35" stroke="var(--border)"/>
+<rect x="457.5" y="122" width="49.5" height="26" rx="3" fill="var(--s1)" fill-opacity=".35" stroke="var(--border)"/>
+<rect x="510.0" y="122" width="49.5" height="26" rx="3" fill="var(--s2)" fill-opacity=".8" stroke="var(--border)"/>
+<rect x="562.5" y="122" width="49.5" height="26" rx="3" fill="var(--s2)" fill-opacity=".8" stroke="var(--border)"/>
+<rect x="615.0" y="122" width="49.5" height="26" rx="3" fill="var(--surface-3)" fill-opacity="1" stroke="var(--border)"/>
+<rect x="667.5" y="122" width="49.5" height="26" rx="3" fill="var(--surface-3)" fill-opacity="1" stroke="var(--border)"/>
+<text x="561.0" y="140" class="lbl-strong" text-anchor="middle" fill="#fff">val</text>
+<text x="300.0" y="140" class="lbl" text-anchor="middle">train</text>
+<text x="621.0" y="140" class="lbl" fill="var(--ink-3)">future: unused</text>
+<text x="20" y="176" class="lbl-strong">Round 4</text>
+<rect x="90.0" y="158" width="49.5" height="26" rx="3" fill="var(--s1)" fill-opacity=".35" stroke="var(--border)"/>
+<rect x="142.5" y="158" width="49.5" height="26" rx="3" fill="var(--s1)" fill-opacity=".35" stroke="var(--border)"/>
+<rect x="195.0" y="158" width="49.5" height="26" rx="3" fill="var(--s1)" fill-opacity=".35" stroke="var(--border)"/>
+<rect x="247.5" y="158" width="49.5" height="26" rx="3" fill="var(--s1)" fill-opacity=".35" stroke="var(--border)"/>
+<rect x="300.0" y="158" width="49.5" height="26" rx="3" fill="var(--s1)" fill-opacity=".35" stroke="var(--border)"/>
+<rect x="352.5" y="158" width="49.5" height="26" rx="3" fill="var(--s1)" fill-opacity=".35" stroke="var(--border)"/>
+<rect x="405.0" y="158" width="49.5" height="26" rx="3" fill="var(--s1)" fill-opacity=".35" stroke="var(--border)"/>
+<rect x="457.5" y="158" width="49.5" height="26" rx="3" fill="var(--s1)" fill-opacity=".35" stroke="var(--border)"/>
+<rect x="510.0" y="158" width="49.5" height="26" rx="3" fill="var(--s1)" fill-opacity=".35" stroke="var(--border)"/>
+<rect x="562.5" y="158" width="49.5" height="26" rx="3" fill="var(--s1)" fill-opacity=".35" stroke="var(--border)"/>
+<rect x="615.0" y="158" width="49.5" height="26" rx="3" fill="var(--s2)" fill-opacity=".8" stroke="var(--border)"/>
+<rect x="667.5" y="158" width="49.5" height="26" rx="3" fill="var(--s2)" fill-opacity=".8" stroke="var(--border)"/>
+<text x="666.0" y="176" class="lbl-strong" text-anchor="middle" fill="#fff">val</text>
+<text x="352.5" y="176" class="lbl" text-anchor="middle">train</text>
+<text x="20" y="226" class="lbl-strong">Shuffled</text>
+<text x="20" y="240" class="lbl-strong" fill="var(--critical)">KFold ✗</text>
+<rect x="90.0" y="208" width="49.5" height="26" rx="3" fill="var(--s1)" fill-opacity=".35" stroke="var(--border)"/>
+<rect x="142.5" y="208" width="49.5" height="26" rx="3" fill="var(--s2)" fill-opacity=".8" stroke="var(--border)"/>
+<rect x="195.0" y="208" width="49.5" height="26" rx="3" fill="var(--s1)" fill-opacity=".35" stroke="var(--border)"/>
+<rect x="247.5" y="208" width="49.5" height="26" rx="3" fill="var(--s1)" fill-opacity=".35" stroke="var(--border)"/>
+<rect x="300.0" y="208" width="49.5" height="26" rx="3" fill="var(--s2)" fill-opacity=".8" stroke="var(--border)"/>
+<rect x="352.5" y="208" width="49.5" height="26" rx="3" fill="var(--s1)" fill-opacity=".35" stroke="var(--border)"/>
+<rect x="405.0" y="208" width="49.5" height="26" rx="3" fill="var(--s2)" fill-opacity=".8" stroke="var(--border)"/>
+<rect x="457.5" y="208" width="49.5" height="26" rx="3" fill="var(--s1)" fill-opacity=".35" stroke="var(--border)"/>
+<rect x="510.0" y="208" width="49.5" height="26" rx="3" fill="var(--s1)" fill-opacity=".35" stroke="var(--border)"/>
+<rect x="562.5" y="208" width="49.5" height="26" rx="3" fill="var(--s2)" fill-opacity=".8" stroke="var(--border)"/>
+<rect x="615.0" y="208" width="49.5" height="26" rx="3" fill="var(--s1)" fill-opacity=".35" stroke="var(--border)"/>
+<rect x="667.5" y="208" width="49.5" height="26" rx="3" fill="var(--s1)" fill-opacity=".35" stroke="var(--border)"/>
+<text x="400" y="256" class="lbl" text-anchor="middle" fill="var(--critical)">validation months sit between training months → the model "trains on the future" and the score is a lie</text>
+<text x="400" y="278" class="lbl" text-anchor="middle">Also true for anything with a clock in it: churn, demand, fraud, sensor data.</text>
+</svg>
+<figcaption><strong>Figure 7.9 — TimeSeriesSplit versus a leaky shuffle.</strong> Each round trains on everything up to a cut-off and validates on the block right after it; the folds walk forward and later data is never used to predict earlier data. The bottom row shows what shuffled k-fold does to the same timeline: validation months sandwiched between training months, so the model "remembers" the future and the score is meaningless.</figcaption>
+</figure>
+
+<pre class="code" data-lang="python"><code><span class="cm"># Splitters for structured data: groups and time. Never let the same customer, or the</span>
+<span class="cm"># future, leak from training into validation.</span>
+<span class="kw">import</span> numpy <span class="kw">as</span> np
+<span class="kw">from</span> sklearn.model_selection <span class="kw">import</span> GroupKFold, TimeSeriesSplit, KFold
+
+groups = np.array([<span class="nu">0</span>,<span class="nu">0</span>,<span class="nu">0</span>, <span class="nu">1</span>,<span class="nu">1</span>,<span class="nu">1</span>, <span class="nu">2</span>,<span class="nu">2</span>,<span class="nu">2</span>, <span class="nu">3</span>,<span class="nu">3</span>,<span class="nu">3</span>])<span class="cm">   # 12 rows from 4 customers</span>
+X = np.arange(<span class="nu">12</span>).reshape(-<span class="nu">1</span>, <span class="nu">1</span>)
+
+<span class="fn">print</span>(<span class="st">&quot;GroupKFold: a customer is never in both train and validation&quot;</span>)
+<span class="kw">for</span> tr, va <span class="kw">in</span> GroupKFold(n_splits=<span class="nu">4</span>).split(X, groups=groups):
+    <span class="fn">print</span>(<span class="st">&quot;  train customers&quot;</span>, <span class="fn">sorted</span>(<span class="fn">set</span>(groups[tr].tolist())), <span class="st">&quot;→ validate customer&quot;</span>, <span class="fn">sorted</span>(<span class="fn">set</span>(groups[va].tolist())))
+
+<span class="fn">print</span>(<span class="st">&quot;\nTimeSeriesSplit: validation is always AFTER training&quot;</span>)
+<span class="kw">for</span> tr, va <span class="kw">in</span> TimeSeriesSplit(n_splits=<span class="nu">3</span>, test_size=<span class="nu">3</span>).split(X):
+    <span class="fn">print</span>(<span class="st">f&quot;  train rows {tr.min()}–{tr.max()}  → validate rows {va.min()}–{va.max()}&quot;</span>)
+
+<span class="fn">print</span>(<span class="st">&quot;\nPlain shuffled KFold on the same rows: fine for i.i.d. data, WRONG here&quot;</span>)
+tr, va = <span class="fn">next</span>(KFold(n_splits=<span class="nu">4</span>, shuffle=<span class="kw">True</span>, random_state=<span class="nu">0</span>).split(X))
+<span class="fn">print</span>(<span class="st">&quot;  validate rows&quot;</span>, <span class="fn">sorted</span>(va.tolist()), <span class="st">&quot;→ customers&quot;</span>, <span class="fn">sorted</span>(<span class="fn">set</span>(groups[va].tolist())), <span class="st">&quot;also appear in train&quot;</span>)
+<span class="out"># GroupKFold: a customer is never in both train and validation</span>
+<span class="out">#   train customers [0, 1, 2] → validate customer [3]</span>
+<span class="out">#   train customers [0, 1, 3] → validate customer [2]</span>
+<span class="out">#   train customers [0, 2, 3] → validate customer [1]</span>
+<span class="out">#   train customers [1, 2, 3] → validate customer [0]</span>
+<span class="out">#</span>
+<span class="out"># TimeSeriesSplit: validation is always AFTER training</span>
+<span class="out">#   train rows 0–2  → validate rows 3–5</span>
+<span class="out">#   train rows 0–5  → validate rows 6–8</span>
+<span class="out">#   train rows 0–8  → validate rows 9–11</span>
+<span class="out">#</span>
+<span class="out"># Plain shuffled KFold on the same rows: fine for i.i.d. data, WRONG here</span>
+<span class="out">#   validate rows [4, 6, 11] → customers [1, 2, 3] also appear in train</span></code></pre>
+
+<div class="callout warn"><div class="title">Common mistake: leakage through preprocessing</div>
+<p>Fitting the scaler, imputer or feature selector on <em>all</em> the data and then cross-validating the model. The validation folds have leaked their means, variances and selected features into training. The fix is mechanical: put every preprocessing step in a <code>Pipeline</code> and pass the pipeline to <code>cross_val_score</code>, so each fold refits preprocessing on its own training portion. Chapter 8 makes this the default way you build anything.</p>
+</div>
+
+<h3>The sacred test set, and nested CV in one paragraph</h3>
+
+<p>Cross-validation is where you make decisions. Every time you compare two models, tune a hyperparameter, or pick a threshold on the validation folds, you nudge your choices toward whatever happens to work on <em>that</em> data. After fifty such decisions the CV score is optimistic — you have overfit the validation set with your own hands. That is why the <strong>test set is sacred</strong>: it was never part of a decision, so its one score is honest. Touch it once, after everything is frozen. If the test score disappoints, you do not get to "try one more thing" and re-test; that would make it a validation set.</p>
+
+<p><strong>Nested cross-validation</strong> is the fully honest version when you have no separate test set and must both tune and estimate from the same data: an outer loop holds out a fold for estimation; inside each outer training portion, an inner loop does the tuning. The outer scores are unbiased by tuning because the tuning never saw them. It costs k<sub>outer</sub> × k<sub>inner</sub> fits, so it is used for small data and final reports rather than daily iteration. In code it is one line: pass a <code>GridSearchCV</code> object to <code>cross_val_score</code>.</p>
+
+<pre class="code" data-lang="python"><code><span class="cm"># Nested CV: tune alpha in the inner loop, estimate honestly in the outer loop</span>
+<span class="kw">import</span> numpy <span class="kw">as</span> np
+<span class="kw">from</span> sklearn.datasets <span class="kw">import</span> load_diabetes
+<span class="kw">from</span> sklearn.pipeline <span class="kw">import</span> make_pipeline
+<span class="kw">from</span> sklearn.preprocessing <span class="kw">import</span> StandardScaler
+<span class="kw">from</span> sklearn.linear_model <span class="kw">import</span> Ridge
+<span class="kw">from</span> sklearn.model_selection <span class="kw">import</span> GridSearchCV, KFold, cross_val_score
+
+X, y = load_diabetes(return_X_y=<span class="kw">True</span>)
+pipe = make_pipeline(StandardScaler(), Ridge())
+inner = GridSearchCV(pipe, {<span class="st">&quot;ridge__alpha&quot;</span>: [<span class="nu">0.01</span>, <span class="nu">0.1</span>, <span class="nu">1</span>, <span class="nu">10</span>, <span class="nu">100</span>]}, cv=KFold(<span class="nu">5</span>, shuffle=<span class="kw">True</span>, random_state=<span class="nu">1</span>))
+outer = KFold(<span class="nu">5</span>, shuffle=<span class="kw">True</span>, random_state=<span class="nu">2</span>)
+scores = cross_val_score(inner, X, y, cv=outer, scoring=<span class="st">&quot;r2&quot;</span>)
+<span class="fn">print</span>(<span class="st">&quot;nested-CV R² per outer fold:&quot;</span>, np.<span class="fn">round</span>(scores, <span class="nu">3</span>))
+<span class="fn">print</span>(<span class="st">f&quot;honest estimate: {scores.mean():.3f} ± {scores.std():.3f}&quot;</span>)
+<span class="fn">print</span>(<span class="st">&quot;chosen alpha on full data:&quot;</span>, inner.fit(X, y).best_params_)
+<span class="out"># nested-CV R² per outer fold: [0.442 0.479 0.491 0.454 0.494]</span>
+<span class="out"># honest estimate: 0.472 ± 0.021</span>
+<span class="out"># chosen alpha on full data: {&#x27;ridge__alpha&#x27;: 1}</span></code></pre>
+
+<div class="callout key"><div class="title">Key idea</div>
+<p>Validation data is for <em>choosing</em>; test data is for <em>reporting</em>. Any data that influenced a choice can no longer give you an honest report. Cross-validation is a way to choose well with all your development data; the test set is a way to report honestly with none of it spent.</p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s8">8. The full protocol and rules of thumb</h2>
+
+<p>Here is the whole workflow on one page. It is the same for a two-hour prototype and a year-long production system; only the amount of iteration in step 3 changes.</p>
+
+<figure class="fig">
+<svg viewBox="0 0 760 360" role="img" aria-label="The full evaluation protocol as a flow: split off a locked test set first; on the rest, run cross-validation to choose features, model, hyperparameters and threshold; retrain the chosen configuration on all development data; evaluate once on the test set; ship and monitor">
+<defs><marker id="arr-g10" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+<rect x="20" y="30" width="150" height="50" class="box"/>
+<text x="95.0" y="52.0" class="lbl-strong" text-anchor="middle">1. All labelled data</text>
+<text x="95.0" y="69.0" class="lbl" text-anchor="middle">one table, one target</text>
+<path d="M170,55 L210,55" class="arrow" marker-end="url(#arr-g10)"/>
+<rect x="212" y="30" width="170" height="50" class="box"/>
+<text x="297.0" y="52.0" class="lbl-strong" text-anchor="middle">2. Split FIRST</text>
+<text x="297.0" y="69.0" class="lbl" text-anchor="middle">stratified / grouped / by time</text>
+<path d="M382,55 L420,55" class="arrow" marker-end="url(#arr-g10)"/>
+<rect x="422" y="30" width="150" height="50" class="box-accent"/>
+<text x="497.0" y="52.0" class="lbl-strong" text-anchor="middle">Development set</text>
+<text x="497.0" y="69.0" class="lbl" text-anchor="middle">≈ 80%</text>
+<path d="M297,80 L297,110 L675,110 L675,126" class="arrow" marker-end="url(#arr-g10)"/>
+<rect x="612" y="128" width="128" height="50" class="" fill="var(--s7)" fill-opacity=".2" stroke="var(--s7)" stroke-width="1.5" rx="6"/>
+<text x="676.0" y="150.0" class="lbl-strong" text-anchor="middle">Test set 20% 🔒</text>
+<text x="676.0" y="167.0" class="lbl" text-anchor="middle">touch once, at end</text>
+<path d="M497,80 L497,126" class="arrow" marker-end="url(#arr-g10)"/>
+<rect x="390" y="128" width="214" height="54" class="box"/>
+<text x="497.0" y="152.0" class="lbl-strong" text-anchor="middle">3. Cross-validation loop</text>
+<text x="497.0" y="169.0" class="lbl" text-anchor="middle">features · model · hyperparams</text>
+<path d="M497,182 L497,214" class="arrow" marker-end="url(#arr-g10)"/>
+<rect x="390" y="216" width="214" height="50" class="box"/>
+<text x="497.0" y="238.0" class="lbl-strong" text-anchor="middle">4. Freeze every choice</text>
+<text x="497.0" y="255.0" class="lbl" text-anchor="middle">incl. the decision threshold</text>
+<path d="M497,266 L497,298" class="arrow" marker-end="url(#arr-g10)"/>
+<rect x="390" y="300" width="214" height="50" class="box-accent"/>
+<text x="497.0" y="322.0" class="lbl-strong" text-anchor="middle">5. Retrain on all dev data</text>
+<text x="497.0" y="339.0" class="lbl" text-anchor="middle">same config, more rows</text>
+<path d="M604,325 L665,325 L665,182" class="arrow" marker-end="url(#arr-g10)"/>
+<text x="676" y="260" class="lbl-strong">6. Score</text>
+<text x="676" y="276" class="lbl-strong">the test set</text>
+<text x="676" y="292" class="lbl-strong">exactly once.</text>
+<text x="676" y="310" class="lbl">That number</text>
+<text x="676" y="326" class="lbl">goes in the</text>
+<text x="676" y="342" class="lbl">report.</text>
+<path d="M390,155 L330,155 L330,241 L390,241" class="arrow" stroke-dasharray="5 4" marker-end="url(#arr-g10)"/>
+<text x="300" y="195" class="lbl" text-anchor="middle">iterate</text>
+<text x="300" y="211" class="lbl" text-anchor="middle">freely</text>
+<text x="20" y="150" class="lbl-strong">Rules:</text>
+<text x="20" y="172" class="lbl">• The test set never influences a decision.</text>
+<text x="20" y="190" class="lbl">  If it did, it is now a validation set.</text>
+<text x="20" y="214" class="lbl">• Every preprocessing step (scaling,</text>
+<text x="20" y="232" class="lbl">  imputation, encoding) is fit inside</text>
+<text x="20" y="250" class="lbl">  each fold → use a Pipeline (Ch 8).</text>
+<text x="20" y="274" class="lbl">• Split by group or time when rows</text>
+<text x="20" y="292" class="lbl">  are not independent.</text>
+<text x="20" y="316" class="lbl">• Report mean ± std of CV scores,</text>
+<text x="20" y="334" class="lbl">  then the single test score.</text>
+</svg>
+<figcaption><strong>Figure 7.10 — The evaluation protocol.</strong> Split first, before you look at anything. Iterate freely inside the cross-validation loop. Freeze every choice, including the threshold from Chapter 6. Retrain the frozen configuration on all development data (more rows, same recipe). Score the test set once and report that number with the CV mean ± std next to it.</figcaption>
+</figure>
+
+<ol class="steps">
+  <li><strong>Split first, then explore.</strong> Even exploratory data analysis on the test set leaks: you notice a pattern, engineer a feature for it, and the test set is no longer a surprise. Split, lock, then look.</li>
+  <li><strong>Match the splitter to the deployment question.</strong> New customers → group split. Next quarter → time split. Rare positives → stratify. A random split answers "how well do we interpolate among rows like these", which is rarely the question.</li>
+  <li><strong>Use a pipeline so preprocessing lives inside the folds.</strong></li>
+  <li><strong>Compare models on CV mean, sanity-check with CV std.</strong> If two models differ by less than about one standard deviation, you cannot tell them apart; prefer the simpler one.</li>
+  <li><strong>Freeze, retrain on everything, test once.</strong> Then write the number down with the confidence it deserves: a test set of 200 rows cannot distinguish 91% from 93%.</li>
+</ol>
+
+<h3>Data size versus model capacity: rules of thumb</h3>
+
+<div class="tbl-wrap">
+<table class="tbl">
+<thead><tr><th>Rows of labelled data</th><th>What tends to work</th><th>Validation strategy</th></tr></thead>
+<tbody>
+<tr><td>&lt; 100</td><td>Rules, simple linear/logistic with strong regularization, or nothing (collect more first)</td><td>Leave-one-out or repeated 5-fold; report wide uncertainty</td></tr>
+<tr><td>100 – 1,000</td><td>Regularized linear models, small trees, kNN; feature engineering matters more than the algorithm</td><td>Repeated stratified 5- or 10-fold; nested CV for the final number</td></tr>
+<tr><td>1,000 – 100,000</td><td>Gradient boosting and random forests shine; linear models remain strong baselines</td><td>5-fold CV plus a locked 15–20% test set</td></tr>
+<tr><td>100,000 – millions</td><td>Boosting on tables; neural networks on text, images, audio</td><td>A single hold-out validation and test set are usually enough (each has thousands of rows); CV only for tuning on subsamples</td></tr>
+<tr><td>Any size, rare positives</td><td>Whatever you use, count the <em>positives</em>, not the rows: 200 positives in a million rows is a small dataset</td><td>Stratify everything; evaluate with PR-AUC (Chapter 6)</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>Two heuristics that survive contact with reality: (1) you want at least ten times as many training rows as free parameters for a linear model, and far more for flexible models — but regularization and validation, not this ratio, are what actually keep you safe; (2) the number that limits you is almost always the count of the <em>rare</em> class, or the number of independent <em>groups</em>, not the row count.</p>
+
+<div class="callout pro"><div class="title">At work</div>
+<p>Write the split into the codebase, not the notebook. A function that returns the same train/validation/test indices every time (seeded, stratified, grouped or time-based as the problem demands) and is imported by every experiment. Teams that "just split in the notebook" end up with every analyst on a different split, results that cannot be compared, and, eventually, a test set that somebody trained on. Chapter 21 turns this into a reproducibility checklist.</p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="quiz">Quiz</h2>
+<div class="quiz">
+  <h3>Check your understanding</h3>
+
+  <div class="q">
+    <p class="question">1. A model has training accuracy 99.5% and cross-validated accuracy 84%. What is the diagnosis and the first thing to try?</p>
+    <ul class="opts">
+      <li><button>High bias; use a more flexible model</button></li>
+      <li><button data-correct>High variance; regularize, simplify, or get more data</button></li>
+      <li><button>The test set is too small</button></li>
+      <li><button>Nothing is wrong; 99.5% is excellent</button></li>
+    </ul>
+    <div class="explain">A large gap between training and validation performance is the signature of overfitting (high variance). The cures are more data, regularization, a simpler model, or ensembling. A bigger model would make it worse.</div>
+  </div>
+
+  <div class="q">
+    <p class="question">2. Both training and validation error are high and nearly equal, and they stopped improving after 20% of the data was used. Which action is most likely to help?</p>
+    <ul class="opts">
+      <li><button>Collect five times more data</button></li>
+      <li><button>Increase the regularization strength</button></li>
+      <li><button data-correct>Add features or use a more flexible model</button></li>
+      <li><button>Use leave-one-out instead of 5-fold</button></li>
+    </ul>
+    <div class="explain">Curves that plateau early with a small gap mean high bias: the model cannot represent the pattern. More data or more regularization will not move the plateau. Increase capacity or improve the features.</div>
+  </div>
+
+  <div class="q">
+    <p class="question">3. Why does L1 (Lasso) regularization produce coefficients that are exactly zero while L2 (Ridge) does not?</p>
+    <ul class="opts">
+      <li><button>L1 is applied only to unimportant features</button></li>
+      <li><button data-correct>The L1 budget region has corners on the axes, and the loss contours tend to touch it at a corner</button></li>
+      <li><button>L2 has a larger default alpha</button></li>
+      <li><button>L1 is solved with gradient descent, which rounds small numbers to zero</button></li>
+    </ul>
+    <div class="explain">Geometrically, the L1 constraint is a diamond (in 2-D) whose corners lie on the axes; the first contour to touch the region usually does so at a corner, where one or more weights are exactly zero. The L2 circle has no corners, so the touching point generically has all weights nonzero.</div>
+  </div>
+
+  <div class="q">
+    <p class="question">4. In scikit-learn's <code>LogisticRegression</code>, which setting gives the <em>strongest</em> regularization?</p>
+    <ul class="opts">
+      <li><button>C = 100</button></li>
+      <li><button>C = 1 (the default)</button></li>
+      <li><button data-correct>C = 0.01</button></li>
+      <li><button>C has nothing to do with regularization</button></li>
+    </ul>
+    <div class="explain">C is the inverse of the regularization strength (C = 1/α). Smaller C means a larger penalty and smaller coefficients. C = 0.01 is strong regularization; C = 100 is nearly none.</div>
+  </div>
+
+  <div class="q">
+    <p class="question">5. You are predicting which customers will churn next quarter from three years of monthly records, with many rows per customer. Which cross-validation scheme is appropriate?</p>
+    <ul class="opts">
+      <li><button>Shuffled 5-fold</button></li>
+      <li><button>Stratified 5-fold</button></li>
+      <li><button data-correct>A time-based split (train on earlier months, validate on later ones), grouped by customer</button></li>
+      <li><button>Leave-one-out</button></li>
+    </ul>
+    <div class="explain">The deployed model will predict the future for customers it has seen in the past, so validation must respect time (no training on months after the validation period). Shuffled folds leak the future and mix each customer's rows across train and validation, inflating the score.</div>
+  </div>
+
+  <div class="q">
+    <p class="question">6. After tuning on the validation folds you score the test set and get 88%. A colleague suggests trying two more hyperparameter settings and re-scoring the test set to see if it improves. What is wrong with this?</p>
+    <ul class="opts">
+      <li><button>Nothing; two more tries is fine</button></li>
+      <li><button data-correct>Choosing among settings by test score turns the test set into a validation set, so the final number is no longer an honest estimate</button></li>
+      <li><button>The test set must be re-split first</button></li>
+      <li><button>You should use accuracy instead of the test score</button></li>
+    </ul>
+    <div class="explain">Any decision made using the test set biases it upward. Tune on validation folds (or nested CV), freeze, and score the test set once. If you must keep tuning, you no longer have a test set and should say so.</div>
+  </div>
+</div>
+
+<h2 id="exercises">Exercises</h2>
+
+<div class="exercise"><div class="title">Exercise 7.1 — Diagnose from numbers</div>
+<p>For each model, say whether the main problem is bias, variance, both, or neither, and name one concrete fix. The desired error is below 5%.</p>
+<ol>
+  <li>Training error 1%, validation error 12%.</li>
+  <li>Training error 14%, validation error 15%.</li>
+  <li>Training error 0.5%, validation error 3%.</li>
+  <li>Training error 15%, validation error 30%.</li>
+</ol>
+<details class="answer"><summary>Show answers</summary>
+<ol>
+  <li>Variance (gap of 11 points): regularize, get more data, simplify, or ensemble.</li>
+  <li>Bias (both high, tiny gap): add features, increase capacity, reduce regularization; more data will not help.</li>
+  <li>Neither: validation error is under target and the gap is small. Ship it and stop tuning.</li>
+  <li>Both: training error is already above target (bias) and the gap is large (variance). Attack variance first — it is cheaper — then increase capacity if the plateau is still too high.</li>
+</ol>
+</details>
+</div>
+
+<div class="exercise"><div class="title">Exercise 7.2 — Find the leak</div>
+<p>A colleague reports 97% cross-validated accuracy predicting equipment failures from sensor logs, using <code>KFold(shuffle=True)</code> after running <code>StandardScaler().fit_transform(X)</code> on the full dataset and dropping the 200 least-correlated features. Each machine contributes thousands of rows spanning two years. List every leak you can find and say how to fix each.</p>
+<details class="answer"><summary>Show answer</summary>
+<p>Three leaks. (1) <strong>Preprocessing leak</strong>: the scaler and the feature selection were fit on all rows, including validation folds — put both in a <code>Pipeline</code> so they are refit inside each fold. (2) <strong>Group leak</strong>: rows from the same machine are split across train and validation, so the model recognizes machines rather than failure signatures — use <code>GroupKFold</code> with machine id as the group (if the deployed model must work on new machines). (3) <strong>Time leak</strong>: shuffling lets the model train on readings after a failure to predict readings before it — use <code>TimeSeriesSplit</code> (or a time-based cut-off per machine). Expect the honest score to be dramatically lower than 97%; that is the point.</p>
+</details>
+</div>
+
+<div class="exercise"><div class="title">Exercise 7.3 — Build the split module at work</div>
+<p>Take a dataset you actually use at work (or <code>load_breast_cancer</code> if none is available). Write a small Python module with one function, <code>get_splits()</code>, that returns (a) a locked test-set index chosen with a fixed seed, stratified if classification, grouped or time-based if the rows demand it, and (b) a cross-validation splitter object for the remaining rows. Then run <code>cross_val_score</code> for a regularized linear model at three values of alpha (or C), print mean ± std for each, choose one, retrain on all development rows, and score the test set exactly once. Commit the module to the project repository so that every teammate uses the same split.</p>
+<details class="answer"><summary>Show answer</summary>
+<p>The essential shape: <code>train_test_split(..., test_size=0.2, stratify=y, random_state=SEED)</code> (or a date cut-off, or <code>GroupShuffleSplit</code>) inside <code>get_splits()</code>, returning the indices plus a <code>StratifiedKFold(5, shuffle=True, random_state=SEED)</code> (or <code>GroupKFold</code> / <code>TimeSeriesSplit</code>). The CV means for the three alphas should differ by amounts you compare with the reported std; if they are within one std of each other, pick the strongest regularization (the simplest model). The final test score should land within roughly one CV std of the chosen CV mean; if it is far below, suspect a leak in your CV or a distribution shift between the test period and the rest.</p>
+</details>
+</div>
+
+<div class="summary">
+  <h3>Chapter summary</h3>
+  <ul class="checklist">
+    <li>Only performance on unseen data matters. Training error lies because a flexible model fits noise as happily as signal.</li>
+    <li>Underfitting: both errors high. Overfitting: training error low, validation error high, large gap. Test error is U-shaped in model complexity.</li>
+    <li>Error = bias² + variance + noise. Bias is systematic (wrong model family); variance is instability across training sets (fitting noise). Levers usually trade one for the other; more data cuts variance for free.</li>
+    <li>Learning curves diagnose: an early high plateau with a small gap means bias (more data won't help); a large slowly closing gap means variance (it will).</li>
+    <li>L2 (Ridge) shrinks all coefficients; L1 (Lasso) zeroes some (feature selection); elastic net mixes them. Standardize first. In sklearn, larger alpha or smaller C = stronger regularization.</li>
+    <li>Every model has a capacity knob (depth, rounds, neighbours, dropout); early stopping regularizes iterative models with a clock.</li>
+    <li>One validation split is noisy; k-fold uses every row for validation once and gives a mean ± std. Stratify for classification; use GroupKFold for repeated entities and TimeSeriesSplit for anything with a clock.</li>
+    <li>Preprocessing goes inside the pipeline so it is refit per fold; otherwise it leaks.</li>
+    <li>Validation data is for choosing; test data is for reporting. Split first, freeze everything, retrain on all development data, score the test set once.</li>
+    <li>The count that limits you is the rare class or the number of independent groups, not the row count.</li>
+  </ul>
+</div>
+
+<div class="mark-done"></div>
+<nav class="pager"></nav>
+
+</div></main>
+</div>
+
+<script src="../assets/chapters.js"></script>
+<script src="../assets/app.js"></script>
+<script>
+(function () {
+  /* ---------- shared helpers ---------- */
+  function rng(seed) { var s = seed >>> 0; return function () { s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; }; }
+  function gauss(r) { var u = r() || 1e-9, v = r(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v); }
+  function solve(A, b) {
+    var n = b.length, i, j, k; A = A.map(function (r) { return r.slice(); }); b = b.slice();
+    for (i = 0; i < n; i++) {
+      var p = i; for (k = i + 1; k < n; k++) if (Math.abs(A[k][i]) > Math.abs(A[p][i])) p = k;
+      var t = A[i]; A[i] = A[p]; A[p] = t; t = b[i]; b[i] = b[p]; b[p] = t;
+      if (Math.abs(A[i][i]) < 1e-14) A[i][i] = 1e-14;
+      for (k = i + 1; k < n; k++) { var f = A[k][i] / A[i][i]; for (j = i; j < n; j++) A[k][j] -= f * A[i][j]; b[k] -= f * b[i]; }
+    }
+    var x = new Array(n); for (i = n - 1; i >= 0; i--) { var s = b[i]; for (j = i + 1; j < n; j++) s -= A[i][j] * x[j]; x[i] = s / A[i][i]; }
+    return x;
+  }
+
+  /* ---------- Widget 1: polynomial degree ---------- */
+  (function () {
+    var slider = document.getElementById("pd-deg"), svg = document.getElementById("pd-svg");
+    if (!slider || !svg) return;
+    var oTr = document.getElementById("pd-tr"), oTe = document.getElementById("pd-te");
+    var r = rng(7), xs = [], ys = [], xt = [], yt = [], i;
+    for (i = 0; i < 30; i++) { var x = r(); xs.push(x); ys.push(Math.sin(2 * Math.PI * x) + 0.3 * gauss(r)); }
+    for (i = 0; i < 30; i++) { var x2 = r(); xt.push(x2); yt.push(Math.sin(2 * Math.PI * x2) + 0.3 * gauss(r)); }
+    function feats(x, d) { var z = 2 * x - 1, f = [1]; for (var k = 1; k <= d; k++) f.push(Math.pow(z, k)); return f; }
+    function fit(d) {
+      var m = d + 1, A = [], b = [];
+      for (var p = 0; p < m; p++) { A.push(new Array(m).fill(0)); b.push(0); }
+      xs.forEach(function (x, i) { var f = feats(x, d); for (var p = 0; p < m; p++) { b[p] += f[p] * ys[i]; for (var q = 0; q < m; q++) A[p][q] += f[p] * f[q]; } });
+      for (var k = 0; k < m; k++) A[k][k] += 1e-9;
+      return solve(A, b);
+    }
+    function pred(w, x) { var f = feats(x, w.length - 1), s = 0; for (var k = 0; k < f.length; k++) s += w[k] * f[k]; return s; }
+    function mse(w, X, Y) { var s = 0; for (var i = 0; i < X.length; i++) { var e = pred(w, X[i]) - Y[i]; s += e * e; } return s / X.length; }
+    var L = 50, R = 470, T = 30, B = 270;
+    function X(u) { return L + u * (R - L); } function Y(v) { return (T + B) / 2 - v * 60; }
+    function render() {
+      var d = +slider.value, w = fit(d), tr = mse(w, xs, ys), te = mse(w, xt, yt), s = "";
+      s += '<line x1="' + L + '" y1="' + B + '" x2="' + R + '" y2="' + B + '" stroke="var(--ink-3)"/><line x1="' + L + '" y1="' + B + '" x2="' + L + '" y2="' + T + '" stroke="var(--ink-3)"/>';
+      s += '<text x="' + ((L + R) / 2) + '" y="' + (B + 20) + '" text-anchor="middle">x</text>';
+      var truth = "", cur = "", open = false;
+      for (var i = 0; i <= 100; i++) {
+        var u = i / 100, v = Math.sin(2 * Math.PI * u), p = pred(w, u);
+        truth += (i ? " L" : "M") + X(u).toFixed(1) + "," + Y(v).toFixed(1);
+        if (p > -2.1 && p < 2.1) { cur += (open ? " L" : " M") + X(u).toFixed(1) + "," + Y(p).toFixed(1); open = true; } else open = false;
+      }
+      s += '<path d="' + truth + '" fill="none" stroke="var(--ink-3)" stroke-dasharray="4 3"/>';
+      s += '<path d="' + cur + '" fill="none" stroke="var(--s7)" stroke-width="3"/>';
+      for (i = 0; i < 30; i++) s += '<circle cx="' + X(xt[i]).toFixed(1) + '" cy="' + Y(yt[i]).toFixed(1) + '" r="4" fill="var(--s2)" fill-opacity=".8"/>';
+      for (i = 0; i < 30; i++) s += '<circle cx="' + X(xs[i]).toFixed(1) + '" cy="' + Y(ys[i]).toFixed(1) + '" r="4.5" fill="var(--s1)"/>';
+      s += '<text x="' + (L + 6) + '" y="' + (T + 12) + '" font-weight="700" fill="var(--s7)">degree ' + d + ' fit</text>';
+      // bars
+      var bx = 560, bw = 60, maxE = 1.0, bT = 50, bB = 270;
+      function bh(e) { return Math.min(bB - bT, e / maxE * (bB - bT)); }
+      s += '<line x1="' + (bx - 30) + '" y1="' + bB + '" x2="' + (bx + 2 * bw + 50) + '" y2="' + bB + '" stroke="var(--ink-3)"/>';
+      s += '<line x1="' + (bx - 30) + '" y1="' + bB + '" x2="' + (bx - 30) + '" y2="' + bT + '" stroke="var(--ink-3)"/>';
+      s += '<text x="' + (bx - 34) + '" y="' + (bB + 4) + '" text-anchor="end">0</text><text x="' + (bx - 34) + '" y="' + (bT + 4) + '" text-anchor="end">1.0</text>';
+      s += '<text x="' + (bx - 34) + '" y="' + ((bT + bB) / 2 + 4) + '" text-anchor="end">0.5</text>';
+      s += '<rect x="' + bx + '" y="' + (bB - bh(tr)) + '" width="' + bw + '" height="' + bh(tr) + '" fill="var(--s1)"/>';
+      s += '<rect x="' + (bx + bw + 20) + '" y="' + (bB - bh(te)) + '" width="' + bw + '" height="' + bh(te) + '" fill="var(--s2)"/>';
+      s += '<text x="' + (bx + bw / 2) + '" y="' + (bB + 18) + '" text-anchor="middle">train</text><text x="' + (bx + bw + 20 + bw / 2) + '" y="' + (bB + 18) + '" text-anchor="middle">test</text>';
+      s += '<text x="' + (bx + bw / 2) + '" y="' + (bB - bh(tr) - 6) + '" text-anchor="middle" font-size="11">' + tr.toFixed(2) + '</text>';
+      s += '<text x="' + (bx + bw + 20 + bw / 2) + '" y="' + (Math.max(bT - 6, bB - bh(te) - 6)) + '" text-anchor="middle" font-size="11">' + (te > maxE ? te.toFixed(1) + " ↑" : te.toFixed(2)) + '</text>';
+      s += '<text x="' + (bx + bw + 10) + '" y="' + (bT - 18) + '" text-anchor="middle" font-weight="700">mean squared error</text>';
+      s += '<text x="' + (bx + bw + 10) + '" y="' + (bB + 36) + '" text-anchor="middle" font-size="11" opacity=".7">noise floor ≈ 0.09</text>';
+      svg.innerHTML = s;
+      oTr.textContent = tr.toFixed(3); oTe.textContent = te.toFixed(3);
+    }
+    slider.addEventListener("input", render); render();
+  })();
+
+  /* ---------- Widget 2: regularization strength ---------- */
+  (function () {
+    var lamS = document.getElementById("rg-lam"), typeS = document.getElementById("rg-type"), svg = document.getElementById("rg-svg");
+    if (!lamS || !svg) return;
+    var out = document.getElementById("rg-lam-out"), oNz = document.getElementById("rg-nz"), oN = document.getElementById("rg-norm");
+    var r = rng(11), n = 80, p = 8, trueW = [3, -2, 1.5, 0, 0, 0.8, 0, 0], X = [], Y = [], i, j;
+    for (i = 0; i < n; i++) {
+      var row = []; for (j = 0; j < p; j++) row.push(gauss(r));
+      row[3] = 0.9 * row[0] + 0.44 * gauss(r); row[6] = 0.9 * row[1] + 0.44 * gauss(r);
+      var yv = 0; for (j = 0; j < p; j++) yv += trueW[j] * row[j]; Y.push(yv + 0.5 * gauss(r)); X.push(row);
+    }
+    for (j = 0; j < p; j++) { var m = 0, v = 0; for (i = 0; i < n; i++) m += X[i][j]; m /= n; for (i = 0; i < n; i++) v += (X[i][j] - m) * (X[i][j] - m); v = Math.sqrt(v / n); for (i = 0; i < n; i++) X[i][j] = (X[i][j] - m) / v; }
+    var ym = 0; for (i = 0; i < n; i++) ym += Y[i]; ym /= n; for (i = 0; i < n; i++) Y[i] -= ym;
+    function ridge(lam) {
+      var A = [], b = [], a, c;
+      for (a = 0; a < p; a++) { A.push(new Array(p).fill(0)); b.push(0); }
+      for (i = 0; i < n; i++) for (a = 0; a < p; a++) { b[a] += X[i][a] * Y[i]; for (c = 0; c < p; c++) A[a][c] += X[i][a] * X[i][c]; }
+      for (a = 0; a < p; a++) A[a][a] += lam * n;
+      return solve(A, b);
+    }
+    function lasso(lam) {
+      var w = new Array(p).fill(0), it, jj, t = lam * n;
+      for (it = 0; it < 150; it++) for (jj = 0; jj < p; jj++) {
+        var rho = 0, z = 0;
+        for (i = 0; i < n; i++) { var res = Y[i]; for (var k = 0; k < p; k++) if (k !== jj) res -= w[k] * X[i][k]; rho += X[i][jj] * res; z += X[i][jj] * X[i][jj]; }
+        w[jj] = (rho > t ? rho - t : (rho < -t ? rho + t : 0)) / z;
+      }
+      return w;
+    }
+    var L = 60, R = 730, T = 30, B = 250, zero = (T + B) / 2;
+    function Yv(v) { return zero - v * 30; }
+    function render() {
+      var v = +lamS.value, lam = v === 0 ? 0 : Math.pow(10, v / 25 - 3), l1 = typeS.value === "l1";
+      var w = l1 ? lasso(lam) : ridge(lam), s = "", nz = 0, nrm = 0, bw = (R - L) / p;
+      s += '<line x1="' + L + '" y1="' + zero + '" x2="' + R + '" y2="' + zero + '" stroke="var(--ink-3)"/>';
+      s += '<line x1="' + L + '" y1="' + Yv(3) + '" x2="' + R + '" y2="' + Yv(3) + '" stroke="var(--border)" stroke-dasharray="3 3"/><line x1="' + L + '" y1="' + Yv(-3) + '" x2="' + R + '" y2="' + Yv(-3) + '" stroke="var(--border)" stroke-dasharray="3 3"/>';
+      s += '<text x="' + (L - 8) + '" y="' + (Yv(3) + 4) + '" text-anchor="end">3</text><text x="' + (L - 8) + '" y="' + (zero + 4) + '" text-anchor="end">0</text><text x="' + (L - 8) + '" y="' + (Yv(-3) + 4) + '" text-anchor="end">−3</text>';
+      for (j = 0; j < p; j++) {
+        var x = L + j * bw + 12, wj = w[j], h = Math.abs(wj) * 30, y = wj >= 0 ? Yv(wj) : zero;
+        if (Math.abs(wj) > 1e-6) nz++; nrm += wj * wj;
+        var th = Math.abs(trueW[j]) * 30, ty = trueW[j] >= 0 ? Yv(trueW[j]) : zero;
+        s += '<rect x="' + (x + 2) + '" y="' + ty + '" width="' + (bw - 28) + '" height="' + th + '" fill="none" stroke="var(--ink-3)" stroke-dasharray="3 2"/>';
+        s += '<rect x="' + (x + 2) + '" y="' + y + '" width="' + (bw - 28) + '" height="' + h + '" fill="' + (Math.abs(wj) > 1e-6 ? (l1 ? "var(--s2)" : "var(--s1)") : "var(--critical)") + '" fill-opacity=".85"/>';
+        s += '<text x="' + (x + bw / 2 - 12) + '" y="' + (B + 20) + '" text-anchor="middle">x' + (j + 1) + '</text>';
+        s += '<text x="' + (x + bw / 2 - 12) + '" y="' + (B + 36) + '" text-anchor="middle" font-size="10" opacity=".7">true ' + trueW[j] + '</text>';
+        s += '<text x="' + (x + bw / 2 - 12) + '" y="' + ((wj >= 0 ? y : zero + h) + (wj >= 0 ? -5 : 13)) + '" text-anchor="middle" font-size="11">' + wj.toFixed(2) + '</text>';
+      }
+      s += '<text x="' + (R - 4) + '" y="' + (T - 8) + '" text-anchor="end" opacity=".75">dashed outline = true weight · bar = fitted coefficient (' + (l1 ? "L1" : "L2") + ', α = ' + (lam === 0 ? "0" : lam.toPrecision(2)) + ')</text>';
+      svg.innerHTML = s;
+      out.textContent = lam === 0 ? "0" : lam.toPrecision(2);
+      oNz.textContent = nz + " / 8"; oN.textContent = Math.sqrt(nrm).toFixed(2);
+    }
+    lamS.addEventListener("input", render); typeS.addEventListener("change", render); render();
+  })();
+})();
+</script>
+</body>
+</html>

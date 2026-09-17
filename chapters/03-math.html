@@ -1,0 +1,1109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>03 · The Math You Actually Need — ML: Zero to Expert</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body data-chapter="03">
+<header class="topbar"></header>
+<div class="progress-track"><div></div></div>
+<div class="shell">
+<nav class="sidebar"></nav>
+<main class="content"><div class="container">
+
+<header class="ch-header">
+  <div class="kicker">Part I · Foundations · Chapter 03</div>
+  <h1>The Math You Actually Need</h1>
+  <p class="lede">You do not need a mathematics degree to be excellent at applied machine learning. You need about a dozen ideas, understood physically: what a dot product does, why a gradient points uphill, what a probability distribution is, how Bayes' theorem turns a test result into a belief, and why we take logs of everything. This chapter gives you each idea three times: as a picture for a 9-year-old, as a precise definition, and as five lines of numpy.</p>
+  <div class="meta"><span class="level">Beginner</span> <span>⏱ 90 min read</span> <span>·</span> <span>Prereqs: Ch 1</span></div>
+</header>
+
+<div class="objectives">
+  <h3>By the end of this chapter you will be able to</h3>
+  <ul>
+    <li>Read a formula with vectors and matrices and say in words what it computes, and predict the shape of every intermediate result.</li>
+    <li>Explain what a derivative and a gradient measure, and why "follow the negative gradient" finds a minimum.</li>
+    <li>Apply the chain rule to a two-step function, which is all backpropagation ever does.</li>
+    <li>Use the five distributions that cover 90% of applied work, and compute an expectation, a variance and a conditional probability.</li>
+    <li>Run Bayes' theorem on a medical test by hand and explain why a positive result on a rare disease is usually a false alarm.</li>
+    <li>Report a mean with an honest uncertainty (standard error, bootstrap CI), and say what a p-value does and does not mean.</li>
+    <li>Compute entropy in bits and explain why decision trees care about it.</li>
+  </ul>
+</div>
+
+<div class="toc-inline"><strong>In this chapter</strong>
+<ol>
+  <li><a href="#s1">Vectors and the dot product</a></li>
+  <li><a href="#s2">Matrices, shapes, and why shape errors happen</a></li>
+  <li><a href="#s3">Norms, distances and cosine similarity</a></li>
+  <li><a href="#s4">Derivatives, gradients and walking downhill</a></li>
+  <li><a href="#s5">Logs, exponentials, sigmoid and softmax</a></li>
+  <li><a href="#s6">Probability: distributions, expectation, Bayes</a></li>
+  <li><a href="#s7">Maximum likelihood: where loss functions come from</a></li>
+  <li><a href="#s8">Statistics you will use every week</a></li>
+  <li><a href="#s9">A taste of information theory: entropy</a></li>
+  <li><a href="#quiz">Quiz &amp; exercises</a></li>
+</ol></div>
+
+<!-- ============================================================ -->
+<h2 id="s1">1. Vectors and the dot product</h2>
+
+<div class="callout eli9"><div class="title">Explain it like I'm 9</div>
+<p>A vector is just a list of numbers that belong together, like a scorecard: (3 goals, 1 assist, 2 fouls). You can also draw it as an arrow: start at zero, go 3 steps right and 1 step up. Both pictures are the same thing. In Chapter 2 every row of the customer table was a vector: one customer, described by a handful of numbers.</p>
+</div>
+
+<p><strong>Precisely:</strong> a vector <span class="var">x</span> ∈ ℝ<sup>d</sup> is an ordered list of <em>d</em> real numbers, written <span class="var">x</span> = (x<sub>1</sub>, x<sub>2</sub>, …, x<sub>d</sub>). Geometrically it is a point (or an arrow from the origin to that point) in <em>d</em>-dimensional space. In ML, <em>d</em> is the number of features, and you cannot draw <em>d</em> = 50, but every operation behaves exactly as it does in 2-D, which is why the pictures below are worth learning.</p>
+
+<p>The single most important operation in this book is the <strong>dot product</strong>. It takes two vectors of the same length and returns one number:</p>
+
+<div class="formula"><span class="var">w</span> · <span class="var">x</span> = w<sub>1</sub>x<sub>1</sub> + w<sub>2</sub>x<sub>2</sub> + … + w<sub>d</sub>x<sub>d</sub> = ∑<sub>i</sub> w<sub>i</sub>x<sub>i</sub></div>
+
+<div class="callout math"><div class="title">The math (optional)</div>
+<p>Two readings of the same formula. <strong>As a weighted sum:</strong> if <span class="var">x</span> is a customer's features and <span class="var">w</span> is a set of weights (how much each feature matters, with sign), then <span class="var">w</span>·<span class="var">x</span> is the customer's score. Linear regression (Chapter 5) and logistic regression (Chapter 6) <em>are</em> this formula plus a constant. <strong>As similarity:</strong> geometrically, <span class="var">w</span>·<span class="var">x</span> = ‖<span class="var">w</span>‖ ‖<span class="var">x</span>‖ cos θ, where ‖·‖ is the length of a vector and θ is the angle between them. So the dot product is large and positive when the arrows point the same way, zero when they are perpendicular, and negative when they point against each other. Every "how similar are these two embeddings?" question in Chapter 19 is a dot product.</p>
+</div>
+
+<figure class="fig">
+<svg viewBox="0 0 800 300" role="img" aria-label="Left: a vector drawn as an arrow with its two components. Right: the dot product as a projection, with three cases: aligned arrows give a positive value, perpendicular arrows give zero, opposing arrows give a negative value">
+  <defs><marker id="arr-m1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker>
+  <marker id="arr-m1b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--s1)"/></marker>
+  <marker id="arr-m1c" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--s2)"/></marker></defs>
+  <!-- left: a vector -->
+  <text x="130" y="24" text-anchor="middle" class="lbl-strong" font-size="13">A vector is a list and an arrow</text>
+  <line x1="40" y1="240" x2="250" y2="240" class="axis" marker-end="url(#arr-m1)"/>
+  <line x1="40" y1="240" x2="40" y2="50" class="axis" marker-end="url(#arr-m1)"/>
+  <text x="250" y="258" text-anchor="end" class="lbl">x₁ (tenure, years)</text>
+  <text x="22" y="150" text-anchor="middle" class="lbl" transform="rotate(-90 22 150)">x₂ (support calls)</text>
+  <g class="grid"><line x1="40" y1="180" x2="240" y2="180"/><line x1="40" y1="120" x2="240" y2="120"/><line x1="100" y1="240" x2="100" y2="60"/><line x1="160" y1="240" x2="160" y2="60"/><line x1="220" y1="240" x2="220" y2="60"/></g>
+  <line x1="40" y1="240" x2="220" y2="180" stroke="var(--s1)" stroke-width="3" marker-end="url(#arr-m1b)"/>
+  <line x1="40" y1="240" x2="220" y2="240" stroke="var(--s1)" stroke-width="1.5" stroke-dasharray="4 3"/>
+  <line x1="220" y1="240" x2="220" y2="180" stroke="var(--s1)" stroke-width="1.5" stroke-dasharray="4 3"/>
+  <text x="130" y="256" text-anchor="middle" class="lbl" fill="var(--s1)" font-size="11">3</text>
+  <text x="232" y="214" class="lbl" fill="var(--s1)" font-size="11">1</text>
+  <text x="150" y="196" text-anchor="middle" class="lbl-strong" fill="var(--s1)">x = (3, 1)</text>
+  <text x="130" y="282" text-anchor="middle" class="lbl">length ‖x‖ = √(3² + 1²) ≈ 3.16</text>
+  <!-- right: dot product cases -->
+  <text x="540" y="24" text-anchor="middle" class="lbl-strong" font-size="13">Dot product = ‖w‖ ‖x‖ cos θ  (a similarity)</text>
+  <!-- case 1 aligned -->
+  <g>
+    <line x1="320" y1="150" x2="420" y2="90" stroke="var(--s1)" stroke-width="2.5" marker-end="url(#arr-m1b)"/>
+    <line x1="320" y1="150" x2="400" y2="120" stroke="var(--s2)" stroke-width="2.5" marker-end="url(#arr-m1c)"/>
+    <!-- projection of orange onto blue direction -->
+    <line x1="400" y1="120" x2="386" y2="110" stroke="var(--ink-3)" stroke-dasharray="3 2"/>
+    <text x="370" y="180" text-anchor="middle" class="lbl-strong">small angle</text>
+    <text x="370" y="196" text-anchor="middle" class="lbl">cos θ ≈ 0.9</text>
+    <text x="370" y="214" text-anchor="middle" class="lbl-strong" fill="var(--good)">w · x &gt; 0</text>
+    <text x="370" y="232" text-anchor="middle" class="lbl" font-size="11">"similar"</text>
+  </g>
+  <!-- case 2 perpendicular -->
+  <g>
+    <line x1="490" y1="150" x2="590" y2="150" stroke="var(--s1)" stroke-width="2.5" marker-end="url(#arr-m1b)"/>
+    <line x1="490" y1="150" x2="490" y2="80" stroke="var(--s2)" stroke-width="2.5" marker-end="url(#arr-m1c)"/>
+    <path d="M490,138 L502,138 L502,150" fill="none" stroke="var(--ink-3)"/>
+    <text x="540" y="180" text-anchor="middle" class="lbl-strong">right angle</text>
+    <text x="540" y="196" text-anchor="middle" class="lbl">cos θ = 0</text>
+    <text x="540" y="214" text-anchor="middle" class="lbl-strong">w · x = 0</text>
+    <text x="540" y="232" text-anchor="middle" class="lbl" font-size="11">"unrelated"</text>
+  </g>
+  <!-- case 3 opposite -->
+  <g>
+    <line x1="700" y1="150" x2="780" y2="110" stroke="var(--s1)" stroke-width="2.5" marker-end="url(#arr-m1b)"/>
+    <line x1="700" y1="150" x2="640" y2="180" stroke="var(--s2)" stroke-width="2.5" marker-end="url(#arr-m1c)"/>
+    <text x="710" y="180" text-anchor="middle" class="lbl-strong">wide angle</text>
+    <text x="710" y="196" text-anchor="middle" class="lbl">cos θ ≈ −1</text>
+    <text x="710" y="214" text-anchor="middle" class="lbl-strong" fill="var(--critical)">w · x &lt; 0</text>
+    <text x="710" y="232" text-anchor="middle" class="lbl" font-size="11">"opposite"</text>
+  </g>
+  <text x="540" y="270" text-anchor="middle" class="lbl">As a weighted sum: w·x = 0.5·3 + (−1.0)·1 + 0.8·2 = 2.1 — the model's score for this customer.</text>
+  <text x="540" y="288" text-anchor="middle" class="lbl">Same formula, two meanings. Blue = w, orange = x.</text>
+</svg>
+<figcaption><strong>Figure 3.1 — One formula, two pictures.</strong> Left: a vector is both a list of coordinates and an arrow. Right: the dot product measures how much two arrows point the same way, scaled by their lengths. Read it as a weighted sum when computing a model's score, and as a similarity when comparing two things.</figcaption>
+</figure>
+
+<pre class="code" data-lang="python"><code><span class="cm"># Vectors and the dot product in numpy</span>
+<span class="kw">import</span> numpy <span class="kw">as</span> np
+x = np.array([<span class="nu">3.0</span>, <span class="nu">1.0</span>, <span class="nu">2.0</span>])          <span class="cm"># one customer: tenure_years, support_calls, plan_tier</span>
+w = np.array([<span class="nu">0.5</span>, -<span class="nu">1.0</span>, <span class="nu">0.8</span>])         <span class="cm"># weights the model learned</span>
+<span class="fn">print</span>(<span class="st">"length (norm) of x:"</span>, np.linalg.norm(x).round(<span class="nu">3</span>))
+<span class="fn">print</span>(<span class="st">"dot product w·x    :"</span>, np.dot(w, x))               <span class="cm"># weighted sum = the model's score</span>
+<span class="fn">print</span>(<span class="st">"same thing, spelled out:"</span>, (w * x).sum())
+
+a = np.array([<span class="nu">1.0</span>, <span class="nu">2.0</span>]); b = np.array([<span class="nu">2.0</span>, <span class="nu">4.0</span>]); c = np.array([-<span class="nu">2.0</span>, <span class="nu">1.0</span>])
+cos = <span class="kw">lambda</span> u, v: np.dot(u, v) / (np.linalg.norm(u) * np.linalg.norm(v))
+<span class="fn">print</span>(<span class="st">"cos(a,b) ="</span>, cos(a, b).round(<span class="nu">3</span>), <span class="st">"  cos(a,c) ="</span>, cos(a, c).round(<span class="nu">3</span>))
+<span class="out"># length (norm) of x: 3.742</span>
+<span class="out"># dot product w·x    : 2.1</span>
+<span class="out"># same thing, spelled out: 2.1</span>
+<span class="out"># cos(a,b) = 1.0   cos(a,c) = 0.0</span></code></pre>
+
+<div class="callout key"><div class="title">Key idea</div>
+<p><strong>Almost every model computes dot products.</strong> A linear model is one dot product. A neural network layer is many dot products in parallel (a matrix multiply), then a squashing function. Attention in a transformer (Chapter 18) is dot products between queries and keys. If you understand "weighted sum" and "similarity", you already understand the arithmetic of deep learning.</p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s2">2. Matrices, shapes, and why shape errors happen</h2>
+
+<div class="callout eli9"><div class="title">Explain it like I'm 9</div>
+<p>A matrix is a table of numbers with rows and columns, like the customer spreadsheet. Multiplying the table by a list of weights means: for every row, do the "weighted sum" trick and write down one number. So instead of scoring customers one at a time, you score all 2,000 in one move. That is the whole reason computers love matrices: one instruction, thousands of dot products.</p>
+</div>
+
+<p><strong>Precisely:</strong> a matrix <span class="var">X</span> ∈ ℝ<sup>n×d</sup> has <em>n</em> rows and <em>d</em> columns. In ML the rows are examples and the columns are features, so <span class="var">X</span> is literally the feature table from Chapter 2, and the label column is a vector <span class="var">y</span> ∈ ℝ<sup>n</sup>. There are two ways to think about multiplying by a matrix:</p>
+
+<ol class="steps">
+  <li><strong>Matrix × vector = apply the model to every row.</strong> <span class="var">X</span><span class="var">w</span> takes the (n×d) table and the (d) weight vector and returns (n) scores: row <em>i</em> of the result is the dot product of row <em>i</em> of <span class="var">X</span> with <span class="var">w</span>. This is how sklearn's <code>predict</code> works for linear models: one matrix multiply.</li>
+  <li><strong>Matrix × matrix = apply many models at once, or transform the space.</strong> <span class="var">X</span><span class="var">W</span> with <span class="var">W</span> of shape (d×k) gives (n×k): each of the <em>k</em> columns of <span class="var">W</span> is a separate weight vector, so you get <em>k</em> scores per row. A neural network layer is exactly this: it turns <em>d</em> input features into <em>k</em> new features (Chapter 15). Geometrically, a matrix <em>transforms</em> space: it can rotate, stretch, squash or project the cloud of points. PCA (Chapter 12) is a matrix that rotates the data so the interesting directions line up with the axes.</li>
+</ol>
+
+<figure class="fig">
+<svg viewBox="0 0 800 330" role="img" aria-label="Matrix times vector: an n by d table times a d by 1 column gives an n by 1 column of scores; one highlighted row shows the dot product. Below, matrix times matrix: n by d times d by k gives n by k, with the rule that inner dimensions must match">
+  <defs><marker id="arr-m2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+  <text x="20" y="24" class="lbl-strong" font-size="13">Matrix × vector: score every row at once</text>
+  <!-- X: 5 rows x 3 cols, cells 34 wide -->
+  <g stroke="var(--border)" fill="var(--surface)">
+    <rect x="40" y="40" width="102" height="150"/>
+    <line x1="74" y1="40" x2="74" y2="190"/><line x1="108" y1="40" x2="108" y2="190"/>
+    <line x1="40" y1="70" x2="142" y2="70"/><line x1="40" y1="100" x2="142" y2="100"/><line x1="40" y1="130" x2="142" y2="130"/><line x1="40" y1="160" x2="142" y2="160"/>
+  </g>
+  <rect x="40" y="100" width="102" height="30" fill="var(--s1)" fill-opacity=".2"/>
+  <g class="lbl" font-size="10" text-anchor="middle">
+    <text x="57" y="59">2.1</text><text x="91" y="59">0.4</text><text x="125" y="59">1.0</text>
+    <text x="57" y="89">0.3</text><text x="91" y="89">3.0</text><text x="125" y="89">0.0</text>
+    <text x="57" y="119" font-weight="700">3.0</text><text x="91" y="119" font-weight="700">1.0</text><text x="125" y="119" font-weight="700">2.0</text>
+    <text x="57" y="149">1.2</text><text x="91" y="149">0.0</text><text x="125" y="149">1.0</text>
+    <text x="57" y="179">4.5</text><text x="91" y="179">2.0</text><text x="125" y="179">0.0</text>
+  </g>
+  <text x="91" y="208" text-anchor="middle" class="lbl-strong">X  (n × d) = (5 × 3)</text>
+  <text x="91" y="224" text-anchor="middle" class="lbl" font-size="11">rows = customers, cols = features</text>
+  <text x="165" y="120" text-anchor="middle" class="lbl-strong" font-size="16">×</text>
+  <!-- w: 3 x 1 -->
+  <g stroke="var(--border)" fill="var(--surface)">
+    <rect x="185" y="70" width="34" height="90"/><line x1="185" y1="100" x2="219" y2="100"/><line x1="185" y1="130" x2="219" y2="130"/>
+  </g>
+  <rect x="185" y="70" width="34" height="90" fill="var(--s2)" fill-opacity=".2"/>
+  <g class="lbl" font-size="10" text-anchor="middle" font-weight="700"><text x="202" y="89">0.5</text><text x="202" y="119">−1.0</text><text x="202" y="149">0.8</text></g>
+  <text x="202" y="208" text-anchor="middle" class="lbl-strong">w  (d) = (3)</text>
+  <text x="202" y="224" text-anchor="middle" class="lbl" font-size="11">one weight per feature</text>
+  <text x="240" y="120" text-anchor="middle" class="lbl-strong" font-size="16">=</text>
+  <!-- result 5 x 1 -->
+  <g stroke="var(--border)" fill="var(--surface)">
+    <rect x="258" y="40" width="40" height="150"/>
+    <line x1="258" y1="70" x2="298" y2="70"/><line x1="258" y1="100" x2="298" y2="100"/><line x1="258" y1="130" x2="298" y2="130"/><line x1="258" y1="160" x2="298" y2="160"/>
+  </g>
+  <rect x="258" y="100" width="40" height="30" fill="var(--s7)" fill-opacity=".2"/>
+  <g class="lbl" font-size="10" text-anchor="middle"><text x="278" y="59">1.45</text><text x="278" y="89">−2.85</text><text x="278" y="119" font-weight="700">2.1</text><text x="278" y="149">1.4</text><text x="278" y="179">0.25</text></g>
+  <text x="278" y="208" text-anchor="middle" class="lbl-strong">Xw  (n) = (5)</text>
+  <text x="278" y="224" text-anchor="middle" class="lbl" font-size="11">one score per row</text>
+  <!-- explanation of highlighted row -->
+  <path d="M300,115 L330,115" class="arrow" marker-end="url(#arr-m2)"/>
+  <text x="336" y="112" class="lbl" font-size="11">row 3: 3.0·0.5 + 1.0·(−1.0) + 2.0·0.8</text>
+  <text x="336" y="127" class="lbl-strong" font-size="11">= 2.1  (the dot product from §1)</text>
+  <!-- shapes rule -->
+  <rect x="470" y="40" width="310" height="120" rx="8" class="fill-surface2" stroke="var(--border)"/>
+  <text x="625" y="62" text-anchor="middle" class="lbl-strong" font-size="13">The shape rule</text>
+  <text x="625" y="88" text-anchor="middle" class="lbl-strong" font-size="15">(n × <tspan fill="var(--s7)">d</tspan>) · (<tspan fill="var(--s7)">d</tspan> × k) → (n × k)</text>
+  <text x="625" y="112" text-anchor="middle" class="lbl" font-size="11">inner dimensions must be equal; they disappear.</text>
+  <text x="625" y="128" text-anchor="middle" class="lbl" font-size="11">outer dimensions survive and give the result's shape.</text>
+  <text x="625" y="148" text-anchor="middle" class="lbl" font-size="11">(5×3)·(3×1) ✓ (5×1)     (3×1)·(5×3) ✗ 1 ≠ 5</text>
+  <!-- matrix x matrix -->
+  <text x="20" y="262" class="lbl-strong" font-size="13">Matrix × matrix: k models at once (= one neural-network layer)</text>
+  <g stroke="var(--border)" fill="var(--surface)">
+    <rect x="40" y="275" width="60" height="44"/><rect x="128" y="275" width="44" height="30"/><rect x="200" y="275" width="70" height="44"/>
+  </g>
+  <rect x="40" y="275" width="60" height="44" fill="var(--s1)" fill-opacity=".15"/><rect x="128" y="275" width="44" height="30" fill="var(--s2)" fill-opacity=".15"/><rect x="200" y="275" width="70" height="44" fill="var(--s7)" fill-opacity=".15"/>
+  <text x="70" y="300" text-anchor="middle" class="lbl-strong" font-size="11">X: 2000 × 8</text>
+  <text x="114" y="300" text-anchor="middle" class="lbl-strong" font-size="13">×</text>
+  <text x="150" y="293" text-anchor="middle" class="lbl-strong" font-size="11">W: 8 × 16</text>
+  <text x="186" y="300" text-anchor="middle" class="lbl-strong" font-size="13">=</text>
+  <text x="235" y="300" text-anchor="middle" class="lbl-strong" font-size="11">H: 2000 × 16</text>
+  <text x="300" y="292" class="lbl" font-size="11">Every customer (row) gets 16 new features, each a different</text>
+  <text x="300" y="307" class="lbl" font-size="11">weighted sum of the 8 originals. Column j of W is model j's weights.</text>
+</svg>
+<figcaption><strong>Figure 3.2 — Shapes tell you what a multiplication means.</strong> (n×d)(d) scores every row with one model. (n×d)(d×k) scores every row with <em>k</em> models at once, which is what a neural-network layer does. The inner dimension must match and vanishes; the outer ones form the result. Nearly every "shape mismatch" error is a violation of this one rule.</figcaption>
+</figure>
+
+<pre class="code" data-lang="python"><code><span class="cm"># Shapes: the rule, and the error you will see a hundred times</span>
+<span class="kw">import</span> numpy <span class="kw">as</span> np
+rng = np.random.default_rng(<span class="nu">0</span>)
+X = rng.normal(size=(<span class="nu">5</span>, <span class="nu">3</span>))            <span class="cm"># 5 customers × 3 features  (n×d)</span>
+w = np.array([<span class="nu">0.5</span>, -<span class="nu">1.0</span>, <span class="nu">0.8</span>])         <span class="cm"># d weights                  (d,)</span>
+<span class="fn">print</span>(<span class="st">"X.shape:"</span>, X.shape, <span class="st">" w.shape:"</span>, w.shape)
+<span class="fn">print</span>(<span class="st">"X @ w  -&gt; one score per row:"</span>, (X @ w).round(<span class="nu">2</span>), <span class="st">" shape"</span>, (X @ w).shape)
+
+W = rng.normal(size=(<span class="nu">3</span>, <span class="nu">4</span>))            <span class="cm"># a layer that maps 3 features -&gt; 4 new ones  (d×k)</span>
+H = X @ W                              <span class="cm"># (n×d)(d×k) = (n×k): all rows at once</span>
+<span class="fn">print</span>(<span class="st">"(5×3)(3×4) -&gt;"</span>, H.shape)
+<span class="kw">try</span>:
+    W @ X                              <span class="cm"># (3×4)(5×3): inner dims 4 and 5 do not match</span>
+<span class="kw">except</span> ValueError <span class="kw">as</span> e:
+    <span class="fn">print</span>(<span class="st">"shape error:"</span>, <span class="fn">str</span>(e)[:<span class="nu">60</span>])
+<span class="fn">print</span>(<span class="st">"fix with a transpose: (X @ W).T has shape"</span>, (X @ W).T.shape)
+<span class="out"># X.shape: (5, 3)  w.shape: (3,)</span>
+<span class="out"># X @ w  -&gt; one score per row: [ 0.71  0.88 -0.86  0.02 -1.94]  shape (5,)</span>
+<span class="out"># (5×3)(3×4) -&gt; (5, 4)</span>
+<span class="out"># shape error: matmul: Input operand 1 has a mismatch in its core dimension</span>
+<span class="out"># fix with a transpose: (X @ W).T has shape (4, 5)</span></code></pre>
+
+<div class="callout warn"><div class="title">Common mistake</div>
+<p><strong>Fixing a shape error by transposing until it stops complaining.</strong> Transposing (<code>.T</code>) swaps rows and columns. If <code>X.T @ w</code> "works" when <code>X @ w</code> did not, you have probably computed something meaningless (a weighted sum across customers instead of across features). Instead, write the shapes down: <code>X</code> is (n×d), <code>w</code> is (d,), so the result must be (n,). If the shapes on paper do not chain, the code is wrong regardless of whether it runs. The same discipline saves hours in PyTorch (Chapter 16), where a silent broadcast can turn a (32,) vector into a (32×32) matrix without an error.</p>
+</div>
+
+<div class="callout pro"><div class="title">At work</div>
+<p>Comment every tensor with its shape: <code>scores = X @ w   # (n,)</code>. It costs seconds and turns the next debugging session from an hour into a minute. In code review, a matrix expression without a shape comment is a question waiting to be asked.</p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s3">3. Norms, distances and cosine similarity</h2>
+
+<div class="callout eli9"><div class="title">Explain it like I'm 9</div>
+<p>How far apart are two houses? As the crow flies (a straight line): that is Euclidean distance. By walking along the streets of a grid city: that is Manhattan distance, and it is always at least as long. And sometimes you do not care how far, only whether they are in the same <em>direction</em> from where you stand: that is cosine similarity, which ignores distance entirely and only looks at the angle.</p>
+</div>
+
+<p><strong>Precisely.</strong> A <strong>norm</strong> is a length. The Euclidean (L2) norm is ‖<span class="var">x</span>‖<sub>2</sub> = √(∑ x<sub>i</sub>²); the Manhattan (L1) norm is ‖<span class="var">x</span>‖<sub>1</sub> = ∑ |x<sub>i</sub>|. A <strong>distance</strong> between two points is the norm of their difference. And <strong>cosine similarity</strong> is the dot product after dividing out both lengths:</p>
+
+<div class="formula">d<sub>2</sub>(<span class="var">a</span>,<span class="var">b</span>) = √∑(a<sub>i</sub>−b<sub>i</sub>)²     d<sub>1</sub>(<span class="var">a</span>,<span class="var">b</span>) = ∑|a<sub>i</sub>−b<sub>i</sub>|     cos(<span class="var">a</span>,<span class="var">b</span>) = <span class="var">a</span>·<span class="var">b</span> / (‖<span class="var">a</span>‖ ‖<span class="var">b</span>‖)</div>
+
+<div class="callout math"><div class="title">The math (optional)</div>
+<p><em>a<sub>i</sub></em> and <em>b<sub>i</sub></em> are the <em>i</em>-th coordinates of the two points; the sums run over all <em>d</em> features. d<sub>2</sub> is the straight-line distance (Pythagoras in <em>d</em> dimensions). d<sub>1</sub> adds up the per-feature gaps, which makes it less sensitive to one wildly different feature. cos ranges from −1 to 1 and equals 1 whenever <span class="var">b</span> is a positive multiple of <span class="var">a</span>, no matter how long either is. Note that L1 and L2 norms also appear as the <em>penalties</em> in Lasso and Ridge regression (Chapter 7): "keep the weight vector short."</p>
+</div>
+
+<figure class="fig">
+<svg viewBox="0 0 800 300" role="img" aria-label="Three ways to compare two points: Euclidean straight line of length 5, Manhattan path of length 7 along the grid, and cosine similarity measured as the angle between arrows from the origin">
+  <defs><marker id="arr-m3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+  <!-- panel 1 euclid + manhattan -->
+  <text x="200" y="24" text-anchor="middle" class="lbl-strong" font-size="13">Euclidean vs Manhattan: A=(1,2), B=(4,6)</text>
+  <g class="grid">
+    <line x1="60" y1="60" x2="60" y2="250"/><line x1="100" y1="60" x2="100" y2="250"/><line x1="140" y1="60" x2="140" y2="250"/><line x1="180" y1="60" x2="180" y2="250"/><line x1="220" y1="60" x2="220" y2="250"/><line x1="260" y1="60" x2="260" y2="250"/><line x1="300" y1="60" x2="300" y2="250"/><line x1="340" y1="60" x2="340" y2="250"/>
+    <line x1="60" y1="70" x2="340" y2="70"/><line x1="60" y1="100" x2="340" y2="100"/><line x1="60" y1="130" x2="340" y2="130"/><line x1="60" y1="160" x2="340" y2="160"/><line x1="60" y1="190" x2="340" y2="190"/><line x1="60" y1="220" x2="340" y2="220"/><line x1="60" y1="250" x2="340" y2="250"/>
+  </g>
+  <!-- A at (1,2): x=60+40*1=100, y=250-30*2=190 ; B at (4,6): x=220, y=70 -->
+  <path d="M100,190 L220,190 L220,70" fill="none" stroke="var(--s2)" stroke-width="3"/>
+  <line x1="100" y1="190" x2="220" y2="70" stroke="var(--s1)" stroke-width="3"/>
+  <circle cx="100" cy="190" r="6" fill="var(--ink)"/><circle cx="220" cy="70" r="6" fill="var(--ink)"/>
+  <text x="88" y="212" class="lbl-strong">A</text><text x="230" y="66" class="lbl-strong">B</text>
+  <text x="130" y="125" class="lbl-strong" fill="var(--s1)" font-size="11">Euclidean</text>
+  <text x="130" y="140" class="lbl" fill="var(--s1)" font-size="11">√(3²+4²) = 5</text>
+  <text x="232" y="150" class="lbl-strong" fill="var(--s2)" font-size="11">Manhattan</text>
+  <text x="232" y="165" class="lbl" fill="var(--s2)" font-size="11">3 + 4 = 7</text>
+  <text x="160" y="206" text-anchor="middle" class="lbl" font-size="10" fill="var(--s2)">3 across</text>
+  <text x="250" y="130" class="lbl" font-size="10" fill="var(--s2)" transform="rotate(-90 250 130)">4 up</text>
+  <text x="200" y="278" text-anchor="middle" class="lbl">Manhattan ≥ Euclidean always; equal only along an axis.</text>
+  <!-- panel 2 cosine -->
+  <text x="590" y="24" text-anchor="middle" class="lbl-strong" font-size="13">Cosine similarity: only the angle matters</text>
+  <line x1="420" y1="250" x2="770" y2="250" class="axis" marker-end="url(#arr-m3)"/>
+  <line x1="420" y1="250" x2="420" y2="50" class="axis" marker-end="url(#arr-m3)"/>
+  <!-- A=(1,2) -> (440,210); C=(10,20)... use scale 20px/unit: A (440,210), C would be off; draw C at (5,10)->(520,50) label "C = 10·A" -->
+  <line x1="420" y1="250" x2="520" y2="50" stroke="var(--s1)" stroke-width="1.5" stroke-dasharray="5 3"/>
+  <line x1="420" y1="250" x2="440" y2="210" stroke="var(--s1)" stroke-width="3"/>
+  <circle cx="440" cy="210" r="5" fill="var(--s1)"/><text x="448" y="214" class="lbl-strong" fill="var(--s1)">A = (1, 2)</text>
+  <circle cx="520" cy="50" r="5" fill="var(--s1)"/><text x="530" y="56" class="lbl-strong" fill="var(--s1)">C = (10, 20) = 10·A</text>
+  <line x1="420" y1="250" x2="580" y2="130" stroke="var(--s2)" stroke-width="3"/>
+  <circle cx="580" cy="130" r="5" fill="var(--s2)"/><text x="590" y="134" class="lbl-strong" fill="var(--s2)">B = (4, 6)</text>
+  <path d="M420,225 A25,25 0 0 1 438,232" fill="none" stroke="var(--s7)" stroke-width="2"/>
+  <text x="446" y="240" class="lbl" fill="var(--s7)" font-size="11">θ ≈ 7°</text>
+  <text x="600" y="185" class="lbl" font-size="11">cos(A, B) = 0.992   (nearly aligned)</text>
+  <text x="600" y="202" class="lbl" font-size="11">cos(A, C) = 1.000   (identical direction)</text>
+  <text x="600" y="219" class="lbl" font-size="11">euclid(A, C) = 20.1 (far apart!)</text>
+  <text x="590" y="278" text-anchor="middle" class="lbl">Use cosine for text/embeddings, where length = document size.</text>
+</svg>
+<figcaption><strong>Figure 3.3 — Three notions of "close".</strong> Euclidean and Manhattan measure how far apart two points are; cosine measures only whether they point the same way. C is ten times as long as A but has cosine similarity exactly 1 with it. Which one is "right" depends on whether magnitude is meaningful for your features.</figcaption>
+</figure>
+
+<pre class="code" data-lang="python"><code><span class="cm"># The three measures, using sklearn's pairwise helpers (they take 2-D arrays: rows are points)</span>
+<span class="kw">import</span> numpy <span class="kw">as</span> np
+<span class="kw">from</span> sklearn.metrics.pairwise <span class="kw">import</span> euclidean_distances, manhattan_distances, cosine_similarity
+A = np.array([[<span class="nu">1.0</span>, <span class="nu">2.0</span>]]); B = np.array([[<span class="nu">4.0</span>, <span class="nu">6.0</span>]]); C = np.array([[<span class="nu">10.0</span>, <span class="nu">20.0</span>]])
+<span class="fn">print</span>(<span class="st">"euclid(A,B) ="</span>, euclidean_distances(A, B)[<span class="nu">0</span>,<span class="nu">0</span>])        <span class="cm"># sqrt(3²+4²) = 5</span>
+<span class="fn">print</span>(<span class="st">"manhat(A,B) ="</span>, manhattan_distances(A, B)[<span class="nu">0</span>,<span class="nu">0</span>])        <span class="cm"># 3 + 4 = 7</span>
+<span class="fn">print</span>(<span class="st">"cosine(A,B) ="</span>, cosine_similarity(A, B)[<span class="nu">0</span>,<span class="nu">0</span>].round(<span class="nu">3</span>))
+<span class="fn">print</span>(<span class="st">"cosine(A,C) ="</span>, cosine_similarity(A, C)[<span class="nu">0</span>,<span class="nu">0</span>].round(<span class="nu">3</span>), <span class="st">"&lt;- same direction, 10x longer"</span>)
+<span class="fn">print</span>(<span class="st">"euclid(A,C) ="</span>, euclidean_distances(A, C)[<span class="nu">0</span>,<span class="nu">0</span>].round(<span class="nu">2</span>), <span class="st">"&lt;- 'far' by distance, 'identical' by angle"</span>)
+<span class="out"># euclid(A,B) = 5.0</span>
+<span class="out"># manhat(A,B) = 7.0</span>
+<span class="out"># cosine(A,B) = 0.992</span>
+<span class="out"># cosine(A,C) = 1.0 &lt;- same direction, 10x longer</span>
+<span class="out"># euclid(A,C) = 20.12 &lt;- 'far' by distance, 'identical' by angle</span></code></pre>
+
+<div class="tbl-wrap">
+<table class="tbl">
+<thead><tr><th>Measure</th><th>Use it when…</th><th>Where you will meet it</th></tr></thead>
+<tbody>
+<tr><td><strong>Euclidean (L2)</strong></td><td>Features are on comparable scales (scale them first!) and magnitude matters.</td><td>k-NN and k-means (Ch 11, 12), RBF kernels, Ridge penalty (Ch 7)</td></tr>
+<tr><td><strong>Manhattan (L1)</strong></td><td>You want robustness to one feature being far off; high-dimensional sparse data.</td><td>Lasso penalty and feature selection (Ch 7), some k-NN variants</td></tr>
+<tr><td><strong>Cosine</strong></td><td>Direction matters, length does not: word counts, embeddings, user profiles.</td><td>Text similarity, retrieval, recommenders (Ch 19, 22)</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="callout warn"><div class="title">Common mistake</div>
+<p><strong>Computing Euclidean distances on unscaled features.</strong> If <code>monthly_spend</code> ranges 0–200 and <code>support_calls</code> ranges 0–6, the distance between two customers is almost entirely about spend; the calls column might as well not exist. Any distance-based method (k-NN, k-means, SVMs with RBF kernels, PCA) needs standardised features. Chapter 8 makes this automatic with a <code>Pipeline</code>.</p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s4">4. Derivatives, gradients and walking downhill</h2>
+
+<div class="callout eli9"><div class="title">Explain it like I'm 9</div>
+<p>You are standing on a hillside in thick fog, trying to get to the bottom of the valley. You cannot see, but you can feel which way the ground slopes under your feet. So you take a small step in the steepest downhill direction, feel again, step again. That is gradient descent. The "feel of the slope" is the derivative; when the hill has many directions, the slope in every direction at once is the gradient.</p>
+</div>
+
+<h3>Derivatives: how much does the output move when I nudge the input?</h3>
+<p><strong>Precisely:</strong> for a function <em>f</em>(<em>x</em>) of one variable, the derivative <em>f</em>′(<em>x</em>) is the slope of the tangent line at <em>x</em>, defined as the limit of rise-over-run as the run shrinks:</p>
+<div class="formula">f′(x) = lim<sub>h→0</sub> [ f(x + h) − f(x) ] / h</div>
+<div class="callout math"><div class="title">The math (optional)</div>
+<p><em>h</em> is a tiny nudge to the input; <em>f</em>(<em>x</em>+<em>h</em>) − <em>f</em>(<em>x</em>) is how much the output moved; dividing gives "output change per unit of input change". A positive derivative means the function is rising here (step left to go down); negative means falling (step right); zero means flat, which is where minima, maxima and saddle points live. You will rarely compute derivatives by hand: numpy's finite differences check them, and PyTorch's autograd (Chapter 16) computes them exactly for any function you can write in code. What you need is the <em>meaning</em>.</p>
+</div>
+
+<div class="widget" id="w-tan">
+  <div class="w-title">Interactive: the tangent line is the derivative</div>
+  <div class="controls">
+    <label>x <input type="range" id="tan-x" min="-220" max="220" value="-150" data-out="tan-x-out"> <output id="tan-x-out"></output></label>
+    <span>f(x) = x³/3 − x: <span class="readout" id="tan-f">–</span></span>
+    <span>slope f′(x) = x² − 1: <span class="readout" id="tan-d">–</span></span>
+    <span>gradient step goes: <span class="readout" id="tan-dir">–</span></span>
+  </div>
+  <svg viewBox="0 0 700 260" id="tan-svg" role="img" aria-label="A cubic curve with a movable point and its tangent line; the slope of the tangent is the derivative"></svg>
+  <div class="note">Slide x across the curve. The violet line is the tangent; its slope is the derivative. Where the slope is zero (x = −1 and x = +1) the curve is momentarily flat: one is a local maximum, the other a local minimum. A gradient step always moves <em>against</em> the slope: right when the slope is negative, left when it is positive. Notice that from the far left, walking downhill never reaches the minimum at x = +1: it falls off toward −∞. That is what "local vs global" means in §4.</div>
+</div>
+
+<h3>The gradient: the slope in every direction at once</h3>
+<p>A model has many parameters, so its loss is a function of many variables: <em>L</em>(w<sub>1</sub>, w<sub>2</sub>, …, w<sub>d</sub>). The <strong>partial derivative</strong> ∂<em>L</em>/∂w<sub>i</sub> is the ordinary derivative with respect to w<sub>i</sub> while holding all the others fixed ("nudge only this one knob"). The <strong>gradient</strong> collects them into a vector:</p>
+<div class="formula">∇L(<span class="var">w</span>) = ( ∂L/∂w<sub>1</sub>, ∂L/∂w<sub>2</sub>, …, ∂L/∂w<sub>d</sub> )</div>
+<div class="callout math"><div class="title">The math (optional)</div>
+<p>The gradient is a vector with one entry per parameter. Two facts make it useful. First, <strong>it points in the direction of steepest ascent</strong>: of all directions you could step, the gradient's direction increases <em>L</em> fastest, and its length says how steep. Second, therefore, <strong>−∇L points steepest downhill</strong>. Gradient descent is the update rule</p>
+<div class="formula"><span class="var">w</span> ← <span class="var">w</span> − η · ∇L(<span class="var">w</span>)</div>
+<p>where η (eta, the <em>learning rate</em>) is the step size. Too small and you crawl; too large and you overshoot the valley and bounce out. Chapters 5 and 16 spend real time on choosing it.</p>
+</div>
+
+<figure class="fig">
+<svg viewBox="0 0 800 330" role="img" aria-label="Contour plot of a bowl-shaped loss surface with elliptical level curves. At a point on the slope the gradient arrow points uphill, perpendicular to the contour; a sequence of gradient-descent steps zigzags toward the minimum at the center">
+  <defs><marker id="arr-m4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--s2)"/></marker>
+  <marker id="arr-m4b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--s1)"/></marker>
+  <marker id="arr-m4c" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+  <text x="250" y="24" text-anchor="middle" class="lbl-strong" font-size="13">Loss surface seen from above (contours = equal loss)</text>
+  <line x1="40" y1="290" x2="470" y2="290" class="axis" marker-end="url(#arr-m4c)"/>
+  <line x1="40" y1="290" x2="40" y2="40" class="axis" marker-end="url(#arr-m4c)"/>
+  <text x="470" y="308" text-anchor="end" class="lbl">w₁</text>
+  <text x="24" y="60" class="lbl">w₂</text>
+  <!-- contours centered at (270,180), rx:ry = 2:1 -->
+  <g fill="none" stroke="var(--s1)" stroke-opacity=".9">
+    <ellipse cx="270" cy="180" rx="30" ry="15" stroke-width="1.5"/>
+    <ellipse cx="270" cy="180" rx="65" ry="32" stroke-width="1.3"/>
+    <ellipse cx="270" cy="180" rx="105" ry="52" stroke-width="1.1"/>
+    <ellipse cx="270" cy="180" rx="150" ry="75" stroke-width="1"/>
+    <ellipse cx="270" cy="180" rx="200" ry="100" stroke-width=".9"/>
+  </g>
+  <text x="272" y="184" text-anchor="middle" class="lbl-strong" font-size="10">★ min</text>
+  <text x="420" y="100" class="lbl" font-size="10" fill="var(--s1)">L = 4</text>
+  <text x="380" y="140" class="lbl" font-size="10" fill="var(--s1)">L = 2</text>
+  <text x="330" y="160" class="lbl" font-size="10" fill="var(--s1)">L = 1</text>
+  <!-- point P on the slope and gradient arrow (perpendicular to contour, uphill = outward) -->
+  <circle cx="130" cy="110" r="6" fill="var(--ink)"/>
+  <text x="112" y="100" class="lbl-strong" font-size="11">P</text>
+  <line x1="130" y1="110" x2="80" y2="72" stroke="var(--s2)" stroke-width="2.5" marker-end="url(#arr-m4)"/>
+  <text x="60" y="66" class="lbl-strong" fill="var(--s2)" font-size="11">∇L: uphill,</text>
+  <text x="60" y="80" class="lbl" fill="var(--s2)" font-size="11">⟂ to the contour</text>
+  <line x1="130" y1="110" x2="180" y2="148" stroke="var(--s1)" stroke-width="2.5" marker-end="url(#arr-m4b)"/>
+  <text x="150" y="172" class="lbl-strong" fill="var(--s1)" font-size="11">−η∇L: the step</text>
+  <!-- descent path: zigzag toward center -->
+  <polyline points="180,148 235,200 250,170 268,188 270,181" fill="none" stroke="var(--s7)" stroke-width="2" stroke-dasharray="5 3"/>
+  <g fill="var(--s7)"><circle cx="235" cy="200" r="3.5"/><circle cx="250" cy="170" r="3.5"/><circle cx="268" cy="188" r="3.5"/></g>
+  <text x="240" y="225" class="lbl" fill="var(--s7)" font-size="11">later steps: smaller, because</text>
+  <text x="240" y="239" class="lbl" fill="var(--s7)" font-size="11">the gradient shrinks near the bottom</text>
+  <!-- right: rules -->
+  <rect x="500" y="40" width="280" height="250" rx="8" class="fill-surface2" stroke="var(--border)"/>
+  <text x="640" y="64" text-anchor="middle" class="lbl-strong" font-size="13">Gradient descent, one step</text>
+  <text x="515" y="92" class="lbl" font-size="11">1. Compute the loss at the current w.</text>
+  <text x="515" y="110" class="lbl" font-size="11">2. Compute ∇L: how the loss changes per</text>
+  <text x="515" y="124" class="lbl" font-size="11">    unit nudge of each parameter.</text>
+  <text x="515" y="142" class="lbl" font-size="11">3. Move every parameter a little bit</text>
+  <text x="515" y="156" class="lbl" font-size="11">    against its partial derivative.</text>
+  <text x="515" y="174" class="lbl" font-size="11">4. Repeat until the gradient is ≈ 0.</text>
+  <text x="515" y="204" class="lbl-strong" font-size="11">Why the ellipses matter</text>
+  <text x="515" y="222" class="lbl" font-size="11">Stretched contours = one parameter is on</text>
+  <text x="515" y="236" class="lbl" font-size="11">a bigger scale. Steps zigzag and crawl.</text>
+  <text x="515" y="250" class="lbl" font-size="11">Standardising features makes contours</text>
+  <text x="515" y="264" class="lbl" font-size="11">round, and descent goes straight in.</text>
+  <text x="515" y="282" class="lbl" font-size="11">(That is why scaling matters, Ch 5 &amp; 8.)</text>
+</svg>
+<figcaption><strong>Figure 3.4 — The gradient points uphill; we walk the other way.</strong> Contour lines join points of equal loss. At P the gradient is perpendicular to the contour and points toward higher loss; the update step is the same arrow reversed and scaled by the learning rate. Steps shrink as the slope flattens near the minimum.</figcaption>
+</figure>
+
+<pre class="code" data-lang="python"><code><span class="cm"># Gradient descent on a 2-parameter bowl, with a numerical check of the gradient</span>
+<span class="kw">import</span> numpy <span class="kw">as</span> np
+<span class="kw">def</span> <span class="fn">f</span>(w):            <span class="cm"># a bowl-shaped loss with its minimum at (2, -1)</span>
+    <span class="kw">return</span> (w[<span class="nu">0</span>] - <span class="nu">2</span>)**<span class="nu">2</span> + <span class="nu">3</span>*(w[<span class="nu">1</span>] + <span class="nu">1</span>)**<span class="nu">2</span>
+<span class="kw">def</span> <span class="fn">grad</span>(w):         <span class="cm"># the exact gradient: partial derivatives</span>
+    <span class="kw">return</span> np.array([<span class="nu">2</span>*(w[<span class="nu">0</span>] - <span class="nu">2</span>), <span class="nu">6</span>*(w[<span class="nu">1</span>] + <span class="nu">1</span>)])
+<span class="kw">def</span> <span class="fn">numerical_grad</span>(w, h=<span class="nu">1e-5</span>):   <span class="cm"># sanity check: nudge each input, measure the change</span>
+    g = np.zeros_like(w)
+    <span class="kw">for</span> i <span class="kw">in</span> <span class="fn">range</span>(<span class="fn">len</span>(w)):
+        e = np.zeros_like(w); e[i] = h
+        g[i] = (f(w + e) - f(w - e)) / (<span class="nu">2</span>*h)
+    <span class="kw">return</span> g
+
+w = np.array([-<span class="nu">1.0</span>, <span class="nu">2.0</span>])
+<span class="fn">print</span>(<span class="st">"exact grad:"</span>, grad(w), <span class="st">" numerical:"</span>, numerical_grad(w).round(<span class="nu">4</span>))
+lr = <span class="nu">0.1</span>
+<span class="kw">for</span> step <span class="kw">in</span> <span class="fn">range</span>(<span class="nu">1</span>, <span class="nu">26</span>):
+    w = w - lr * grad(w)             <span class="cm"># walk downhill</span>
+    <span class="kw">if</span> step <span class="kw">in</span> (<span class="nu">1</span>, <span class="nu">5</span>, <span class="nu">10</span>, <span class="nu">25</span>): <span class="fn">print</span>(<span class="st">f"step {step:2d}: w = {w.round(3)}  loss = {f(w):.4f}"</span>)
+<span class="out"># exact grad: [-6. 18.]  numerical: [-6. 18.]</span>
+<span class="out"># step  1: w = [-0.4  0.2]  loss = 10.0800</span>
+<span class="out"># step  5: w = [ 1.017 -0.969]  loss = 0.9692</span>
+<span class="out"># step 10: w = [ 1.678 -1.   ]  loss = 0.1038</span>
+<span class="out"># step 25: w = [ 1.989 -1.   ]  loss = 0.0001</span></code></pre>
+
+<p>Notice that w<sub>2</sub> converges in about five steps and w<sub>1</sub> takes twenty-five. The bowl is three times steeper in the w<sub>2</sub> direction (the coefficient 3), so the same learning rate is "big" for w<sub>2</sub> and "small" for w<sub>1</sub>. This is exactly the stretched-ellipse problem in Figure 3.4, and it is the mathematical reason feature scaling speeds up training.</p>
+
+<h3>The chain rule: derivatives of a function of a function</h3>
+<p>Real models are compositions: the loss depends on the prediction, the prediction depends on the weights. To find how the loss changes with a weight, you multiply the derivatives along the chain:</p>
+<div class="formula">if  L = g(u)  and  u = h(w),  then  dL/dw = (dL/du) · (du/dw)</div>
+<div class="callout math"><div class="title">The math (optional)</div>
+<p>A concrete two-step example. Let the prediction be <em>u</em> = <em>w</em>·<em>x</em> with <em>x</em> = 3, and the loss be the squared error <em>L</em> = (<em>u</em> − <em>y</em>)² with target <em>y</em> = 4. Then d<em>L</em>/d<em>u</em> = 2(<em>u</em> − <em>y</em>) and d<em>u</em>/d<em>w</em> = <em>x</em> = 3. At <em>w</em> = 1: <em>u</em> = 3, d<em>L</em>/d<em>u</em> = 2(3 − 4) = −2, so d<em>L</em>/d<em>w</em> = (−2)(3) = −6. Meaning: increasing <em>w</em> a little will <em>decrease</em> the loss (the derivative is negative), by about 6 units per unit of <em>w</em>. So gradient descent increases <em>w</em>. Check: <em>w</em> = 1.1 gives <em>u</em> = 3.3 and <em>L</em> = 0.49, down from 1.0. <strong>Backpropagation (Chapter 15) is nothing but this multiplication, repeated backwards through every layer of a network.</strong> Each layer contributes one factor; the gradient for an early weight is a product of many local derivatives.</p>
+</div>
+
+<h3>Minima: local, global, and why convexity is a gift</h3>
+
+<figure class="fig">
+<svg viewBox="0 0 800 280" role="img" aria-label="Left: a convex bowl-shaped loss with a single global minimum, where gradient descent from any start arrives at the same point. Right: a non-convex loss with several valleys; descent from different starts ends in different local minima, only one of which is global">
+  <defs><marker id="arr-m5" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--s7)"/></marker></defs>
+  <text x="200" y="24" text-anchor="middle" class="lbl-strong" font-size="13">Convex: one valley (linear &amp; logistic regression)</text>
+  <line x1="40" y1="230" x2="370" y2="230" class="axis"/>
+  <text x="205" y="250" text-anchor="middle" class="lbl">parameter w</text>
+  <text x="26" y="130" text-anchor="middle" class="lbl" transform="rotate(-90 26 130)">loss</text>
+  <path d="M50,60 Q205,360 360,60" fill="none" stroke="var(--s1)" stroke-width="2.5"/>
+  <!-- global min at x=205, y ~ 210 -->
+  <circle cx="205" cy="210" r="5" fill="var(--good)"/>
+  <text x="205" y="200" text-anchor="middle" class="lbl-strong" font-size="11" fill="var(--good)">global minimum</text>
+  <!-- descent arrows from both sides -->
+  <g stroke="var(--s7)" stroke-width="2" fill="none" marker-end="url(#arr-m5)">
+    <path d="M70,100 L110,155"/><path d="M340,100 L300,155"/>
+  </g>
+  <circle cx="70" cy="100" r="4" fill="var(--s7)"/><circle cx="340" cy="100" r="4" fill="var(--s7)"/>
+  <text x="90" y="88" text-anchor="middle" class="lbl" font-size="10" fill="var(--s7)">start A</text>
+  <text x="320" y="88" text-anchor="middle" class="lbl" font-size="10" fill="var(--s7)">start B</text>
+  <text x="205" y="270" text-anchor="middle" class="lbl" font-size="11">Any start, same answer. A chord between two points never dips below the curve.</text>
+  <!-- non-convex -->
+  <text x="590" y="24" text-anchor="middle" class="lbl-strong" font-size="13">Non-convex: many valleys (neural networks)</text>
+  <line x1="430" y1="230" x2="770" y2="230" class="axis"/>
+  <text x="600" y="250" text-anchor="middle" class="lbl">parameter w</text>
+  <path d="M440,70 C470,200 500,210 530,150 C560,90 590,100 610,140 C630,180 660,240 700,205 C730,180 750,90 765,60" fill="none" stroke="var(--s2)" stroke-width="2.5"/>
+  <circle cx="507" cy="182" r="5" fill="var(--warn)"/><text x="507" y="205" text-anchor="middle" class="lbl-strong" font-size="10" fill="var(--warn)">local min</text>
+  <circle cx="690" cy="214" r="5" fill="var(--good)"/><text x="690" y="200" text-anchor="middle" class="lbl-strong" font-size="10" fill="var(--good)">global min</text>
+  <circle cx="588" cy="118" r="4" fill="var(--ink-3)"/><text x="588" y="106" text-anchor="middle" class="lbl" font-size="10">local max (slope 0 too)</text>
+  <g stroke="var(--s7)" stroke-width="2" fill="none" marker-end="url(#arr-m5)">
+    <path d="M455,110 L480,160"/><path d="M750,110 L722,175"/>
+  </g>
+  <circle cx="455" cy="110" r="4" fill="var(--s7)"/><circle cx="750" cy="110" r="4" fill="var(--s7)"/>
+  <text x="470" y="98" text-anchor="middle" class="lbl" font-size="10" fill="var(--s7)">start A</text>
+  <text x="740" y="98" text-anchor="middle" class="lbl" font-size="10" fill="var(--s7)">start B</text>
+  <text x="600" y="270" text-anchor="middle" class="lbl" font-size="11">Where you end up depends on where you start. Hence random restarts, momentum, and luck.</text>
+</svg>
+<figcaption><strong>Figure 3.5 — Convex versus non-convex losses.</strong> A convex function has one valley, so gradient descent is guaranteed to find the best parameters; linear and logistic regression enjoy this. Neural networks do not, which is why initialisation, learning-rate schedules and optimiser tricks (Chapter 16) exist. Note that a slope of zero identifies a maximum just as well as a minimum.</figcaption>
+</figure>
+
+<div class="callout key"><div class="title">Key idea</div>
+<p><strong>Training = gradient descent on a loss.</strong> Everything from linear regression to GPT is: define a loss that is small when predictions are good, compute its gradient with respect to the parameters, step against it, repeat. Convex losses (linear models) have one answer; non-convex losses (deep nets) have many, and the craft is in finding a good one.</p>
+</div>
+
+<div class="callout pro"><div class="title">At work</div>
+<p>When a colleague says "the model didn't converge", translate: gradient descent did not reach a flat point. The usual causes, in order of likelihood: unscaled features (elongated contours), learning rate too high (loss bounces or explodes to <code>nan</code>), learning rate too low (loss creeps and the time budget runs out), or a bug in the loss. Look at the loss curve before touching anything else.</p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s5">5. Logs, exponentials, sigmoid and softmax</h2>
+
+<div class="callout eli9"><div class="title">Explain it like I'm 9</div>
+<p>Multiplying a hundred tiny numbers together gives a number so small your calculator just says 0. Logs fix that: a log turns "multiply" into "add", and turns a number like 0.000000001 into a friendly −9. Exponentials go the other way, turning any number into a positive one. The sigmoid is a squasher that takes any number and gently folds it into the range 0 to 1, so it can be read as a probability. Softmax does the same trick for several numbers at once, making them all positive and adding up to 1.</p>
+</div>
+
+<p><strong>Precisely.</strong> The natural exponential exp(<em>z</em>) = e<sup><em>z</em></sup> maps any real number to a positive one and turns sums into products: exp(<em>a</em>+<em>b</em>) = exp(<em>a</em>)·exp(<em>b</em>). The natural logarithm ln is its inverse: ln(exp(<em>z</em>)) = <em>z</em>, and it turns products into sums: ln(<em>ab</em>) = ln <em>a</em> + ln <em>b</em>. Three consequences you use constantly:</p>
+<ul>
+  <li><strong>Likelihoods are products of many probabilities</strong> (one per example), and products of 10,000 numbers below 1 underflow to 0.0 in floating point. Their logs are sums of moderate negative numbers, which computers handle perfectly. Every "log-loss", "log-likelihood" and "cross-entropy" in this book exists for this reason.</li>
+  <li><strong>Logs do not change where the maximum is.</strong> Because ln is increasing, the parameters that maximise the likelihood also maximise the log-likelihood. So we optimise the log for convenience and lose nothing.</li>
+  <li><strong>Logs compress skewed scales.</strong> Income, spend, counts: a log transform turns a long right tail into something bell-shaped, which linear models like (Chapter 8).</li>
+</ul>
+
+<div class="formula">σ(z) = 1 / (1 + e<sup>−z</sup>)      softmax(<span class="var">z</span>)<sub>j</sub> = e<sup>z<sub>j</sub></sup> / ∑<sub>k</sub> e<sup>z<sub>k</sub></sup></div>
+<div class="callout math"><div class="title">The math (optional)</div>
+<p>The <strong>sigmoid</strong> σ takes a real score <em>z</em> (for instance <span class="var">w</span>·<span class="var">x</span>) and returns a number in (0, 1). σ(0) = 0.5; large positive <em>z</em> gives ≈1; large negative gives ≈0. Its derivative is σ(<em>z</em>)(1−σ(<em>z</em>)), which is why it appears so cleanly in logistic regression's gradient (Chapter 6). <strong>Softmax</strong> generalises it to <em>K</em> classes: it exponentiates each score (making them positive) and divides by the total (making them sum to 1). The entry <em>j</em> is the model's probability for class <em>j</em>. Subtracting the maximum score before exponentiating changes nothing mathematically (the constant cancels) but prevents overflow; every serious implementation does this.</p>
+</div>
+
+<figure class="fig">
+<svg viewBox="0 0 800 280" role="img" aria-label="Left: the sigmoid curve rising from 0 to 1 through 0.5 at z equals 0. Right: three raw scores converted by softmax into probabilities 0.66, 0.24 and 0.10 that sum to one">
+  <defs><marker id="arr-m6" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+  <text x="200" y="24" text-anchor="middle" class="lbl-strong" font-size="13">Sigmoid: any score → a probability</text>
+  <line x1="60" y1="230" x2="350" y2="230" class="axis" marker-end="url(#arr-m6)"/>
+  <line x1="60" y1="230" x2="60" y2="40" class="axis" marker-end="url(#arr-m6)"/>
+  <g class="grid"><line x1="60" y1="140" x2="340" y2="140"/><line x1="60" y1="50" x2="340" y2="50"/></g>
+  <g class="lbl" font-size="10"><text x="54" y="234" text-anchor="end">0</text><text x="54" y="144" text-anchor="end">0.5</text><text x="54" y="54" text-anchor="end">1</text>
+  <text x="60" y="248" text-anchor="middle">−6</text><text x="200" y="248" text-anchor="middle">0</text><text x="340" y="248" text-anchor="middle">+6</text></g>
+  <text x="200" y="266" text-anchor="middle" class="lbl">z = w·x (the raw score)</text>
+  <polyline points="60.0,229.6 65.8,229.4 71.7,229.3 77.5,229.1 83.3,228.8 89.2,228.5 95.0,228.0 100.8,227.5 106.7,226.8 112.5,225.9 118.3,224.7 124.2,223.3 130.0,221.5 135.8,219.2 141.7,216.3 147.5,212.8 153.3,208.5 159.2,203.4 165.0,197.2 170.8,189.9 176.7,181.6 182.5,172.3 188.3,162.0 194.2,151.2 200.0,140.0 205.8,128.8 211.7,118.0 217.5,107.7 223.3,98.4 229.2,90.1 235.0,82.8 240.8,76.6 246.7,71.5 252.5,67.2 258.3,63.7 264.2,60.8 270.0,58.5 275.8,56.7 281.7,55.3 287.5,54.1 293.3,53.2 299.2,52.5 305.0,52.0 310.8,51.5 316.7,51.2 322.5,50.9 328.3,50.7 334.2,50.6 340.0,50.4" fill="none" stroke="var(--s1)" stroke-width="2.5"/>
+  <line x1="200" y1="230" x2="200" y2="140" stroke="var(--s7)" stroke-dasharray="3 3"/>
+  <circle cx="200" cy="140" r="4" fill="var(--s7)"/>
+  <text x="208" y="132" class="lbl" font-size="11" fill="var(--s7)">σ(0) = 0.5: the decision threshold</text>
+  <text x="250" y="200" class="lbl" font-size="11">σ(−4) ≈ 0.02</text>
+  <text x="96" y="80" class="lbl" font-size="11">σ(+4) ≈ 0.98</text>
+  <line x1="223" y1="196" x2="155" y2="212" class="arrow" marker-end="url(#arr-m6)"/>
+  <line x1="150" y1="76" x2="290" y2="66" class="arrow" marker-end="url(#arr-m6)"/>
+  <!-- softmax -->
+  <text x="590" y="24" text-anchor="middle" class="lbl-strong" font-size="13">Softmax: K scores → K probabilities that sum to 1</text>
+  <text x="460" y="60" text-anchor="middle" class="lbl-strong" font-size="11">raw scores z</text>
+  <g fill="var(--s2)" fill-opacity=".8"><rect x="425" y="70" width="70" height="60"/><rect x="425" y="140" width="35" height="30"/><rect x="425" y="180" width="4" height="30"/></g>
+  <g class="lbl" font-size="11"><text x="500" y="105">2.0  (cat)</text><text x="465" y="160">1.0  (dog)</text><text x="435" y="200">0.1  (bird)</text></g>
+  <line x1="560" y1="140" x2="610" y2="140" class="arrow" marker-end="url(#arr-m6)"/>
+  <text x="585" y="130" text-anchor="middle" class="lbl" font-size="10">exp, then</text>
+  <text x="585" y="156" text-anchor="middle" class="lbl" font-size="10">divide by sum</text>
+  <text x="700" y="60" text-anchor="middle" class="lbl-strong" font-size="11">probabilities p</text>
+  <g fill="var(--s1)" fill-opacity=".85"><rect x="630" y="70" width="132" height="60"/><rect x="630" y="140" width="48" height="30"/><rect x="630" y="180" width="20" height="30"/></g>
+  <g class="lbl" font-size="11"><text x="640" y="105" fill="#fff" font-weight="700">0.66</text><text x="684" y="160">0.24</text><text x="656" y="200">0.10</text></g>
+  <text x="700" y="240" text-anchor="middle" class="lbl" font-size="11">0.66 + 0.24 + 0.10 = 1.00</text>
+  <text x="700" y="258" text-anchor="middle" class="lbl" font-size="11">e² : e¹ : e⁰·¹ = 7.39 : 2.72 : 1.11</text>
+</svg>
+<figcaption><strong>Figure 3.6 — The two squashing functions.</strong> Sigmoid turns one score into the probability of the positive class (logistic regression, Chapter 6). Softmax turns a vector of class scores into a probability distribution (multi-class models and every neural-network classifier). Both are monotone: a higher score always means a higher probability.</figcaption>
+</figure>
+
+<pre class="code" data-lang="python"><code><span class="cm"># sigmoid, softmax, and why we work with logs</span>
+<span class="kw">import</span> numpy <span class="kw">as</span> np
+sigmoid = <span class="kw">lambda</span> z: <span class="nu">1</span> / (<span class="nu">1</span> + np.exp(-z))
+z = np.array([-<span class="nu">4</span>, -<span class="nu">1</span>, <span class="nu">0</span>, <span class="nu">1</span>, <span class="nu">4</span>])
+<span class="fn">print</span>(<span class="st">"sigmoid:"</span>, sigmoid(z).round(<span class="nu">3</span>))
+
+<span class="kw">def</span> <span class="fn">softmax</span>(z):
+    z = z - z.max()                     <span class="cm"># subtract the max first: avoids overflow, same result</span>
+    e = np.exp(z); <span class="kw">return</span> e / e.sum()
+scores = np.array([<span class="nu">2.0</span>, <span class="nu">1.0</span>, <span class="nu">0.1</span>])
+p = softmax(scores)
+<span class="fn">print</span>(<span class="st">"softmax:"</span>, p.round(<span class="nu">3</span>), <span class="st">" sum ="</span>, p.sum().round(<span class="nu">6</span>))
+<span class="fn">print</span>(<span class="st">"log-probabilities:"</span>, np.log(p).round(<span class="nu">3</span>))
+<span class="fn">print</span>(<span class="st">"product of 5 tiny probs:"</span>, np.prod([<span class="nu">1e-80</span>]*<span class="nu">5</span>), <span class="st">" sum of their logs:"</span>, np.sum(np.log([<span class="nu">1e-80</span>]*<span class="nu">5</span>)))
+<span class="out"># sigmoid: [0.018 0.269 0.5   0.731 0.982]</span>
+<span class="out"># softmax: [0.659 0.242 0.099]  sum = 1.0</span>
+<span class="out"># log-probabilities: [-0.417 -1.417 -2.317]</span>
+<span class="out"># product of 5 tiny probs: 0.0  sum of their logs: -921.0340371976183</span></code></pre>
+
+<p>The last line is the whole argument for logs in one print statement: the product of five probabilities of 10<sup>−80</sup> underflows to exactly 0.0, destroying all information, while the sum of their logs is a perfectly ordinary −921.</p>
+
+<!-- ============================================================ -->
+<h2 id="s6">6. Probability: distributions, expectation, Bayes</h2>
+
+<div class="callout eli9"><div class="title">Explain it like I'm 9</div>
+<p>A random variable is a number you do not know yet: the roll of a die, tomorrow's temperature, whether this customer will cancel. A distribution is the list of all the values it could take and how likely each one is. The expectation is the average you would get if you could repeat the experiment a million times. And Bayes' theorem is the rule for updating what you believe when you get a clue.</p>
+</div>
+
+<p><strong>Precisely.</strong> A <strong>random variable</strong> <em>X</em> is a quantity whose value is determined by chance. A <strong>discrete</strong> one (counts, categories) has a probability mass function <em>P</em>(<em>X</em> = <em>k</em>); a <strong>continuous</strong> one (spend, height) has a density <em>p</em>(<em>x</em>) whose integral over an interval gives a probability. Five distributions cover most of applied ML:</p>
+
+<div class="tbl-wrap">
+<table class="tbl">
+<thead><tr><th>Distribution</th><th>Models</th><th>Parameters</th><th>Mean · Variance</th><th>Appears in</th></tr></thead>
+<tbody>
+<tr><td><strong>Bernoulli</strong></td><td>one yes/no event</td><td><em>p</em> = P(yes)</td><td><em>p</em> · <em>p</em>(1−<em>p</em>)</td><td>binary labels; logistic regression's output</td></tr>
+<tr><td><strong>Binomial</strong></td><td>number of yeses in <em>n</em> tries</td><td><em>n</em>, <em>p</em></td><td><em>np</em> · <em>np</em>(1−<em>p</em>)</td><td>test-set accuracy (n correct out of n<sub>test</sub>); A/B tests</td></tr>
+<tr><td><strong>Normal (Gaussian)</strong></td><td>sums and averages of many small effects; measurement noise</td><td>μ, σ</td><td>μ · σ²</td><td>regression residuals; the CLT; z-scores; standardisation</td></tr>
+<tr><td><strong>Uniform</strong></td><td>"any value in [a, b] equally likely"</td><td><em>a</em>, <em>b</em></td><td>(a+b)/2 · (b−a)²/12</td><td>random initialisation; random search; simulation</td></tr>
+<tr><td><strong>Poisson</strong></td><td>counts of rare events per unit time/space</td><td>λ (rate)</td><td>λ · λ</td><td>support calls per month, defects per batch; Poisson regression</td></tr>
+</tbody>
+</table>
+</div>
+
+<figure class="fig">
+<svg viewBox="0 0 800 260" role="img" aria-label="Five small panels showing the shapes of the Bernoulli, Binomial, Normal, Uniform and Poisson distributions">
+  <!-- panel template: x0, width 145 -->
+  <!-- Bernoulli p=.3 -->
+  <rect x="15" y="15" width="145" height="230" rx="8" class="fill-surface2" stroke="var(--border)"/>
+  <text x="87" y="36" text-anchor="middle" class="lbl-strong">Bernoulli(p=0.3)</text>
+  <line x1="30" y1="190" x2="145" y2="190" class="axis"/>
+  <rect x="55" y="92" width="30" height="98" fill="var(--s1)"/><rect x="100" y="148" width="30" height="42" fill="var(--s1)"/>
+  <text x="70" y="205" text-anchor="middle" class="lbl" font-size="10">0 (no)</text><text x="115" y="205" text-anchor="middle" class="lbl" font-size="10">1 (yes)</text>
+  <text x="70" y="86" text-anchor="middle" class="lbl" font-size="10">0.7</text><text x="115" y="142" text-anchor="middle" class="lbl" font-size="10">0.3</text>
+  <text x="87" y="226" text-anchor="middle" class="lbl" font-size="10">one churn label</text>
+  <!-- Binomial n=10 p=.3 -->
+  <rect x="172" y="15" width="145" height="230" rx="8" class="fill-surface2" stroke="var(--border)"/>
+  <text x="244" y="36" text-anchor="middle" class="lbl-strong">Binomial(n=10, p=0.3)</text>
+  <line x1="185" y1="190" x2="305" y2="190" class="axis"/>
+  <g fill="var(--s2)"><rect x="186" y="178.7" width="9" height="11.3"/><rect x="197" y="141.6" width="9" height="48.4"/><rect x="208" y="96.6" width="9" height="93.4"/><rect x="219" y="83.3" width="9" height="106.7"/><rect x="230" y="110.0" width="9" height="80.0"/><rect x="241" y="148.8" width="9" height="41.2"/><rect x="252" y="175.3" width="9" height="14.7"/><rect x="263" y="186.4" width="9" height="3.6"/><rect x="274" y="189.4" width="9" height="0.6"/><rect x="285" y="189.9" width="9" height="0.1"/><rect x="296" y="190.0" width="9" height="0.0"/></g>
+  <text x="190" y="205" text-anchor="middle" class="lbl" font-size="10">0</text><text x="300" y="205" text-anchor="middle" class="lbl" font-size="10">10</text>
+  <text x="244" y="226" text-anchor="middle" class="lbl" font-size="10">churners among 10</text>
+  <!-- Normal -->
+  <rect x="329" y="15" width="145" height="230" rx="8" class="fill-surface2" stroke="var(--border)"/>
+  <text x="401" y="36" text-anchor="middle" class="lbl-strong">Normal(μ, σ)</text>
+  <line x1="340" y1="190" x2="462" y2="190" class="axis"/>
+  <polyline points="340,190 341.0,189.0 344.0,188.4 347.0,187.6 350.0,186.5 353.0,184.9 356.0,182.8 359.0,180.1 362.0,176.6 365.0,172.2 368.0,166.9 371.0,160.8 374.0,153.8 377.0,146.2 380.0,138.1 383.0,130.0 386.0,122.1 389.0,114.8 392.0,108.7 395.0,104.0 398.0,101.0 401.0,100.0 404.0,101.0 407.0,104.0 410.0,108.7 413.0,114.8 416.0,122.1 419.0,130.0 422.0,138.1 425.0,146.2 428.0,153.8 431.0,160.8 434.0,166.9 437.0,172.2 440.0,176.6 443.0,180.1 446.0,182.8 449.0,184.9 452.0,186.5 455.0,187.6 458.0,188.4 461.0,189.0 462,190" fill="var(--s3)" fill-opacity=".25" stroke="var(--s3)" stroke-width="2"/>
+  <line x1="401" y1="190" x2="401" y2="95" stroke="var(--ink-3)" stroke-dasharray="3 2"/>
+  <text x="401" y="205" text-anchor="middle" class="lbl" font-size="10">μ</text>
+  <text x="421" y="205" text-anchor="middle" class="lbl" font-size="10">+σ</text><text x="381" y="205" text-anchor="middle" class="lbl" font-size="10">−σ</text>
+  <text x="401" y="226" text-anchor="middle" class="lbl" font-size="10">68% within ±1σ, 95% ±2σ</text>
+  <!-- Uniform -->
+  <rect x="486" y="15" width="145" height="230" rx="8" class="fill-surface2" stroke="var(--border)"/>
+  <text x="558" y="36" text-anchor="middle" class="lbl-strong">Uniform(a, b)</text>
+  <line x1="497" y1="190" x2="619" y2="190" class="axis"/>
+  <rect x="520" y="120" width="76" height="70" fill="var(--s4)" fill-opacity=".5" stroke="var(--s4)" stroke-width="2"/>
+  <text x="520" y="205" text-anchor="middle" class="lbl" font-size="10">a</text><text x="596" y="205" text-anchor="middle" class="lbl" font-size="10">b</text>
+  <text x="558" y="112" text-anchor="middle" class="lbl" font-size="10">1/(b−a)</text>
+  <text x="558" y="226" text-anchor="middle" class="lbl" font-size="10">flat: no value preferred</text>
+  <!-- Poisson λ=3 -->
+  <rect x="643" y="15" width="145" height="230" rx="8" class="fill-surface2" stroke="var(--border)"/>
+  <text x="715" y="36" text-anchor="middle" class="lbl-strong">Poisson(λ=3)</text>
+  <line x1="655" y1="190" x2="777" y2="190" class="axis"/>
+  <g fill="var(--s7)"><rect x="656" y="170.1" width="9" height="19.9"/><rect x="667" y="130.3" width="9" height="59.7"/><rect x="678" y="100.4" width="9" height="89.6"/><rect x="689" y="100.4" width="9" height="89.6"/><rect x="700" y="122.8" width="9" height="67.2"/><rect x="711" y="149.7" width="9" height="40.3"/><rect x="722" y="169.8" width="9" height="20.2"/><rect x="733" y="181.4" width="9" height="8.6"/><rect x="744" y="186.8" width="9" height="3.2"/><rect x="755" y="188.9" width="9" height="1.1"/><rect x="766" y="189.7" width="9" height="0.3"/></g>
+  <text x="660" y="205" text-anchor="middle" class="lbl" font-size="10">0</text><text x="770" y="205" text-anchor="middle" class="lbl" font-size="10">10</text>
+  <text x="715" y="226" text-anchor="middle" class="lbl" font-size="10">support calls per month</text>
+</svg>
+<figcaption><strong>Figure 3.7 — The five shapes to recognise.</strong> Bernoulli is a single yes/no; binomial counts yeses over <em>n</em> trials; normal is the bell that averages converge to; uniform is "no idea, anything in this range"; Poisson is counts of rare events and is right-skewed with variance equal to its mean.</figcaption>
+</figure>
+
+<h3>Expectation and variance</h3>
+<div class="formula">E[X] = ∑<sub>k</sub> k · P(X = k)      Var(X) = E[(X − E[X])²]      σ = √Var(X)</div>
+<div class="callout math"><div class="title">The math (optional)</div>
+<p>The <strong>expectation</strong> (mean) is the probability-weighted average of the values: each possible value <em>k</em> times its probability, summed (an integral for continuous variables). It is the long-run average. The <strong>variance</strong> is the expected squared distance from the mean: how spread out the values are. Its square root, the <strong>standard deviation</strong> σ, is in the same units as <em>X</em> and is the number you actually quote. Example: a Bernoulli with <em>p</em> = 0.26 (our churn rate) has E[X] = 0.26 and Var(X) = 0.26 × 0.74 = 0.192, σ ≈ 0.44. Note that expectation is linear: E[aX + bY] = aE[X] + bE[Y], always; variance adds only for <em>independent</em> variables.</p>
+</div>
+
+<h3>Conditional probability and independence</h3>
+<div class="formula">P(A | B) = P(A and B) / P(B)      A, B independent ⇔ P(A and B) = P(A)·P(B) ⇔ P(A | B) = P(A)</div>
+<div class="callout math"><div class="title">The math (optional)</div>
+<p><em>P</em>(<em>A</em> | <em>B</em>) reads "the probability of <em>A</em> given that <em>B</em> happened": restrict attention to the worlds where <em>B</em> is true, and ask what fraction of those also have <em>A</em>. From the churn data: <em>P</em>(churn) = 0.26 but <em>P</em>(churn | 75+ days since login) = 0.46. Two events are <strong>independent</strong> when knowing one tells you nothing about the other: the conditional probability equals the unconditional one. Almost every ML model is a machine for estimating conditional probabilities <em>P</em>(label | features), and "features are informative" simply means the label is <em>not</em> independent of them. Naive Bayes (Chapter 11) is what you get by <em>assuming</em> the features are independent given the label.</p>
+</div>
+
+<h3>Bayes' theorem: updating a belief with evidence</h3>
+<div class="formula">P(H | E) = P(E | H) · P(H) / P(E),   with  P(E) = P(E | H)P(H) + P(E | ¬H)P(¬H)</div>
+<div class="callout math"><div class="title">The math (optional)</div>
+<p><em>H</em> is a hypothesis ("this patient has the disease"), <em>E</em> is evidence ("the test came back positive"). <em>P</em>(<em>H</em>) is the <strong>prior</strong>: how likely <em>H</em> was before the evidence (the prevalence). <em>P</em>(<em>E</em> | <em>H</em>) is the <strong>likelihood</strong>: how likely the evidence is if <em>H</em> is true (the test's sensitivity). <em>P</em>(<em>E</em>) is the total probability of seeing the evidence under either hypothesis, which needs the false-positive rate 1 − specificity. <em>P</em>(<em>H</em> | <em>E</em>) is the <strong>posterior</strong>: the updated belief. The theorem is just the definition of conditional probability written twice and rearranged, but its consequences surprise almost everyone.</p>
+</div>
+
+<p><strong>The classic worked example.</strong> A disease affects 1% of the population. A test detects it 99% of the time when present (sensitivity 0.99) and comes back negative 95% of the time when absent (specificity 0.95). Your test is positive. How likely is it that you have the disease? Most people, including most doctors in published surveys, say "about 95%". Count a population of 1,000 instead:</p>
+
+<figure class="fig">
+<svg viewBox="0 0 800 300" role="img" aria-label="A grid of 1000 small squares representing people: 10 are sick (orange) and all test positive, 50 healthy people also test positive (violet), 940 test negative (grey). A tree on the right shows the counts and the posterior 10 out of 60, about 17 percent">
+  <defs><marker id="arr-m8" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+  <text x="210" y="28" text-anchor="middle" class="lbl-strong" font-size="13">1,000 people, 1% prevalence, test positive?</text>
+  <text x="210" y="46" text-anchor="middle" class="lbl" font-size="11">■ sick &amp; positive (10)   ■ healthy &amp; positive (50)   ■ negative (940)</text>
+  <rect x="30" y="40" width="9" height="9" fill="var(--s2)" transform="translate(-2,-8)"/>
+  <rect x="181" y="40" width="9" height="9" fill="var(--s7)" transform="translate(-2,-8)"/>
+  <rect x="322" y="40" width="9" height="9" fill="var(--ink-3)" fill-opacity=".35" transform="translate(-2,-8)"/>
+  <g fill="var(--s2)"><rect x="30.0" y="62.0" width="6" height="6" rx="1"/><rect x="37.2" y="62.0" width="6" height="6" rx="1"/><rect x="44.4" y="62.0" width="6" height="6" rx="1"/><rect x="51.6" y="62.0" width="6" height="6" rx="1"/><rect x="58.8" y="62.0" width="6" height="6" rx="1"/><rect x="66.0" y="62.0" width="6" height="6" rx="1"/><rect x="73.2" y="62.0" width="6" height="6" rx="1"/><rect x="80.4" y="62.0" width="6" height="6" rx="1"/><rect x="87.6" y="62.0" width="6" height="6" rx="1"/><rect x="94.8" y="62.0" width="6" height="6" rx="1"/></g><g fill="var(--s7)"><rect x="102.0" y="62.0" width="6" height="6" rx="1"/><rect x="109.2" y="62.0" width="6" height="6" rx="1"/><rect x="116.4" y="62.0" width="6" height="6" rx="1"/><rect x="123.6" y="62.0" width="6" height="6" rx="1"/><rect x="130.8" y="62.0" width="6" height="6" rx="1"/><rect x="138.0" y="62.0" width="6" height="6" rx="1"/><rect x="145.2" y="62.0" width="6" height="6" rx="1"/><rect x="152.4" y="62.0" width="6" height="6" rx="1"/><rect x="159.6" y="62.0" width="6" height="6" rx="1"/><rect x="166.8" y="62.0" width="6" height="6" rx="1"/><rect x="174.0" y="62.0" width="6" height="6" rx="1"/><rect x="181.2" y="62.0" width="6" height="6" rx="1"/><rect x="188.4" y="62.0" width="6" height="6" rx="1"/><rect x="195.6" y="62.0" width="6" height="6" rx="1"/><rect x="202.8" y="62.0" width="6" height="6" rx="1"/><rect x="210.0" y="62.0" width="6" height="6" rx="1"/><rect x="217.2" y="62.0" width="6" height="6" rx="1"/><rect x="224.4" y="62.0" width="6" height="6" rx="1"/><rect x="231.6" y="62.0" width="6" height="6" rx="1"/><rect x="238.8" y="62.0" width="6" height="6" rx="1"/><rect x="246.0" y="62.0" width="6" height="6" rx="1"/><rect x="253.2" y="62.0" width="6" height="6" rx="1"/><rect x="260.4" y="62.0" width="6" height="6" rx="1"/><rect x="267.6" y="62.0" width="6" height="6" rx="1"/><rect x="274.8" y="62.0" width="6" height="6" rx="1"/><rect x="282.0" y="62.0" width="6" height="6" rx="1"/><rect x="289.2" y="62.0" width="6" height="6" rx="1"/><rect x="296.4" y="62.0" width="6" height="6" rx="1"/><rect x="303.6" y="62.0" width="6" height="6" rx="1"/><rect x="310.8" y="62.0" width="6" height="6" rx="1"/><rect x="318.0" y="62.0" width="6" height="6" rx="1"/><rect x="325.2" y="62.0" width="6" height="6" rx="1"/><rect x="332.4" y="62.0" width="6" height="6" rx="1"/><rect x="339.6" y="62.0" width="6" height="6" rx="1"/><rect x="346.8" y="62.0" width="6" height="6" rx="1"/><rect x="354.0" y="62.0" width="6" height="6" rx="1"/><rect x="361.2" y="62.0" width="6" height="6" rx="1"/><rect x="368.4" y="62.0" width="6" height="6" rx="1"/><rect x="375.6" y="62.0" width="6" height="6" rx="1"/><rect x="382.8" y="62.0" width="6" height="6" rx="1"/><rect x="30.0" y="69.2" width="6" height="6" rx="1"/><rect x="37.2" y="69.2" width="6" height="6" rx="1"/><rect x="44.4" y="69.2" width="6" height="6" rx="1"/><rect x="51.6" y="69.2" width="6" height="6" rx="1"/><rect x="58.8" y="69.2" width="6" height="6" rx="1"/><rect x="66.0" y="69.2" width="6" height="6" rx="1"/><rect x="73.2" y="69.2" width="6" height="6" rx="1"/><rect x="80.4" y="69.2" width="6" height="6" rx="1"/><rect x="87.6" y="69.2" width="6" height="6" rx="1"/><rect x="94.8" y="69.2" width="6" height="6" rx="1"/></g><g fill="var(--ink-3)" fill-opacity=".35"><rect x="102.0" y="69.2" width="6" height="6" rx="1"/><rect x="109.2" y="69.2" width="6" height="6" rx="1"/><rect x="116.4" y="69.2" width="6" height="6" rx="1"/><rect x="123.6" y="69.2" width="6" height="6" rx="1"/><rect x="130.8" y="69.2" width="6" height="6" rx="1"/><rect x="138.0" y="69.2" width="6" height="6" rx="1"/><rect x="145.2" y="69.2" width="6" height="6" rx="1"/><rect x="152.4" y="69.2" width="6" height="6" rx="1"/><rect x="159.6" y="69.2" width="6" height="6" rx="1"/><rect x="166.8" y="69.2" width="6" height="6" rx="1"/><rect x="174.0" y="69.2" width="6" height="6" rx="1"/><rect x="181.2" y="69.2" width="6" height="6" rx="1"/><rect x="188.4" y="69.2" width="6" height="6" rx="1"/><rect x="195.6" y="69.2" width="6" height="6" rx="1"/><rect x="202.8" y="69.2" width="6" height="6" rx="1"/><rect x="210.0" y="69.2" width="6" height="6" rx="1"/><rect x="217.2" y="69.2" width="6" height="6" rx="1"/><rect x="224.4" y="69.2" width="6" height="6" rx="1"/><rect x="231.6" y="69.2" width="6" height="6" rx="1"/><rect x="238.8" y="69.2" width="6" height="6" rx="1"/><rect x="246.0" y="69.2" width="6" height="6" rx="1"/><rect x="253.2" y="69.2" width="6" height="6" rx="1"/><rect x="260.4" y="69.2" width="6" height="6" rx="1"/><rect x="267.6" y="69.2" width="6" height="6" rx="1"/><rect x="274.8" y="69.2" width="6" height="6" rx="1"/><rect x="282.0" y="69.2" width="6" height="6" rx="1"/><rect x="289.2" y="69.2" width="6" height="6" rx="1"/><rect x="296.4" y="69.2" width="6" height="6" rx="1"/><rect x="303.6" y="69.2" width="6" height="6" rx="1"/><rect x="310.8" y="69.2" width="6" height="6" rx="1"/><rect x="318.0" y="69.2" width="6" height="6" rx="1"/><rect x="325.2" y="69.2" width="6" height="6" rx="1"/><rect x="332.4" y="69.2" width="6" height="6" rx="1"/><rect x="339.6" y="69.2" width="6" height="6" rx="1"/><rect x="346.8" y="69.2" width="6" height="6" rx="1"/><rect x="354.0" y="69.2" width="6" height="6" rx="1"/><rect x="361.2" y="69.2" width="6" height="6" rx="1"/><rect x="368.4" y="69.2" width="6" height="6" rx="1"/><rect x="375.6" y="69.2" width="6" height="6" rx="1"/><rect x="382.8" y="69.2" width="6" height="6" rx="1"/><rect x="30.0" y="76.4" width="6" height="6" rx="1"/><rect x="37.2" y="76.4" width="6" height="6" rx="1"/><rect x="44.4" y="76.4" width="6" height="6" rx="1"/><rect x="51.6" y="76.4" width="6" height="6" rx="1"/><rect x="58.8" y="76.4" width="6" height="6" rx="1"/><rect x="66.0" y="76.4" width="6" height="6" rx="1"/><rect x="73.2" y="76.4" width="6" height="6" rx="1"/><rect x="80.4" y="76.4" width="6" height="6" rx="1"/><rect x="87.6" y="76.4" width="6" height="6" rx="1"/><rect x="94.8" y="76.4" width="6" height="6" rx="1"/><rect x="102.0" y="76.4" width="6" height="6" rx="1"/><rect x="109.2" y="76.4" width="6" height="6" rx="1"/><rect x="116.4" y="76.4" width="6" height="6" rx="1"/><rect x="123.6" y="76.4" width="6" height="6" rx="1"/><rect x="130.8" y="76.4" width="6" height="6" rx="1"/><rect x="138.0" y="76.4" width="6" height="6" rx="1"/><rect x="145.2" y="76.4" width="6" height="6" rx="1"/><rect x="152.4" y="76.4" width="6" height="6" rx="1"/><rect x="159.6" y="76.4" width="6" height="6" rx="1"/><rect x="166.8" y="76.4" width="6" height="6" rx="1"/><rect x="174.0" y="76.4" width="6" height="6" rx="1"/><rect x="181.2" y="76.4" width="6" height="6" rx="1"/><rect x="188.4" y="76.4" width="6" height="6" rx="1"/><rect x="195.6" y="76.4" width="6" height="6" rx="1"/><rect x="202.8" y="76.4" width="6" height="6" rx="1"/><rect x="210.0" y="76.4" width="6" height="6" rx="1"/><rect x="217.2" y="76.4" width="6" height="6" rx="1"/><rect x="224.4" y="76.4" width="6" height="6" rx="1"/><rect x="231.6" y="76.4" width="6" height="6" rx="1"/><rect x="238.8" y="76.4" width="6" height="6" rx="1"/><rect x="246.0" y="76.4" width="6" height="6" rx="1"/><rect x="253.2" y="76.4" width="6" height="6" rx="1"/><rect x="260.4" y="76.4" width="6" height="6" rx="1"/><rect x="267.6" y="76.4" width="6" height="6" rx="1"/><rect x="274.8" y="76.4" width="6" height="6" rx="1"/><rect x="282.0" y="76.4" width="6" height="6" rx="1"/><rect x="289.2" y="76.4" width="6" height="6" rx="1"/><rect x="296.4" y="76.4" width="6" height="6" rx="1"/><rect x="303.6" y="76.4" width="6" height="6" rx="1"/><rect x="310.8" y="76.4" width="6" height="6" rx="1"/><rect x="318.0" y="76.4" width="6" height="6" rx="1"/><rect x="325.2" y="76.4" width="6" height="6" rx="1"/><rect x="332.4" y="76.4" width="6" height="6" rx="1"/><rect x="339.6" y="76.4" width="6" height="6" rx="1"/><rect x="346.8" y="76.4" width="6" height="6" rx="1"/><rect x="354.0" y="76.4" width="6" height="6" rx="1"/><rect x="361.2" y="76.4" width="6" height="6" rx="1"/><rect x="368.4" y="76.4" width="6" height="6" rx="1"/><rect x="375.6" y="76.4" width="6" height="6" rx="1"/><rect x="382.8" y="76.4" width="6" height="6" rx="1"/><rect x="30.0" y="83.6" width="6" height="6" rx="1"/><rect x="37.2" y="83.6" width="6" height="6" rx="1"/><rect x="44.4" y="83.6" width="6" height="6" rx="1"/><rect x="51.6" y="83.6" width="6" height="6" rx="1"/><rect x="58.8" y="83.6" width="6" height="6" rx="1"/><rect x="66.0" y="83.6" width="6" height="6" rx="1"/><rect x="73.2" y="83.6" width="6" height="6" rx="1"/><rect x="80.4" y="83.6" width="6" height="6" rx="1"/><rect x="87.6" y="83.6" width="6" height="6" rx="1"/><rect x="94.8" y="83.6" width="6" height="6" rx="1"/><rect x="102.0" y="83.6" width="6" height="6" rx="1"/><rect x="109.2" y="83.6" width="6" height="6" rx="1"/><rect x="116.4" y="83.6" width="6" height="6" rx="1"/><rect x="123.6" y="83.6" width="6" height="6" rx="1"/><rect x="130.8" y="83.6" width="6" height="6" rx="1"/><rect x="138.0" y="83.6" width="6" height="6" rx="1"/><rect x="145.2" y="83.6" width="6" height="6" rx="1"/><rect x="152.4" y="83.6" width="6" height="6" rx="1"/><rect x="159.6" y="83.6" width="6" height="6" rx="1"/><rect x="166.8" y="83.6" width="6" height="6" rx="1"/><rect x="174.0" y="83.6" width="6" height="6" rx="1"/><rect x="181.2" y="83.6" width="6" height="6" rx="1"/><rect x="188.4" y="83.6" width="6" height="6" rx="1"/><rect x="195.6" y="83.6" width="6" height="6" rx="1"/><rect x="202.8" y="83.6" width="6" height="6" rx="1"/><rect x="210.0" y="83.6" width="6" height="6" rx="1"/><rect x="217.2" y="83.6" width="6" height="6" rx="1"/><rect x="224.4" y="83.6" width="6" height="6" rx="1"/><rect x="231.6" y="83.6" width="6" height="6" rx="1"/><rect x="238.8" y="83.6" width="6" height="6" rx="1"/><rect x="246.0" y="83.6" width="6" height="6" rx="1"/><rect x="253.2" y="83.6" width="6" height="6" rx="1"/><rect x="260.4" y="83.6" width="6" height="6" rx="1"/><rect x="267.6" y="83.6" width="6" height="6" rx="1"/><rect x="274.8" y="83.6" width="6" height="6" rx="1"/><rect x="282.0" y="83.6" width="6" height="6" rx="1"/><rect x="289.2" y="83.6" width="6" height="6" rx="1"/><rect x="296.4" y="83.6" width="6" height="6" rx="1"/><rect x="303.6" y="83.6" width="6" height="6" rx="1"/><rect x="310.8" y="83.6" width="6" height="6" rx="1"/><rect x="318.0" y="83.6" width="6" height="6" rx="1"/><rect x="325.2" y="83.6" width="6" height="6" rx="1"/><rect x="332.4" y="83.6" width="6" height="6" rx="1"/><rect x="339.6" y="83.6" width="6" height="6" rx="1"/><rect x="346.8" y="83.6" width="6" height="6" rx="1"/><rect x="354.0" y="83.6" width="6" height="6" rx="1"/><rect x="361.2" y="83.6" width="6" height="6" rx="1"/><rect x="368.4" y="83.6" width="6" height="6" rx="1"/><rect x="375.6" y="83.6" width="6" height="6" rx="1"/><rect x="382.8" y="83.6" width="6" height="6" rx="1"/><rect x="30.0" y="90.8" width="6" height="6" rx="1"/><rect x="37.2" y="90.8" width="6" height="6" rx="1"/><rect x="44.4" y="90.8" width="6" height="6" rx="1"/><rect x="51.6" y="90.8" width="6" height="6" rx="1"/><rect x="58.8" y="90.8" width="6" height="6" rx="1"/><rect x="66.0" y="90.8" width="6" height="6" rx="1"/><rect x="73.2" y="90.8" width="6" height="6" rx="1"/><rect x="80.4" y="90.8" width="6" height="6" rx="1"/><rect x="87.6" y="90.8" width="6" height="6" rx="1"/><rect x="94.8" y="90.8" width="6" height="6" rx="1"/><rect x="102.0" y="90.8" width="6" height="6" rx="1"/><rect x="109.2" y="90.8" width="6" height="6" rx="1"/><rect x="116.4" y="90.8" width="6" height="6" rx="1"/><rect x="123.6" y="90.8" width="6" height="6" rx="1"/><rect x="130.8" y="90.8" width="6" height="6" rx="1"/><rect x="138.0" y="90.8" width="6" height="6" rx="1"/><rect x="145.2" y="90.8" width="6" height="6" rx="1"/><rect x="152.4" y="90.8" width="6" height="6" rx="1"/><rect x="159.6" y="90.8" width="6" height="6" rx="1"/><rect x="166.8" y="90.8" width="6" height="6" rx="1"/><rect x="174.0" y="90.8" width="6" height="6" rx="1"/><rect x="181.2" y="90.8" width="6" height="6" rx="1"/><rect x="188.4" y="90.8" width="6" height="6" rx="1"/><rect x="195.6" y="90.8" width="6" height="6" rx="1"/><rect x="202.8" y="90.8" width="6" height="6" rx="1"/><rect x="210.0" y="90.8" width="6" height="6" rx="1"/><rect x="217.2" y="90.8" width="6" height="6" rx="1"/><rect x="224.4" y="90.8" width="6" height="6" rx="1"/><rect x="231.6" y="90.8" width="6" height="6" rx="1"/><rect x="238.8" y="90.8" width="6" height="6" rx="1"/><rect x="246.0" y="90.8" width="6" height="6" rx="1"/><rect x="253.2" y="90.8" width="6" height="6" rx="1"/><rect x="260.4" y="90.8" width="6" height="6" rx="1"/><rect x="267.6" y="90.8" width="6" height="6" rx="1"/><rect x="274.8" y="90.8" width="6" height="6" rx="1"/><rect x="282.0" y="90.8" width="6" height="6" rx="1"/><rect x="289.2" y="90.8" width="6" height="6" rx="1"/><rect x="296.4" y="90.8" width="6" height="6" rx="1"/><rect x="303.6" y="90.8" width="6" height="6" rx="1"/><rect x="310.8" y="90.8" width="6" height="6" rx="1"/><rect x="318.0" y="90.8" width="6" height="6" rx="1"/><rect x="325.2" y="90.8" width="6" height="6" rx="1"/><rect x="332.4" y="90.8" width="6" height="6" rx="1"/><rect x="339.6" y="90.8" width="6" height="6" rx="1"/><rect x="346.8" y="90.8" width="6" height="6" rx="1"/><rect x="354.0" y="90.8" width="6" height="6" rx="1"/><rect x="361.2" y="90.8" width="6" height="6" rx="1"/><rect x="368.4" y="90.8" width="6" height="6" rx="1"/><rect x="375.6" y="90.8" width="6" height="6" rx="1"/><rect x="382.8" y="90.8" width="6" height="6" rx="1"/><rect x="30.0" y="98.0" width="6" height="6" rx="1"/><rect x="37.2" y="98.0" width="6" height="6" rx="1"/><rect x="44.4" y="98.0" width="6" height="6" rx="1"/><rect x="51.6" y="98.0" width="6" height="6" rx="1"/><rect x="58.8" y="98.0" width="6" height="6" rx="1"/><rect x="66.0" y="98.0" width="6" height="6" rx="1"/><rect x="73.2" y="98.0" width="6" height="6" rx="1"/><rect x="80.4" y="98.0" width="6" height="6" rx="1"/><rect x="87.6" y="98.0" width="6" height="6" rx="1"/><rect x="94.8" y="98.0" width="6" height="6" rx="1"/><rect x="102.0" y="98.0" width="6" height="6" rx="1"/><rect x="109.2" y="98.0" width="6" height="6" rx="1"/><rect x="116.4" y="98.0" width="6" height="6" rx="1"/><rect x="123.6" y="98.0" width="6" height="6" rx="1"/><rect x="130.8" y="98.0" width="6" height="6" rx="1"/><rect x="138.0" y="98.0" width="6" height="6" rx="1"/><rect x="145.2" y="98.0" width="6" height="6" rx="1"/><rect x="152.4" y="98.0" width="6" height="6" rx="1"/><rect x="159.6" y="98.0" width="6" height="6" rx="1"/><rect x="166.8" y="98.0" width="6" height="6" rx="1"/><rect x="174.0" y="98.0" width="6" height="6" rx="1"/><rect x="181.2" y="98.0" width="6" height="6" rx="1"/><rect x="188.4" y="98.0" width="6" height="6" rx="1"/><rect x="195.6" y="98.0" width="6" height="6" rx="1"/><rect x="202.8" y="98.0" width="6" height="6" rx="1"/><rect x="210.0" y="98.0" width="6" height="6" rx="1"/><rect x="217.2" y="98.0" width="6" height="6" rx="1"/><rect x="224.4" y="98.0" width="6" height="6" rx="1"/><rect x="231.6" y="98.0" width="6" height="6" rx="1"/><rect x="238.8" y="98.0" width="6" height="6" rx="1"/><rect x="246.0" y="98.0" width="6" height="6" rx="1"/><rect x="253.2" y="98.0" width="6" height="6" rx="1"/><rect x="260.4" y="98.0" width="6" height="6" rx="1"/><rect x="267.6" y="98.0" width="6" height="6" rx="1"/><rect x="274.8" y="98.0" width="6" height="6" rx="1"/><rect x="282.0" y="98.0" width="6" height="6" rx="1"/><rect x="289.2" y="98.0" width="6" height="6" rx="1"/><rect x="296.4" y="98.0" width="6" height="6" rx="1"/><rect x="303.6" y="98.0" width="6" height="6" rx="1"/><rect x="310.8" y="98.0" width="6" height="6" rx="1"/><rect x="318.0" y="98.0" width="6" height="6" rx="1"/><rect x="325.2" y="98.0" width="6" height="6" rx="1"/><rect x="332.4" y="98.0" width="6" height="6" rx="1"/><rect x="339.6" y="98.0" width="6" height="6" rx="1"/><rect x="346.8" y="98.0" width="6" height="6" rx="1"/><rect x="354.0" y="98.0" width="6" height="6" rx="1"/><rect x="361.2" y="98.0" width="6" height="6" rx="1"/><rect x="368.4" y="98.0" width="6" height="6" rx="1"/><rect x="375.6" y="98.0" width="6" height="6" rx="1"/><rect x="382.8" y="98.0" width="6" height="6" rx="1"/><rect x="30.0" y="105.2" width="6" height="6" rx="1"/><rect x="37.2" y="105.2" width="6" height="6" rx="1"/><rect x="44.4" y="105.2" width="6" height="6" rx="1"/><rect x="51.6" y="105.2" width="6" height="6" rx="1"/><rect x="58.8" y="105.2" width="6" height="6" rx="1"/><rect x="66.0" y="105.2" width="6" height="6" rx="1"/><rect x="73.2" y="105.2" width="6" height="6" rx="1"/><rect x="80.4" y="105.2" width="6" height="6" rx="1"/><rect x="87.6" y="105.2" width="6" height="6" rx="1"/><rect x="94.8" y="105.2" width="6" height="6" rx="1"/><rect x="102.0" y="105.2" width="6" height="6" rx="1"/><rect x="109.2" y="105.2" width="6" height="6" rx="1"/><rect x="116.4" y="105.2" width="6" height="6" rx="1"/><rect x="123.6" y="105.2" width="6" height="6" rx="1"/><rect x="130.8" y="105.2" width="6" height="6" rx="1"/><rect x="138.0" y="105.2" width="6" height="6" rx="1"/><rect x="145.2" y="105.2" width="6" height="6" rx="1"/><rect x="152.4" y="105.2" width="6" height="6" rx="1"/><rect x="159.6" y="105.2" width="6" height="6" rx="1"/><rect x="166.8" y="105.2" width="6" height="6" rx="1"/><rect x="174.0" y="105.2" width="6" height="6" rx="1"/><rect x="181.2" y="105.2" width="6" height="6" rx="1"/><rect x="188.4" y="105.2" width="6" height="6" rx="1"/><rect x="195.6" y="105.2" width="6" height="6" rx="1"/><rect x="202.8" y="105.2" width="6" height="6" rx="1"/><rect x="210.0" y="105.2" width="6" height="6" rx="1"/><rect x="217.2" y="105.2" width="6" height="6" rx="1"/><rect x="224.4" y="105.2" width="6" height="6" rx="1"/><rect x="231.6" y="105.2" width="6" height="6" rx="1"/><rect x="238.8" y="105.2" width="6" height="6" rx="1"/><rect x="246.0" y="105.2" width="6" height="6" rx="1"/><rect x="253.2" y="105.2" width="6" height="6" rx="1"/><rect x="260.4" y="105.2" width="6" height="6" rx="1"/><rect x="267.6" y="105.2" width="6" height="6" rx="1"/><rect x="274.8" y="105.2" width="6" height="6" rx="1"/><rect x="282.0" y="105.2" width="6" height="6" rx="1"/><rect x="289.2" y="105.2" width="6" height="6" rx="1"/><rect x="296.4" y="105.2" width="6" height="6" rx="1"/><rect x="303.6" y="105.2" width="6" height="6" rx="1"/><rect x="310.8" y="105.2" width="6" height="6" rx="1"/><rect x="318.0" y="105.2" width="6" height="6" rx="1"/><rect x="325.2" y="105.2" width="6" height="6" rx="1"/><rect x="332.4" y="105.2" width="6" height="6" rx="1"/><rect x="339.6" y="105.2" width="6" height="6" rx="1"/><rect x="346.8" y="105.2" width="6" height="6" rx="1"/><rect x="354.0" y="105.2" width="6" height="6" rx="1"/><rect x="361.2" y="105.2" width="6" height="6" rx="1"/><rect x="368.4" y="105.2" width="6" height="6" rx="1"/><rect x="375.6" y="105.2" width="6" height="6" rx="1"/><rect x="382.8" y="105.2" width="6" height="6" rx="1"/><rect x="30.0" y="112.4" width="6" height="6" rx="1"/><rect x="37.2" y="112.4" width="6" height="6" rx="1"/><rect x="44.4" y="112.4" width="6" height="6" rx="1"/><rect x="51.6" y="112.4" width="6" height="6" rx="1"/><rect x="58.8" y="112.4" width="6" height="6" rx="1"/><rect x="66.0" y="112.4" width="6" height="6" rx="1"/><rect x="73.2" y="112.4" width="6" height="6" rx="1"/><rect x="80.4" y="112.4" width="6" height="6" rx="1"/><rect x="87.6" y="112.4" width="6" height="6" rx="1"/><rect x="94.8" y="112.4" width="6" height="6" rx="1"/><rect x="102.0" y="112.4" width="6" height="6" rx="1"/><rect x="109.2" y="112.4" width="6" height="6" rx="1"/><rect x="116.4" y="112.4" width="6" height="6" rx="1"/><rect x="123.6" y="112.4" width="6" height="6" rx="1"/><rect x="130.8" y="112.4" width="6" height="6" rx="1"/><rect x="138.0" y="112.4" width="6" height="6" rx="1"/><rect x="145.2" y="112.4" width="6" height="6" rx="1"/><rect x="152.4" y="112.4" width="6" height="6" rx="1"/><rect x="159.6" y="112.4" width="6" height="6" rx="1"/><rect x="166.8" y="112.4" width="6" height="6" rx="1"/><rect x="174.0" y="112.4" width="6" height="6" rx="1"/><rect x="181.2" y="112.4" width="6" height="6" rx="1"/><rect x="188.4" y="112.4" width="6" height="6" rx="1"/><rect x="195.6" y="112.4" width="6" height="6" rx="1"/><rect x="202.8" y="112.4" width="6" height="6" rx="1"/><rect x="210.0" y="112.4" width="6" height="6" rx="1"/><rect x="217.2" y="112.4" width="6" height="6" rx="1"/><rect x="224.4" y="112.4" width="6" height="6" rx="1"/><rect x="231.6" y="112.4" width="6" height="6" rx="1"/><rect x="238.8" y="112.4" width="6" height="6" rx="1"/><rect x="246.0" y="112.4" width="6" height="6" rx="1"/><rect x="253.2" y="112.4" width="6" height="6" rx="1"/><rect x="260.4" y="112.4" width="6" height="6" rx="1"/><rect x="267.6" y="112.4" width="6" height="6" rx="1"/><rect x="274.8" y="112.4" width="6" height="6" rx="1"/><rect x="282.0" y="112.4" width="6" height="6" rx="1"/><rect x="289.2" y="112.4" width="6" height="6" rx="1"/><rect x="296.4" y="112.4" width="6" height="6" rx="1"/><rect x="303.6" y="112.4" width="6" height="6" rx="1"/><rect x="310.8" y="112.4" width="6" height="6" rx="1"/><rect x="318.0" y="112.4" width="6" height="6" rx="1"/><rect x="325.2" y="112.4" width="6" height="6" rx="1"/><rect x="332.4" y="112.4" width="6" height="6" rx="1"/><rect x="339.6" y="112.4" width="6" height="6" rx="1"/><rect x="346.8" y="112.4" width="6" height="6" rx="1"/><rect x="354.0" y="112.4" width="6" height="6" rx="1"/><rect x="361.2" y="112.4" width="6" height="6" rx="1"/><rect x="368.4" y="112.4" width="6" height="6" rx="1"/><rect x="375.6" y="112.4" width="6" height="6" rx="1"/><rect x="382.8" y="112.4" width="6" height="6" rx="1"/><rect x="30.0" y="119.6" width="6" height="6" rx="1"/><rect x="37.2" y="119.6" width="6" height="6" rx="1"/><rect x="44.4" y="119.6" width="6" height="6" rx="1"/><rect x="51.6" y="119.6" width="6" height="6" rx="1"/><rect x="58.8" y="119.6" width="6" height="6" rx="1"/><rect x="66.0" y="119.6" width="6" height="6" rx="1"/><rect x="73.2" y="119.6" width="6" height="6" rx="1"/><rect x="80.4" y="119.6" width="6" height="6" rx="1"/><rect x="87.6" y="119.6" width="6" height="6" rx="1"/><rect x="94.8" y="119.6" width="6" height="6" rx="1"/><rect x="102.0" y="119.6" width="6" height="6" rx="1"/><rect x="109.2" y="119.6" width="6" height="6" rx="1"/><rect x="116.4" y="119.6" width="6" height="6" rx="1"/><rect x="123.6" y="119.6" width="6" height="6" rx="1"/><rect x="130.8" y="119.6" width="6" height="6" rx="1"/><rect x="138.0" y="119.6" width="6" height="6" rx="1"/><rect x="145.2" y="119.6" width="6" height="6" rx="1"/><rect x="152.4" y="119.6" width="6" height="6" rx="1"/><rect x="159.6" y="119.6" width="6" height="6" rx="1"/><rect x="166.8" y="119.6" width="6" height="6" rx="1"/><rect x="174.0" y="119.6" width="6" height="6" rx="1"/><rect x="181.2" y="119.6" width="6" height="6" rx="1"/><rect x="188.4" y="119.6" width="6" height="6" rx="1"/><rect x="195.6" y="119.6" width="6" height="6" rx="1"/><rect x="202.8" y="119.6" width="6" height="6" rx="1"/><rect x="210.0" y="119.6" width="6" height="6" rx="1"/><rect x="217.2" y="119.6" width="6" height="6" rx="1"/><rect x="224.4" y="119.6" width="6" height="6" rx="1"/><rect x="231.6" y="119.6" width="6" height="6" rx="1"/><rect x="238.8" y="119.6" width="6" height="6" rx="1"/><rect x="246.0" y="119.6" width="6" height="6" rx="1"/><rect x="253.2" y="119.6" width="6" height="6" rx="1"/><rect x="260.4" y="119.6" width="6" height="6" rx="1"/><rect x="267.6" y="119.6" width="6" height="6" rx="1"/><rect x="274.8" y="119.6" width="6" height="6" rx="1"/><rect x="282.0" y="119.6" width="6" height="6" rx="1"/><rect x="289.2" y="119.6" width="6" height="6" rx="1"/><rect x="296.4" y="119.6" width="6" height="6" rx="1"/><rect x="303.6" y="119.6" width="6" height="6" rx="1"/><rect x="310.8" y="119.6" width="6" height="6" rx="1"/><rect x="318.0" y="119.6" width="6" height="6" rx="1"/><rect x="325.2" y="119.6" width="6" height="6" rx="1"/><rect x="332.4" y="119.6" width="6" height="6" rx="1"/><rect x="339.6" y="119.6" width="6" height="6" rx="1"/><rect x="346.8" y="119.6" width="6" height="6" rx="1"/><rect x="354.0" y="119.6" width="6" height="6" rx="1"/><rect x="361.2" y="119.6" width="6" height="6" rx="1"/><rect x="368.4" y="119.6" width="6" height="6" rx="1"/><rect x="375.6" y="119.6" width="6" height="6" rx="1"/><rect x="382.8" y="119.6" width="6" height="6" rx="1"/><rect x="30.0" y="126.8" width="6" height="6" rx="1"/><rect x="37.2" y="126.8" width="6" height="6" rx="1"/><rect x="44.4" y="126.8" width="6" height="6" rx="1"/><rect x="51.6" y="126.8" width="6" height="6" rx="1"/><rect x="58.8" y="126.8" width="6" height="6" rx="1"/><rect x="66.0" y="126.8" width="6" height="6" rx="1"/><rect x="73.2" y="126.8" width="6" height="6" rx="1"/><rect x="80.4" y="126.8" width="6" height="6" rx="1"/><rect x="87.6" y="126.8" width="6" height="6" rx="1"/><rect x="94.8" y="126.8" width="6" height="6" rx="1"/><rect x="102.0" y="126.8" width="6" height="6" rx="1"/><rect x="109.2" y="126.8" width="6" height="6" rx="1"/><rect x="116.4" y="126.8" width="6" height="6" rx="1"/><rect x="123.6" y="126.8" width="6" height="6" rx="1"/><rect x="130.8" y="126.8" width="6" height="6" rx="1"/><rect x="138.0" y="126.8" width="6" height="6" rx="1"/><rect x="145.2" y="126.8" width="6" height="6" rx="1"/><rect x="152.4" y="126.8" width="6" height="6" rx="1"/><rect x="159.6" y="126.8" width="6" height="6" rx="1"/><rect x="166.8" y="126.8" width="6" height="6" rx="1"/><rect x="174.0" y="126.8" width="6" height="6" rx="1"/><rect x="181.2" y="126.8" width="6" height="6" rx="1"/><rect x="188.4" y="126.8" width="6" height="6" rx="1"/><rect x="195.6" y="126.8" width="6" height="6" rx="1"/><rect x="202.8" y="126.8" width="6" height="6" rx="1"/><rect x="210.0" y="126.8" width="6" height="6" rx="1"/><rect x="217.2" y="126.8" width="6" height="6" rx="1"/><rect x="224.4" y="126.8" width="6" height="6" rx="1"/><rect x="231.6" y="126.8" width="6" height="6" rx="1"/><rect x="238.8" y="126.8" width="6" height="6" rx="1"/><rect x="246.0" y="126.8" width="6" height="6" rx="1"/><rect x="253.2" y="126.8" width="6" height="6" rx="1"/><rect x="260.4" y="126.8" width="6" height="6" rx="1"/><rect x="267.6" y="126.8" width="6" height="6" rx="1"/><rect x="274.8" y="126.8" width="6" height="6" rx="1"/><rect x="282.0" y="126.8" width="6" height="6" rx="1"/><rect x="289.2" y="126.8" width="6" height="6" rx="1"/><rect x="296.4" y="126.8" width="6" height="6" rx="1"/><rect x="303.6" y="126.8" width="6" height="6" rx="1"/><rect x="310.8" y="126.8" width="6" height="6" rx="1"/><rect x="318.0" y="126.8" width="6" height="6" rx="1"/><rect x="325.2" y="126.8" width="6" height="6" rx="1"/><rect x="332.4" y="126.8" width="6" height="6" rx="1"/><rect x="339.6" y="126.8" width="6" height="6" rx="1"/><rect x="346.8" y="126.8" width="6" height="6" rx="1"/><rect x="354.0" y="126.8" width="6" height="6" rx="1"/><rect x="361.2" y="126.8" width="6" height="6" rx="1"/><rect x="368.4" y="126.8" width="6" height="6" rx="1"/><rect x="375.6" y="126.8" width="6" height="6" rx="1"/><rect x="382.8" y="126.8" width="6" height="6" rx="1"/><rect x="30.0" y="134.0" width="6" height="6" rx="1"/><rect x="37.2" y="134.0" width="6" height="6" rx="1"/><rect x="44.4" y="134.0" width="6" height="6" rx="1"/><rect x="51.6" y="134.0" width="6" height="6" rx="1"/><rect x="58.8" y="134.0" width="6" height="6" rx="1"/><rect x="66.0" y="134.0" width="6" height="6" rx="1"/><rect x="73.2" y="134.0" width="6" height="6" rx="1"/><rect x="80.4" y="134.0" width="6" height="6" rx="1"/><rect x="87.6" y="134.0" width="6" height="6" rx="1"/><rect x="94.8" y="134.0" width="6" height="6" rx="1"/><rect x="102.0" y="134.0" width="6" height="6" rx="1"/><rect x="109.2" y="134.0" width="6" height="6" rx="1"/><rect x="116.4" y="134.0" width="6" height="6" rx="1"/><rect x="123.6" y="134.0" width="6" height="6" rx="1"/><rect x="130.8" y="134.0" width="6" height="6" rx="1"/><rect x="138.0" y="134.0" width="6" height="6" rx="1"/><rect x="145.2" y="134.0" width="6" height="6" rx="1"/><rect x="152.4" y="134.0" width="6" height="6" rx="1"/><rect x="159.6" y="134.0" width="6" height="6" rx="1"/><rect x="166.8" y="134.0" width="6" height="6" rx="1"/><rect x="174.0" y="134.0" width="6" height="6" rx="1"/><rect x="181.2" y="134.0" width="6" height="6" rx="1"/><rect x="188.4" y="134.0" width="6" height="6" rx="1"/><rect x="195.6" y="134.0" width="6" height="6" rx="1"/><rect x="202.8" y="134.0" width="6" height="6" rx="1"/><rect x="210.0" y="134.0" width="6" height="6" rx="1"/><rect x="217.2" y="134.0" width="6" height="6" rx="1"/><rect x="224.4" y="134.0" width="6" height="6" rx="1"/><rect x="231.6" y="134.0" width="6" height="6" rx="1"/><rect x="238.8" y="134.0" width="6" height="6" rx="1"/><rect x="246.0" y="134.0" width="6" height="6" rx="1"/><rect x="253.2" y="134.0" width="6" height="6" rx="1"/><rect x="260.4" y="134.0" width="6" height="6" rx="1"/><rect x="267.6" y="134.0" width="6" height="6" rx="1"/><rect x="274.8" y="134.0" width="6" height="6" rx="1"/><rect x="282.0" y="134.0" width="6" height="6" rx="1"/><rect x="289.2" y="134.0" width="6" height="6" rx="1"/><rect x="296.4" y="134.0" width="6" height="6" rx="1"/><rect x="303.6" y="134.0" width="6" height="6" rx="1"/><rect x="310.8" y="134.0" width="6" height="6" rx="1"/><rect x="318.0" y="134.0" width="6" height="6" rx="1"/><rect x="325.2" y="134.0" width="6" height="6" rx="1"/><rect x="332.4" y="134.0" width="6" height="6" rx="1"/><rect x="339.6" y="134.0" width="6" height="6" rx="1"/><rect x="346.8" y="134.0" width="6" height="6" rx="1"/><rect x="354.0" y="134.0" width="6" height="6" rx="1"/><rect x="361.2" y="134.0" width="6" height="6" rx="1"/><rect x="368.4" y="134.0" width="6" height="6" rx="1"/><rect x="375.6" y="134.0" width="6" height="6" rx="1"/><rect x="382.8" y="134.0" width="6" height="6" rx="1"/><rect x="30.0" y="141.2" width="6" height="6" rx="1"/><rect x="37.2" y="141.2" width="6" height="6" rx="1"/><rect x="44.4" y="141.2" width="6" height="6" rx="1"/><rect x="51.6" y="141.2" width="6" height="6" rx="1"/><rect x="58.8" y="141.2" width="6" height="6" rx="1"/><rect x="66.0" y="141.2" width="6" height="6" rx="1"/><rect x="73.2" y="141.2" width="6" height="6" rx="1"/><rect x="80.4" y="141.2" width="6" height="6" rx="1"/><rect x="87.6" y="141.2" width="6" height="6" rx="1"/><rect x="94.8" y="141.2" width="6" height="6" rx="1"/><rect x="102.0" y="141.2" width="6" height="6" rx="1"/><rect x="109.2" y="141.2" width="6" height="6" rx="1"/><rect x="116.4" y="141.2" width="6" height="6" rx="1"/><rect x="123.6" y="141.2" width="6" height="6" rx="1"/><rect x="130.8" y="141.2" width="6" height="6" rx="1"/><rect x="138.0" y="141.2" width="6" height="6" rx="1"/><rect x="145.2" y="141.2" width="6" height="6" rx="1"/><rect x="152.4" y="141.2" width="6" height="6" rx="1"/><rect x="159.6" y="141.2" width="6" height="6" rx="1"/><rect x="166.8" y="141.2" width="6" height="6" rx="1"/><rect x="174.0" y="141.2" width="6" height="6" rx="1"/><rect x="181.2" y="141.2" width="6" height="6" rx="1"/><rect x="188.4" y="141.2" width="6" height="6" rx="1"/><rect x="195.6" y="141.2" width="6" height="6" rx="1"/><rect x="202.8" y="141.2" width="6" height="6" rx="1"/><rect x="210.0" y="141.2" width="6" height="6" rx="1"/><rect x="217.2" y="141.2" width="6" height="6" rx="1"/><rect x="224.4" y="141.2" width="6" height="6" rx="1"/><rect x="231.6" y="141.2" width="6" height="6" rx="1"/><rect x="238.8" y="141.2" width="6" height="6" rx="1"/><rect x="246.0" y="141.2" width="6" height="6" rx="1"/><rect x="253.2" y="141.2" width="6" height="6" rx="1"/><rect x="260.4" y="141.2" width="6" height="6" rx="1"/><rect x="267.6" y="141.2" width="6" height="6" rx="1"/><rect x="274.8" y="141.2" width="6" height="6" rx="1"/><rect x="282.0" y="141.2" width="6" height="6" rx="1"/><rect x="289.2" y="141.2" width="6" height="6" rx="1"/><rect x="296.4" y="141.2" width="6" height="6" rx="1"/><rect x="303.6" y="141.2" width="6" height="6" rx="1"/><rect x="310.8" y="141.2" width="6" height="6" rx="1"/><rect x="318.0" y="141.2" width="6" height="6" rx="1"/><rect x="325.2" y="141.2" width="6" height="6" rx="1"/><rect x="332.4" y="141.2" width="6" height="6" rx="1"/><rect x="339.6" y="141.2" width="6" height="6" rx="1"/><rect x="346.8" y="141.2" width="6" height="6" rx="1"/><rect x="354.0" y="141.2" width="6" height="6" rx="1"/><rect x="361.2" y="141.2" width="6" height="6" rx="1"/><rect x="368.4" y="141.2" width="6" height="6" rx="1"/><rect x="375.6" y="141.2" width="6" height="6" rx="1"/><rect x="382.8" y="141.2" width="6" height="6" rx="1"/><rect x="30.0" y="148.4" width="6" height="6" rx="1"/><rect x="37.2" y="148.4" width="6" height="6" rx="1"/><rect x="44.4" y="148.4" width="6" height="6" rx="1"/><rect x="51.6" y="148.4" width="6" height="6" rx="1"/><rect x="58.8" y="148.4" width="6" height="6" rx="1"/><rect x="66.0" y="148.4" width="6" height="6" rx="1"/><rect x="73.2" y="148.4" width="6" height="6" rx="1"/><rect x="80.4" y="148.4" width="6" height="6" rx="1"/><rect x="87.6" y="148.4" width="6" height="6" rx="1"/><rect x="94.8" y="148.4" width="6" height="6" rx="1"/><rect x="102.0" y="148.4" width="6" height="6" rx="1"/><rect x="109.2" y="148.4" width="6" height="6" rx="1"/><rect x="116.4" y="148.4" width="6" height="6" rx="1"/><rect x="123.6" y="148.4" width="6" height="6" rx="1"/><rect x="130.8" y="148.4" width="6" height="6" rx="1"/><rect x="138.0" y="148.4" width="6" height="6" rx="1"/><rect x="145.2" y="148.4" width="6" height="6" rx="1"/><rect x="152.4" y="148.4" width="6" height="6" rx="1"/><rect x="159.6" y="148.4" width="6" height="6" rx="1"/><rect x="166.8" y="148.4" width="6" height="6" rx="1"/><rect x="174.0" y="148.4" width="6" height="6" rx="1"/><rect x="181.2" y="148.4" width="6" height="6" rx="1"/><rect x="188.4" y="148.4" width="6" height="6" rx="1"/><rect x="195.6" y="148.4" width="6" height="6" rx="1"/><rect x="202.8" y="148.4" width="6" height="6" rx="1"/><rect x="210.0" y="148.4" width="6" height="6" rx="1"/><rect x="217.2" y="148.4" width="6" height="6" rx="1"/><rect x="224.4" y="148.4" width="6" height="6" rx="1"/><rect x="231.6" y="148.4" width="6" height="6" rx="1"/><rect x="238.8" y="148.4" width="6" height="6" rx="1"/><rect x="246.0" y="148.4" width="6" height="6" rx="1"/><rect x="253.2" y="148.4" width="6" height="6" rx="1"/><rect x="260.4" y="148.4" width="6" height="6" rx="1"/><rect x="267.6" y="148.4" width="6" height="6" rx="1"/><rect x="274.8" y="148.4" width="6" height="6" rx="1"/><rect x="282.0" y="148.4" width="6" height="6" rx="1"/><rect x="289.2" y="148.4" width="6" height="6" rx="1"/><rect x="296.4" y="148.4" width="6" height="6" rx="1"/><rect x="303.6" y="148.4" width="6" height="6" rx="1"/><rect x="310.8" y="148.4" width="6" height="6" rx="1"/><rect x="318.0" y="148.4" width="6" height="6" rx="1"/><rect x="325.2" y="148.4" width="6" height="6" rx="1"/><rect x="332.4" y="148.4" width="6" height="6" rx="1"/><rect x="339.6" y="148.4" width="6" height="6" rx="1"/><rect x="346.8" y="148.4" width="6" height="6" rx="1"/><rect x="354.0" y="148.4" width="6" height="6" rx="1"/><rect x="361.2" y="148.4" width="6" height="6" rx="1"/><rect x="368.4" y="148.4" width="6" height="6" rx="1"/><rect x="375.6" y="148.4" width="6" height="6" rx="1"/><rect x="382.8" y="148.4" width="6" height="6" rx="1"/><rect x="30.0" y="155.6" width="6" height="6" rx="1"/><rect x="37.2" y="155.6" width="6" height="6" rx="1"/><rect x="44.4" y="155.6" width="6" height="6" rx="1"/><rect x="51.6" y="155.6" width="6" height="6" rx="1"/><rect x="58.8" y="155.6" width="6" height="6" rx="1"/><rect x="66.0" y="155.6" width="6" height="6" rx="1"/><rect x="73.2" y="155.6" width="6" height="6" rx="1"/><rect x="80.4" y="155.6" width="6" height="6" rx="1"/><rect x="87.6" y="155.6" width="6" height="6" rx="1"/><rect x="94.8" y="155.6" width="6" height="6" rx="1"/><rect x="102.0" y="155.6" width="6" height="6" rx="1"/><rect x="109.2" y="155.6" width="6" height="6" rx="1"/><rect x="116.4" y="155.6" width="6" height="6" rx="1"/><rect x="123.6" y="155.6" width="6" height="6" rx="1"/><rect x="130.8" y="155.6" width="6" height="6" rx="1"/><rect x="138.0" y="155.6" width="6" height="6" rx="1"/><rect x="145.2" y="155.6" width="6" height="6" rx="1"/><rect x="152.4" y="155.6" width="6" height="6" rx="1"/><rect x="159.6" y="155.6" width="6" height="6" rx="1"/><rect x="166.8" y="155.6" width="6" height="6" rx="1"/><rect x="174.0" y="155.6" width="6" height="6" rx="1"/><rect x="181.2" y="155.6" width="6" height="6" rx="1"/><rect x="188.4" y="155.6" width="6" height="6" rx="1"/><rect x="195.6" y="155.6" width="6" height="6" rx="1"/><rect x="202.8" y="155.6" width="6" height="6" rx="1"/><rect x="210.0" y="155.6" width="6" height="6" rx="1"/><rect x="217.2" y="155.6" width="6" height="6" rx="1"/><rect x="224.4" y="155.6" width="6" height="6" rx="1"/><rect x="231.6" y="155.6" width="6" height="6" rx="1"/><rect x="238.8" y="155.6" width="6" height="6" rx="1"/><rect x="246.0" y="155.6" width="6" height="6" rx="1"/><rect x="253.2" y="155.6" width="6" height="6" rx="1"/><rect x="260.4" y="155.6" width="6" height="6" rx="1"/><rect x="267.6" y="155.6" width="6" height="6" rx="1"/><rect x="274.8" y="155.6" width="6" height="6" rx="1"/><rect x="282.0" y="155.6" width="6" height="6" rx="1"/><rect x="289.2" y="155.6" width="6" height="6" rx="1"/><rect x="296.4" y="155.6" width="6" height="6" rx="1"/><rect x="303.6" y="155.6" width="6" height="6" rx="1"/><rect x="310.8" y="155.6" width="6" height="6" rx="1"/><rect x="318.0" y="155.6" width="6" height="6" rx="1"/><rect x="325.2" y="155.6" width="6" height="6" rx="1"/><rect x="332.4" y="155.6" width="6" height="6" rx="1"/><rect x="339.6" y="155.6" width="6" height="6" rx="1"/><rect x="346.8" y="155.6" width="6" height="6" rx="1"/><rect x="354.0" y="155.6" width="6" height="6" rx="1"/><rect x="361.2" y="155.6" width="6" height="6" rx="1"/><rect x="368.4" y="155.6" width="6" height="6" rx="1"/><rect x="375.6" y="155.6" width="6" height="6" rx="1"/><rect x="382.8" y="155.6" width="6" height="6" rx="1"/><rect x="30.0" y="162.8" width="6" height="6" rx="1"/><rect x="37.2" y="162.8" width="6" height="6" rx="1"/><rect x="44.4" y="162.8" width="6" height="6" rx="1"/><rect x="51.6" y="162.8" width="6" height="6" rx="1"/><rect x="58.8" y="162.8" width="6" height="6" rx="1"/><rect x="66.0" y="162.8" width="6" height="6" rx="1"/><rect x="73.2" y="162.8" width="6" height="6" rx="1"/><rect x="80.4" y="162.8" width="6" height="6" rx="1"/><rect x="87.6" y="162.8" width="6" height="6" rx="1"/><rect x="94.8" y="162.8" width="6" height="6" rx="1"/><rect x="102.0" y="162.8" width="6" height="6" rx="1"/><rect x="109.2" y="162.8" width="6" height="6" rx="1"/><rect x="116.4" y="162.8" width="6" height="6" rx="1"/><rect x="123.6" y="162.8" width="6" height="6" rx="1"/><rect x="130.8" y="162.8" width="6" height="6" rx="1"/><rect x="138.0" y="162.8" width="6" height="6" rx="1"/><rect x="145.2" y="162.8" width="6" height="6" rx="1"/><rect x="152.4" y="162.8" width="6" height="6" rx="1"/><rect x="159.6" y="162.8" width="6" height="6" rx="1"/><rect x="166.8" y="162.8" width="6" height="6" rx="1"/><rect x="174.0" y="162.8" width="6" height="6" rx="1"/><rect x="181.2" y="162.8" width="6" height="6" rx="1"/><rect x="188.4" y="162.8" width="6" height="6" rx="1"/><rect x="195.6" y="162.8" width="6" height="6" rx="1"/><rect x="202.8" y="162.8" width="6" height="6" rx="1"/><rect x="210.0" y="162.8" width="6" height="6" rx="1"/><rect x="217.2" y="162.8" width="6" height="6" rx="1"/><rect x="224.4" y="162.8" width="6" height="6" rx="1"/><rect x="231.6" y="162.8" width="6" height="6" rx="1"/><rect x="238.8" y="162.8" width="6" height="6" rx="1"/><rect x="246.0" y="162.8" width="6" height="6" rx="1"/><rect x="253.2" y="162.8" width="6" height="6" rx="1"/><rect x="260.4" y="162.8" width="6" height="6" rx="1"/><rect x="267.6" y="162.8" width="6" height="6" rx="1"/><rect x="274.8" y="162.8" width="6" height="6" rx="1"/><rect x="282.0" y="162.8" width="6" height="6" rx="1"/><rect x="289.2" y="162.8" width="6" height="6" rx="1"/><rect x="296.4" y="162.8" width="6" height="6" rx="1"/><rect x="303.6" y="162.8" width="6" height="6" rx="1"/><rect x="310.8" y="162.8" width="6" height="6" rx="1"/><rect x="318.0" y="162.8" width="6" height="6" rx="1"/><rect x="325.2" y="162.8" width="6" height="6" rx="1"/><rect x="332.4" y="162.8" width="6" height="6" rx="1"/><rect x="339.6" y="162.8" width="6" height="6" rx="1"/><rect x="346.8" y="162.8" width="6" height="6" rx="1"/><rect x="354.0" y="162.8" width="6" height="6" rx="1"/><rect x="361.2" y="162.8" width="6" height="6" rx="1"/><rect x="368.4" y="162.8" width="6" height="6" rx="1"/><rect x="375.6" y="162.8" width="6" height="6" rx="1"/><rect x="382.8" y="162.8" width="6" height="6" rx="1"/><rect x="30.0" y="170.0" width="6" height="6" rx="1"/><rect x="37.2" y="170.0" width="6" height="6" rx="1"/><rect x="44.4" y="170.0" width="6" height="6" rx="1"/><rect x="51.6" y="170.0" width="6" height="6" rx="1"/><rect x="58.8" y="170.0" width="6" height="6" rx="1"/><rect x="66.0" y="170.0" width="6" height="6" rx="1"/><rect x="73.2" y="170.0" width="6" height="6" rx="1"/><rect x="80.4" y="170.0" width="6" height="6" rx="1"/><rect x="87.6" y="170.0" width="6" height="6" rx="1"/><rect x="94.8" y="170.0" width="6" height="6" rx="1"/><rect x="102.0" y="170.0" width="6" height="6" rx="1"/><rect x="109.2" y="170.0" width="6" height="6" rx="1"/><rect x="116.4" y="170.0" width="6" height="6" rx="1"/><rect x="123.6" y="170.0" width="6" height="6" rx="1"/><rect x="130.8" y="170.0" width="6" height="6" rx="1"/><rect x="138.0" y="170.0" width="6" height="6" rx="1"/><rect x="145.2" y="170.0" width="6" height="6" rx="1"/><rect x="152.4" y="170.0" width="6" height="6" rx="1"/><rect x="159.6" y="170.0" width="6" height="6" rx="1"/><rect x="166.8" y="170.0" width="6" height="6" rx="1"/><rect x="174.0" y="170.0" width="6" height="6" rx="1"/><rect x="181.2" y="170.0" width="6" height="6" rx="1"/><rect x="188.4" y="170.0" width="6" height="6" rx="1"/><rect x="195.6" y="170.0" width="6" height="6" rx="1"/><rect x="202.8" y="170.0" width="6" height="6" rx="1"/><rect x="210.0" y="170.0" width="6" height="6" rx="1"/><rect x="217.2" y="170.0" width="6" height="6" rx="1"/><rect x="224.4" y="170.0" width="6" height="6" rx="1"/><rect x="231.6" y="170.0" width="6" height="6" rx="1"/><rect x="238.8" y="170.0" width="6" height="6" rx="1"/><rect x="246.0" y="170.0" width="6" height="6" rx="1"/><rect x="253.2" y="170.0" width="6" height="6" rx="1"/><rect x="260.4" y="170.0" width="6" height="6" rx="1"/><rect x="267.6" y="170.0" width="6" height="6" rx="1"/><rect x="274.8" y="170.0" width="6" height="6" rx="1"/><rect x="282.0" y="170.0" width="6" height="6" rx="1"/><rect x="289.2" y="170.0" width="6" height="6" rx="1"/><rect x="296.4" y="170.0" width="6" height="6" rx="1"/><rect x="303.6" y="170.0" width="6" height="6" rx="1"/><rect x="310.8" y="170.0" width="6" height="6" rx="1"/><rect x="318.0" y="170.0" width="6" height="6" rx="1"/><rect x="325.2" y="170.0" width="6" height="6" rx="1"/><rect x="332.4" y="170.0" width="6" height="6" rx="1"/><rect x="339.6" y="170.0" width="6" height="6" rx="1"/><rect x="346.8" y="170.0" width="6" height="6" rx="1"/><rect x="354.0" y="170.0" width="6" height="6" rx="1"/><rect x="361.2" y="170.0" width="6" height="6" rx="1"/><rect x="368.4" y="170.0" width="6" height="6" rx="1"/><rect x="375.6" y="170.0" width="6" height="6" rx="1"/><rect x="382.8" y="170.0" width="6" height="6" rx="1"/><rect x="30.0" y="177.2" width="6" height="6" rx="1"/><rect x="37.2" y="177.2" width="6" height="6" rx="1"/><rect x="44.4" y="177.2" width="6" height="6" rx="1"/><rect x="51.6" y="177.2" width="6" height="6" rx="1"/><rect x="58.8" y="177.2" width="6" height="6" rx="1"/><rect x="66.0" y="177.2" width="6" height="6" rx="1"/><rect x="73.2" y="177.2" width="6" height="6" rx="1"/><rect x="80.4" y="177.2" width="6" height="6" rx="1"/><rect x="87.6" y="177.2" width="6" height="6" rx="1"/><rect x="94.8" y="177.2" width="6" height="6" rx="1"/><rect x="102.0" y="177.2" width="6" height="6" rx="1"/><rect x="109.2" y="177.2" width="6" height="6" rx="1"/><rect x="116.4" y="177.2" width="6" height="6" rx="1"/><rect x="123.6" y="177.2" width="6" height="6" rx="1"/><rect x="130.8" y="177.2" width="6" height="6" rx="1"/><rect x="138.0" y="177.2" width="6" height="6" rx="1"/><rect x="145.2" y="177.2" width="6" height="6" rx="1"/><rect x="152.4" y="177.2" width="6" height="6" rx="1"/><rect x="159.6" y="177.2" width="6" height="6" rx="1"/><rect x="166.8" y="177.2" width="6" height="6" rx="1"/><rect x="174.0" y="177.2" width="6" height="6" rx="1"/><rect x="181.2" y="177.2" width="6" height="6" rx="1"/><rect x="188.4" y="177.2" width="6" height="6" rx="1"/><rect x="195.6" y="177.2" width="6" height="6" rx="1"/><rect x="202.8" y="177.2" width="6" height="6" rx="1"/><rect x="210.0" y="177.2" width="6" height="6" rx="1"/><rect x="217.2" y="177.2" width="6" height="6" rx="1"/><rect x="224.4" y="177.2" width="6" height="6" rx="1"/><rect x="231.6" y="177.2" width="6" height="6" rx="1"/><rect x="238.8" y="177.2" width="6" height="6" rx="1"/><rect x="246.0" y="177.2" width="6" height="6" rx="1"/><rect x="253.2" y="177.2" width="6" height="6" rx="1"/><rect x="260.4" y="177.2" width="6" height="6" rx="1"/><rect x="267.6" y="177.2" width="6" height="6" rx="1"/><rect x="274.8" y="177.2" width="6" height="6" rx="1"/><rect x="282.0" y="177.2" width="6" height="6" rx="1"/><rect x="289.2" y="177.2" width="6" height="6" rx="1"/><rect x="296.4" y="177.2" width="6" height="6" rx="1"/><rect x="303.6" y="177.2" width="6" height="6" rx="1"/><rect x="310.8" y="177.2" width="6" height="6" rx="1"/><rect x="318.0" y="177.2" width="6" height="6" rx="1"/><rect x="325.2" y="177.2" width="6" height="6" rx="1"/><rect x="332.4" y="177.2" width="6" height="6" rx="1"/><rect x="339.6" y="177.2" width="6" height="6" rx="1"/><rect x="346.8" y="177.2" width="6" height="6" rx="1"/><rect x="354.0" y="177.2" width="6" height="6" rx="1"/><rect x="361.2" y="177.2" width="6" height="6" rx="1"/><rect x="368.4" y="177.2" width="6" height="6" rx="1"/><rect x="375.6" y="177.2" width="6" height="6" rx="1"/><rect x="382.8" y="177.2" width="6" height="6" rx="1"/><rect x="30.0" y="184.4" width="6" height="6" rx="1"/><rect x="37.2" y="184.4" width="6" height="6" rx="1"/><rect x="44.4" y="184.4" width="6" height="6" rx="1"/><rect x="51.6" y="184.4" width="6" height="6" rx="1"/><rect x="58.8" y="184.4" width="6" height="6" rx="1"/><rect x="66.0" y="184.4" width="6" height="6" rx="1"/><rect x="73.2" y="184.4" width="6" height="6" rx="1"/><rect x="80.4" y="184.4" width="6" height="6" rx="1"/><rect x="87.6" y="184.4" width="6" height="6" rx="1"/><rect x="94.8" y="184.4" width="6" height="6" rx="1"/><rect x="102.0" y="184.4" width="6" height="6" rx="1"/><rect x="109.2" y="184.4" width="6" height="6" rx="1"/><rect x="116.4" y="184.4" width="6" height="6" rx="1"/><rect x="123.6" y="184.4" width="6" height="6" rx="1"/><rect x="130.8" y="184.4" width="6" height="6" rx="1"/><rect x="138.0" y="184.4" width="6" height="6" rx="1"/><rect x="145.2" y="184.4" width="6" height="6" rx="1"/><rect x="152.4" y="184.4" width="6" height="6" rx="1"/><rect x="159.6" y="184.4" width="6" height="6" rx="1"/><rect x="166.8" y="184.4" width="6" height="6" rx="1"/><rect x="174.0" y="184.4" width="6" height="6" rx="1"/><rect x="181.2" y="184.4" width="6" height="6" rx="1"/><rect x="188.4" y="184.4" width="6" height="6" rx="1"/><rect x="195.6" y="184.4" width="6" height="6" rx="1"/><rect x="202.8" y="184.4" width="6" height="6" rx="1"/><rect x="210.0" y="184.4" width="6" height="6" rx="1"/><rect x="217.2" y="184.4" width="6" height="6" rx="1"/><rect x="224.4" y="184.4" width="6" height="6" rx="1"/><rect x="231.6" y="184.4" width="6" height="6" rx="1"/><rect x="238.8" y="184.4" width="6" height="6" rx="1"/><rect x="246.0" y="184.4" width="6" height="6" rx="1"/><rect x="253.2" y="184.4" width="6" height="6" rx="1"/><rect x="260.4" y="184.4" width="6" height="6" rx="1"/><rect x="267.6" y="184.4" width="6" height="6" rx="1"/><rect x="274.8" y="184.4" width="6" height="6" rx="1"/><rect x="282.0" y="184.4" width="6" height="6" rx="1"/><rect x="289.2" y="184.4" width="6" height="6" rx="1"/><rect x="296.4" y="184.4" width="6" height="6" rx="1"/><rect x="303.6" y="184.4" width="6" height="6" rx="1"/><rect x="310.8" y="184.4" width="6" height="6" rx="1"/><rect x="318.0" y="184.4" width="6" height="6" rx="1"/><rect x="325.2" y="184.4" width="6" height="6" rx="1"/><rect x="332.4" y="184.4" width="6" height="6" rx="1"/><rect x="339.6" y="184.4" width="6" height="6" rx="1"/><rect x="346.8" y="184.4" width="6" height="6" rx="1"/><rect x="354.0" y="184.4" width="6" height="6" rx="1"/><rect x="361.2" y="184.4" width="6" height="6" rx="1"/><rect x="368.4" y="184.4" width="6" height="6" rx="1"/><rect x="375.6" y="184.4" width="6" height="6" rx="1"/><rect x="382.8" y="184.4" width="6" height="6" rx="1"/><rect x="30.0" y="191.6" width="6" height="6" rx="1"/><rect x="37.2" y="191.6" width="6" height="6" rx="1"/><rect x="44.4" y="191.6" width="6" height="6" rx="1"/><rect x="51.6" y="191.6" width="6" height="6" rx="1"/><rect x="58.8" y="191.6" width="6" height="6" rx="1"/><rect x="66.0" y="191.6" width="6" height="6" rx="1"/><rect x="73.2" y="191.6" width="6" height="6" rx="1"/><rect x="80.4" y="191.6" width="6" height="6" rx="1"/><rect x="87.6" y="191.6" width="6" height="6" rx="1"/><rect x="94.8" y="191.6" width="6" height="6" rx="1"/><rect x="102.0" y="191.6" width="6" height="6" rx="1"/><rect x="109.2" y="191.6" width="6" height="6" rx="1"/><rect x="116.4" y="191.6" width="6" height="6" rx="1"/><rect x="123.6" y="191.6" width="6" height="6" rx="1"/><rect x="130.8" y="191.6" width="6" height="6" rx="1"/><rect x="138.0" y="191.6" width="6" height="6" rx="1"/><rect x="145.2" y="191.6" width="6" height="6" rx="1"/><rect x="152.4" y="191.6" width="6" height="6" rx="1"/><rect x="159.6" y="191.6" width="6" height="6" rx="1"/><rect x="166.8" y="191.6" width="6" height="6" rx="1"/><rect x="174.0" y="191.6" width="6" height="6" rx="1"/><rect x="181.2" y="191.6" width="6" height="6" rx="1"/><rect x="188.4" y="191.6" width="6" height="6" rx="1"/><rect x="195.6" y="191.6" width="6" height="6" rx="1"/><rect x="202.8" y="191.6" width="6" height="6" rx="1"/><rect x="210.0" y="191.6" width="6" height="6" rx="1"/><rect x="217.2" y="191.6" width="6" height="6" rx="1"/><rect x="224.4" y="191.6" width="6" height="6" rx="1"/><rect x="231.6" y="191.6" width="6" height="6" rx="1"/><rect x="238.8" y="191.6" width="6" height="6" rx="1"/><rect x="246.0" y="191.6" width="6" height="6" rx="1"/><rect x="253.2" y="191.6" width="6" height="6" rx="1"/><rect x="260.4" y="191.6" width="6" height="6" rx="1"/><rect x="267.6" y="191.6" width="6" height="6" rx="1"/><rect x="274.8" y="191.6" width="6" height="6" rx="1"/><rect x="282.0" y="191.6" width="6" height="6" rx="1"/><rect x="289.2" y="191.6" width="6" height="6" rx="1"/><rect x="296.4" y="191.6" width="6" height="6" rx="1"/><rect x="303.6" y="191.6" width="6" height="6" rx="1"/><rect x="310.8" y="191.6" width="6" height="6" rx="1"/><rect x="318.0" y="191.6" width="6" height="6" rx="1"/><rect x="325.2" y="191.6" width="6" height="6" rx="1"/><rect x="332.4" y="191.6" width="6" height="6" rx="1"/><rect x="339.6" y="191.6" width="6" height="6" rx="1"/><rect x="346.8" y="191.6" width="6" height="6" rx="1"/><rect x="354.0" y="191.6" width="6" height="6" rx="1"/><rect x="361.2" y="191.6" width="6" height="6" rx="1"/><rect x="368.4" y="191.6" width="6" height="6" rx="1"/><rect x="375.6" y="191.6" width="6" height="6" rx="1"/><rect x="382.8" y="191.6" width="6" height="6" rx="1"/><rect x="30.0" y="198.8" width="6" height="6" rx="1"/><rect x="37.2" y="198.8" width="6" height="6" rx="1"/><rect x="44.4" y="198.8" width="6" height="6" rx="1"/><rect x="51.6" y="198.8" width="6" height="6" rx="1"/><rect x="58.8" y="198.8" width="6" height="6" rx="1"/><rect x="66.0" y="198.8" width="6" height="6" rx="1"/><rect x="73.2" y="198.8" width="6" height="6" rx="1"/><rect x="80.4" y="198.8" width="6" height="6" rx="1"/><rect x="87.6" y="198.8" width="6" height="6" rx="1"/><rect x="94.8" y="198.8" width="6" height="6" rx="1"/><rect x="102.0" y="198.8" width="6" height="6" rx="1"/><rect x="109.2" y="198.8" width="6" height="6" rx="1"/><rect x="116.4" y="198.8" width="6" height="6" rx="1"/><rect x="123.6" y="198.8" width="6" height="6" rx="1"/><rect x="130.8" y="198.8" width="6" height="6" rx="1"/><rect x="138.0" y="198.8" width="6" height="6" rx="1"/><rect x="145.2" y="198.8" width="6" height="6" rx="1"/><rect x="152.4" y="198.8" width="6" height="6" rx="1"/><rect x="159.6" y="198.8" width="6" height="6" rx="1"/><rect x="166.8" y="198.8" width="6" height="6" rx="1"/><rect x="174.0" y="198.8" width="6" height="6" rx="1"/><rect x="181.2" y="198.8" width="6" height="6" rx="1"/><rect x="188.4" y="198.8" width="6" height="6" rx="1"/><rect x="195.6" y="198.8" width="6" height="6" rx="1"/><rect x="202.8" y="198.8" width="6" height="6" rx="1"/><rect x="210.0" y="198.8" width="6" height="6" rx="1"/><rect x="217.2" y="198.8" width="6" height="6" rx="1"/><rect x="224.4" y="198.8" width="6" height="6" rx="1"/><rect x="231.6" y="198.8" width="6" height="6" rx="1"/><rect x="238.8" y="198.8" width="6" height="6" rx="1"/><rect x="246.0" y="198.8" width="6" height="6" rx="1"/><rect x="253.2" y="198.8" width="6" height="6" rx="1"/><rect x="260.4" y="198.8" width="6" height="6" rx="1"/><rect x="267.6" y="198.8" width="6" height="6" rx="1"/><rect x="274.8" y="198.8" width="6" height="6" rx="1"/><rect x="282.0" y="198.8" width="6" height="6" rx="1"/><rect x="289.2" y="198.8" width="6" height="6" rx="1"/><rect x="296.4" y="198.8" width="6" height="6" rx="1"/><rect x="303.6" y="198.8" width="6" height="6" rx="1"/><rect x="310.8" y="198.8" width="6" height="6" rx="1"/><rect x="318.0" y="198.8" width="6" height="6" rx="1"/><rect x="325.2" y="198.8" width="6" height="6" rx="1"/><rect x="332.4" y="198.8" width="6" height="6" rx="1"/><rect x="339.6" y="198.8" width="6" height="6" rx="1"/><rect x="346.8" y="198.8" width="6" height="6" rx="1"/><rect x="354.0" y="198.8" width="6" height="6" rx="1"/><rect x="361.2" y="198.8" width="6" height="6" rx="1"/><rect x="368.4" y="198.8" width="6" height="6" rx="1"/><rect x="375.6" y="198.8" width="6" height="6" rx="1"/><rect x="382.8" y="198.8" width="6" height="6" rx="1"/></g>
+  <text x="210" y="228" text-anchor="middle" class="lbl-strong" font-size="12">Of the 60 who test positive, only 10 are sick:</text>
+  <text x="210" y="248" text-anchor="middle" class="lbl-strong" font-size="14" fill="var(--s2)">P(sick | positive) = 10 / (10 + 50) ≈ 17%</text>
+  <text x="210" y="270" text-anchor="middle" class="lbl" font-size="11">The test is excellent; the disease is just rare. The 5% false-positive rate,</text>
+  <text x="210" y="285" text-anchor="middle" class="lbl" font-size="11">applied to 990 healthy people, swamps the 10 real cases.</text>
+  <!-- tree -->
+  <text x="610" y="28" text-anchor="middle" class="lbl-strong" font-size="13">The same count as a tree</text>
+  <rect x="560" y="44" width="100" height="30" class="box-accent"/><text x="610" y="63" text-anchor="middle" class="lbl-strong" font-size="11">1,000 people</text>
+  <g class="arrow" marker-end="url(#arr-m8)"><path d="M590,74 L540,104"/><path d="M630,74 L680,104"/></g>
+  <text x="548" y="86" text-anchor="end" class="lbl" font-size="10">1% sick</text><text x="672" y="86" class="lbl" font-size="10">99% healthy</text>
+  <rect x="490" y="106" width="90" height="28" rx="5" fill="var(--s2)" fill-opacity=".2" stroke="var(--s2)"/><text x="535" y="124" text-anchor="middle" class="lbl-strong" font-size="11">10 sick</text>
+  <rect x="640" y="106" width="100" height="28" rx="5" fill="var(--ink-3)" fill-opacity=".15" stroke="var(--ink-3)"/><text x="690" y="124" text-anchor="middle" class="lbl-strong" font-size="11">990 healthy</text>
+  <g class="arrow" marker-end="url(#arr-m8)"><path d="M520,134 L500,166"/><path d="M552,134 L572,166"/><path d="M672,134 L650,166"/><path d="M708,134 L730,166"/></g>
+  <text x="497" y="150" text-anchor="end" class="lbl" font-size="9">99% +</text><text x="574" y="150" class="lbl" font-size="9">1% −</text>
+  <text x="647" y="150" text-anchor="end" class="lbl" font-size="9">5% +</text><text x="732" y="150" class="lbl" font-size="9">95% −</text>
+  <rect x="468" y="168" width="60" height="28" rx="5" fill="var(--s2)" fill-opacity=".3" stroke="var(--s2)" stroke-width="2"/><text x="498" y="186" text-anchor="middle" class="lbl-strong" font-size="11">9.9 +</text>
+  <rect x="545" y="168" width="52" height="28" rx="5" fill="var(--surface)" stroke="var(--border)"/><text x="571" y="186" text-anchor="middle" class="lbl" font-size="11">0.1 −</text>
+  <rect x="612" y="168" width="70" height="28" rx="5" fill="var(--s7)" fill-opacity=".25" stroke="var(--s7)" stroke-width="2"/><text x="647" y="186" text-anchor="middle" class="lbl-strong" font-size="11">49.5 +</text>
+  <rect x="700" y="168" width="80" height="28" rx="5" fill="var(--surface)" stroke="var(--border)"/><text x="740" y="186" text-anchor="middle" class="lbl" font-size="11">940.5 −</text>
+  <text x="610" y="225" text-anchor="middle" class="lbl" font-size="11">positives: 9.9 + 49.5 = 59.4</text>
+  <text x="610" y="245" text-anchor="middle" class="lbl-strong" font-size="12">posterior = 9.9 / 59.4 = 0.167</text>
+  <text x="610" y="268" text-anchor="middle" class="lbl" font-size="11">Bayes: 0.99 × 0.01 / (0.99 × 0.01 + 0.05 × 0.99)</text>
+  <text x="610" y="285" text-anchor="middle" class="lbl" font-size="11">= 0.0099 / 0.0594 = 0.167</text>
+</svg>
+<figcaption><strong>Figure 3.8 — Bayes' theorem as counting.</strong> Out of 1,000 people, 10 are sick and (almost all) test positive, but 5% of the 990 healthy people also test positive: 50 false alarms. A positive result therefore means a one-in-six chance of disease, not 99%. The prior (prevalence) matters as much as the test.</figcaption>
+</figure>
+
+<div class="widget" id="w-bayes">
+  <div class="w-title">Interactive: Bayes' theorem calculator</div>
+  <div class="controls">
+    <label>Prevalence % <input type="range" id="by-prev" min="1" max="500" value="10" data-out="by-prev-out"> <output id="by-prev-out"></output></label>
+    <label>Sensitivity % <input type="range" id="by-sens" min="50" max="100" value="99" data-out="by-sens-out"> <output id="by-sens-out"></output></label>
+    <label>Specificity % <input type="range" id="by-spec" min="50" max="100" value="95" data-out="by-spec-out"> <output id="by-spec-out"></output></label>
+    <span>P(disease | positive): <span class="readout" id="by-post">–</span></span>
+    <span>P(disease | negative): <span class="readout" id="by-neg">–</span></span>
+  </div>
+  <svg viewBox="0 0 700 260" id="by-svg" role="img" aria-label="A 10 by 10 grid of 100 people coloured by disease status and test result, with the posterior probability"></svg>
+  <div class="note" id="by-note">Prevalence is in tenths of a percent (slider value 10 = 1.0%). Each cell is 1% of the population; cell colours are rounded, the readouts are exact. Try: raise prevalence to 30% and watch the posterior jump; then set specificity to 100% and see false positives vanish entirely.</div>
+</div>
+
+<div class="callout pro"><div class="title">At work</div>
+<p>Bayes is the reason a fraud model with "99% accuracy" can be useless. If 0.1% of transactions are fraud and your model flags 1% of legitimate transactions, then for every real fraud you catch you will flag about ten innocent customers. Before promising precision numbers, compute the base rate and run this calculation. Chapter 6 turns this into precision, recall and the precision–recall curve; the arithmetic is identical.</p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s7">7. Maximum likelihood: where loss functions come from</h2>
+
+<div class="callout eli9"><div class="title">Explain it like I'm 9</div>
+<p>You find a coin and flip it 50 times: 13 heads. What is the coin's chance of heads? You could try every possible answer, 10%, 20%, 30%…, and for each ask "how likely would 13 heads out of 50 be if that were the truth?" The answer that makes what you actually saw <em>most likely</em> is 26%. That is maximum likelihood, and it is how models pick their parameters: choose the parameters under which the data you observed would have been most probable.</p>
+</div>
+
+<div class="formula">θ̂ = argmax<sub>θ</sub> P(data | θ) = argmax<sub>θ</sub> ∑<sub>i</sub> log P(x<sub>i</sub> | θ) = argmin<sub>θ</sub> [ −∑<sub>i</sub> log P(x<sub>i</sub> | θ) ]</div>
+<div class="callout math"><div class="title">The math (optional)</div>
+<p>θ (theta) stands for all the parameters of a model; <em>P</em>(data | θ) is the <strong>likelihood</strong>, the probability of the observed examples if θ were the truth. When examples are independent the likelihood is a product over examples, so its log is a sum of per-example log-probabilities (§5). Maximising a quantity is the same as minimising its negative, so <strong>maximum likelihood = minimising the negative log-likelihood</strong>, which is precisely a loss function summed over the training set. Two famous cases: if you assume the label is normal around a linear prediction, the negative log-likelihood <em>is</em> the mean squared error (Chapter 5). If you assume the label is Bernoulli with probability σ(<span class="var">w</span>·<span class="var">x</span>), it <em>is</em> the log-loss / binary cross-entropy (Chapter 6). Loss functions are not arbitrary: each one is a statement about how you believe the data was generated.</p>
+</div>
+
+<pre class="code" data-lang="python"><code><span class="cm"># Bayes by hand, then maximum likelihood for a coin (a grid search over p)</span>
+<span class="kw">import</span> numpy <span class="kw">as</span> np
+prev, sens, spec = <span class="nu">0.01</span>, <span class="nu">0.99</span>, <span class="nu">0.95</span>
+p_pos = prev*sens + (<span class="nu">1</span>-prev)*(<span class="nu">1</span>-spec)              <span class="cm"># P(test positive)</span>
+post  = prev*sens / p_pos                          <span class="cm"># P(disease | positive)</span>
+<span class="fn">print</span>(<span class="st">f"P(positive) = {p_pos:.4f}   P(disease | positive) = {post:.3f}"</span>)
+<span class="fn">print</span>(<span class="st">"per 1000: true positives ≈"</span>, <span class="fn">round</span>(<span class="nu">1000</span>*prev*sens, <span class="nu">1</span>), <span class="st">" false positives ≈"</span>, <span class="fn">round</span>(<span class="nu">1000</span>*(<span class="nu">1</span>-prev)*(<span class="nu">1</span>-spec), <span class="nu">1</span>))
+
+<span class="cm"># Maximum likelihood: which p makes the observed flips most probable?</span>
+rng = np.random.default_rng(<span class="nu">1</span>)
+flips = rng.random(<span class="nu">50</span>) &lt; <span class="nu">0.3</span>                       <span class="cm"># true p = 0.3, 50 flips</span>
+heads = flips.sum()
+ps = np.linspace(<span class="nu">0.01</span>, <span class="nu">0.99</span>, <span class="nu">99</span>)
+loglik = heads*np.log(ps) + (<span class="nu">50</span>-heads)*np.log(<span class="nu">1</span>-ps)    <span class="cm"># log P(data | p), up to a constant</span>
+<span class="fn">print</span>(<span class="st">"heads:"</span>, heads, <span class="st">" MLE p̂ ="</span>, ps[np.argmax(loglik)].round(<span class="nu">2</span>), <span class="st">" (= heads/50 ="</span>, heads/<span class="nu">50</span>, <span class="st">")"</span>)
+<span class="out"># P(positive) = 0.0594   P(disease | positive) = 0.167</span>
+<span class="out"># per 1000: true positives ≈ 9.9  false positives ≈ 49.5</span>
+<span class="out"># heads: 13  MLE p̂ = 0.26  (= heads/50 = 0.26 )</span></code></pre>
+
+<div class="callout key"><div class="title">Key idea</div>
+<p><strong>A loss function is a negative log-likelihood in disguise.</strong> Squared error assumes Gaussian noise; log-loss assumes Bernoulli labels; Poisson regression assumes Poisson counts. When a model's errors look nothing like its assumed distribution (heavy tails, counts with lots of zeros), the loss is the first thing to question, not the algorithm.</p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s8">8. Statistics you will use every week</h2>
+
+<h3>Describing a column: centre, spread, quantiles</h3>
+<p>The <strong>mean</strong> is the arithmetic average; it is the number that minimises squared error and it is pulled by outliers. The <strong>median</strong> is the middle value; it minimises absolute error and ignores outliers. The <strong>mode</strong> is the most frequent value; useful for categories. The <strong>standard deviation</strong> is the typical distance from the mean (§6). <strong>Quantiles</strong> cut the sorted data into fractions: the 90th percentile is the value that 90% of rows fall below. For skewed data (spend, income, latency) report the median and a couple of quantiles; the mean alone is misleading, as the spend histogram in Chapter 2 showed.</p>
+
+<h3>Sampling error: every number you compute is a guess</h3>
+<div class="callout eli9"><div class="title">Explain it like I'm 9</div>
+<p>If you want to know how tall kids in your school are, you measure 30 of them and average. Measure a <em>different</em> 30 and you get a slightly different average. Neither is wrong; they are both estimates of the true school-wide average, and the wobble between them is sampling error. Bigger samples wobble less. The bootstrap is a clever trick for measuring the wobble using only the one sample you have.</p>
+</div>
+
+<div class="formula">SE(mean) = s / √n      95% CI ≈ mean ± 1.96 · SE</div>
+<div class="callout math"><div class="title">The math (optional)</div>
+<p><em>s</em> is the sample standard deviation and <em>n</em> the sample size. The <strong>standard error</strong> is the standard deviation of the estimate itself: how much the mean would vary across repeated samples. It shrinks with √<em>n</em>, so four times the data halves the error. The <strong>central limit theorem</strong> says the sampling distribution of a mean is approximately normal whatever the data's shape, which justifies the 1.96 (the normal distribution's 97.5th percentile) in the 95% confidence interval. A 95% CI means: if you repeated the whole study many times, 95% of the intervals you built would contain the true value. It does not mean "there is a 95% probability the truth is in this interval", although in practice people read it that way and it is rarely harmful.</p>
+</div>
+
+<p><strong>The bootstrap</strong> replaces the formula with computation, and works for <em>any</em> statistic (a median, a ratio, a model's AUC): resample your <em>n</em> rows with replacement, recompute the statistic, repeat a few thousand times, and read the spread of the results. The 2.5th and 97.5th percentiles of the bootstrap results give a 95% interval. This is the tool you will use to put error bars on model metrics in Chapter 13.</p>
+
+<pre class="code" data-lang="python"><code><span class="cm"># Describing a skewed column, and putting an honest error bar on the mean, two ways</span>
+<span class="kw">import</span> numpy <span class="kw">as</span> np
+rng = np.random.default_rng(<span class="nu">0</span>)
+spend = rng.gamma(<span class="nu">4</span>, <span class="nu">12</span>, <span class="nu">400</span>).round(<span class="nu">2</span>)             <span class="cm"># 400 customers' monthly spend (skewed)</span>
+<span class="fn">print</span>(<span class="st">f"mean {spend.mean():.2f}  median {np.median(spend):.2f}  std {spend.std(ddof=1):.2f}"</span>)
+<span class="fn">print</span>(<span class="st">"quantiles 10/50/90:"</span>, np.quantile(spend, [<span class="nu">.1</span>, <span class="nu">.5</span>, <span class="nu">.9</span>]).round(<span class="nu">1</span>))
+
+<span class="cm"># standard error of the mean: formula vs bootstrap</span>
+se_formula = spend.std(ddof=<span class="nu">1</span>) / np.sqrt(<span class="fn">len</span>(spend))
+boot_means = np.array([rng.choice(spend, <span class="fn">len</span>(spend), replace=<span class="kw">True</span>).mean() <span class="kw">for</span> _ <span class="kw">in</span> <span class="fn">range</span>(<span class="nu">2000</span>)])
+<span class="fn">print</span>(<span class="st">f"SE (formula) {se_formula:.2f}   SE (bootstrap) {boot_means.std():.2f}"</span>)
+lo, hi = np.percentile(boot_means, [<span class="nu">2.5</span>, <span class="nu">97.5</span>])
+<span class="fn">print</span>(<span class="st">f"95% bootstrap CI for the mean: [{lo:.1f}, {hi:.1f}]"</span>)
+
+<span class="cm"># the same trick works for ANY statistic, e.g. the median (no formula needed)</span>
+boot_med = [np.median(rng.choice(spend, <span class="fn">len</span>(spend), replace=<span class="kw">True</span>)) <span class="kw">for</span> _ <span class="kw">in</span> <span class="fn">range</span>(<span class="nu">2000</span>)]
+<span class="fn">print</span>(<span class="st">"95% CI for the median:"</span>, np.percentile(boot_med, [<span class="nu">2.5</span>, <span class="nu">97.5</span>]).round(<span class="nu">1</span>))
+<span class="out"># mean 46.50  median 43.59  std 22.71</span>
+<span class="out"># quantiles 10/50/90: [21.1 43.6 77.4]</span>
+<span class="out"># SE (formula) 1.14   SE (bootstrap) 1.13</span>
+<span class="out"># 95% bootstrap CI for the mean: [44.3, 48.8]</span>
+<span class="out"># 95% CI for the median: [39.7 46.2]</span></code></pre>
+
+<h3>p-values, in one honest paragraph</h3>
+<p>A <strong>p-value</strong> answers a narrow question: <em>if there were truly no effect (the "null hypothesis"), how often would random sampling alone produce a result at least this extreme?</em> A small p-value (conventionally below 0.05) says the data would be surprising under "no effect". It does <strong>not</strong> tell you the probability that the effect is real, how big the effect is, or whether it matters. With enough data, trivially small effects become "significant"; with little data, large real effects do not. In practice at work: report the effect size with a confidence interval, use the p-value as a sanity check against noise, and never run twenty tests and report the one that passed (that is the multiple-comparisons trap, and it is the leakage of statistics). For A/B tests, decide the sample size <em>before</em> you start and do not peek.</p>
+
+<div class="callout warn"><div class="title">Common mistake</div>
+<p><strong>Correlation is not causation, and models do not care.</strong> Ice-cream sales correlate with drownings (both rise in summer). Customers who call support churn more; that does not mean support calls <em>cause</em> churn, and cancelling the support line will not reduce churn. A predictive model is allowed to use any correlate it can find, which is what makes it useful for <em>prediction</em> and dangerous for <em>decisions</em>: "if we reduce X, will Y change?" is a causal question that needs an experiment (A/B test) or causal methods (Chapter 22), not a feature importance. When a stakeholder asks "what should we change?", that is your cue to slow down.</p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s9">9. A taste of information theory: entropy</h2>
+
+<div class="callout eli9"><div class="title">Explain it like I'm 9</div>
+<p>How surprised are you by the answer? If I tell you a fair coin came up heads, you learn a little (it could have gone either way). If I tell you a coin that is heads 99% of the time came up heads, you learn almost nothing. If it came up <em>tails</em>, you learn a lot. Entropy is the average surprise: how much you expect to learn from the answer before you hear it. It is measured in bits: one bit is the surprise of a fair coin flip.</p>
+</div>
+
+<div class="formula">H(X) = −∑<sub>k</sub> P(X = k) · log<sub>2</sub> P(X = k)      (surprise of outcome k = −log<sub>2</sub> P(k) bits)</div>
+<div class="callout math"><div class="title">The math (optional)</div>
+<p>The <strong>surprise</strong> (information) of an outcome with probability <em>p</em> is −log<sub>2</sub> <em>p</em> bits: probability ½ → 1 bit, ¼ → 2 bits, 1 → 0 bits. <strong>Entropy</strong> is the expected surprise: each outcome's surprise weighted by its probability. It is maximal when all outcomes are equally likely (log<sub>2</sub> <em>K</em> bits for <em>K</em> outcomes) and zero when the outcome is certain. Worked example: a node in a decision tree contains 26% churners and 74% stayers. H = −(0.26 log<sub>2</sub> 0.26 + 0.74 log<sub>2</sub> 0.74) = −(0.26 × (−1.943) + 0.74 × (−0.434)) = 0.505 + 0.321 = <strong>0.827 bits</strong>. A pure node (100% one class) has 0 bits. Decision trees (Chapter 9) choose the split that reduces entropy the most, the <strong>information gain</strong>; cross-entropy loss (Chapters 6 and 15) is the same formula with the model's predicted probabilities inside the log.</p>
+</div>
+
+<figure class="fig">
+<svg viewBox="0 0 800 280" role="img" aria-label="Entropy of a yes/no variable as a function of the probability p: an arch from 0 bits at p equals 0, up to 1 bit at p equals 0.5, back to 0 at p equals 1. The churn node at p equals 0.26 is marked at 0.83 bits, and a split into purer children is shown to lower the average entropy">
+  <defs><marker id="arr-m9" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+  <text x="300" y="24" text-anchor="middle" class="lbl-strong" font-size="13">Entropy of a yes/no variable, H(p), in bits</text>
+  <line x1="60" y1="230" x2="560" y2="230" class="axis" marker-end="url(#arr-m9)"/>
+  <line x1="60" y1="230" x2="60" y2="40" class="axis" marker-end="url(#arr-m9)"/>
+  <g class="grid"><line x1="60" y1="140" x2="540" y2="140"/><line x1="60" y1="50" x2="540" y2="50"/></g>
+  <g class="lbl" font-size="10"><text x="54" y="234" text-anchor="end">0</text><text x="54" y="144" text-anchor="end">0.5</text><text x="54" y="54" text-anchor="end">1</text>
+  <text x="60" y="248" text-anchor="middle">0</text><text x="180" y="248" text-anchor="middle">0.25</text><text x="300" y="248" text-anchor="middle">0.5</text><text x="420" y="248" text-anchor="middle">0.75</text><text x="540" y="248" text-anchor="middle">1</text></g>
+  <text x="300" y="266" text-anchor="middle" class="lbl">p = P(yes)</text>
+  <polyline points="61.4,224.7 67.5,209.1 73.5,196.7 79.6,185.8 85.6,175.9 91.6,166.9 97.7,158.6 103.7,150.8 109.8,143.5 115.8,136.7 121.8,130.2 127.9,124.2 133.9,118.4 140.0,113.0 146.0,107.9 152.0,103.1 158.1,98.5 164.1,94.2 170.2,90.1 176.2,86.3 182.2,82.7 188.3,79.3 194.3,76.1 200.3,73.1 206.4,70.3 212.4,67.7 218.5,65.3 224.5,63.1 230.5,61.0 236.6,59.2 242.6,57.5 248.7,56.0 254.7,54.7 260.7,53.5 266.8,52.5 272.8,51.7 278.9,51.0 284.9,50.5 290.9,50.2 297.0,50.0 303.0,50.0 309.1,50.2 315.1,50.5 321.1,51.0 327.2,51.7 333.2,52.5 339.3,53.5 345.3,54.7 351.3,56.0 357.4,57.5 363.4,59.2 369.5,61.0 375.5,63.1 381.5,65.3 387.6,67.7 393.6,70.3 399.7,73.1 405.7,76.1 411.7,79.3 417.8,82.7 423.8,86.3 429.8,90.1 435.9,94.2 441.9,98.5 448.0,103.1 454.0,107.9 460.0,113.0 466.1,118.4 472.1,124.2 478.2,130.2 484.2,136.7 490.2,143.5 496.3,150.8 502.3,158.6 508.4,166.9 514.4,175.9 520.4,185.8 526.5,196.7 532.5,209.1 538.6,224.7" fill="none" stroke="var(--s1)" stroke-width="2.5"/>
+  <!-- point at p=.26 -> x=60+.26*480=184.8, H=.827 -> y=230-.827*180=81.1 -->
+  <line x1="184.8" y1="230" x2="184.8" y2="81" stroke="var(--s2)" stroke-dasharray="3 3"/>
+  <circle cx="184.8" cy="81" r="5" fill="var(--s2)"/>
+  <text x="196" y="72" class="lbl-strong" font-size="11" fill="var(--s2)">churn node: p = 0.26 → 0.83 bits</text>
+  <circle cx="300" cy="50" r="4" fill="var(--s1)"/>
+  <text x="308" y="45" class="lbl" font-size="11">max: 1 bit at p = 0.5 (fair coin)</text>
+  <text x="530" y="222" text-anchor="end" class="lbl" font-size="11">certain → 0 bits</text>
+  <!-- children after split -->
+  <circle cx="108" cy="148" r="4" fill="var(--s3)"/><text x="116" y="152" class="lbl" font-size="10" fill="var(--s3)">child L: p=.10, 0.47 bits</text>
+  <circle cx="276" cy="53" r="4" fill="var(--s3)"/><text x="230" y="70" class="lbl" font-size="10" fill="var(--s3)" text-anchor="end">child R: p=.45, 0.99 bits</text>
+  <!-- right: info gain -->
+  <rect x="590" y="40" width="195" height="200" rx="8" class="fill-surface2" stroke="var(--border)"/>
+  <text x="687" y="62" text-anchor="middle" class="lbl-strong" font-size="12">Information gain of a split</text>
+  <text x="600" y="88" class="lbl" font-size="11">parent: 0.827 bits</text>
+  <text x="600" y="110" class="lbl" font-size="11">children (55% / 45% of rows):</text>
+  <text x="600" y="126" class="lbl" font-size="11">0.55 × 0.469 + 0.45 × 0.993</text>
+  <text x="600" y="142" class="lbl" font-size="11">= 0.705 bits</text>
+  <text x="600" y="168" class="lbl-strong" font-size="11" fill="var(--good)">gain = 0.827 − 0.705 = 0.122</text>
+  <text x="600" y="194" class="lbl" font-size="10">The tree tries every feature and</text>
+  <text x="600" y="208" class="lbl" font-size="10">threshold, keeps the largest gain,</text>
+  <text x="600" y="222" class="lbl" font-size="10">and repeats on each child (Ch 9).</text>
+</svg>
+<figcaption><strong>Figure 3.9 — Entropy is average surprise.</strong> A yes/no variable carries at most 1 bit (at p = 0.5) and 0 bits when certain. Our churn node sits at 0.83 bits; a split that produces purer children lowers the weighted average to 0.71 bits, an information gain of 0.12. Decision trees are greedy hunters of this gain.</figcaption>
+</figure>
+
+<pre class="code" data-lang="python"><code><span class="cm"># Entropy in bits, and the information gain of a split (the heart of decision trees)</span>
+<span class="kw">import</span> numpy <span class="kw">as</span> np
+<span class="kw">def</span> <span class="fn">entropy</span>(p):
+    p = np.asarray(p, dtype=<span class="fn">float</span>); p = p[p &gt; <span class="nu">0</span>]        <span class="cm"># 0·log 0 is defined as 0</span>
+    <span class="kw">return</span> <span class="fn">max</span>(<span class="nu">0.0</span>, -(p * np.log2(p)).sum())
+<span class="fn">print</span>(<span class="st">"fair coin       :"</span>, entropy([<span class="nu">.5</span>, <span class="nu">.5</span>]), <span class="st">"bits"</span>)
+<span class="fn">print</span>(<span class="st">"loaded 90/10    :"</span>, entropy([<span class="nu">.9</span>, <span class="nu">.1</span>]).round(<span class="nu">3</span>), <span class="st">"bits"</span>)
+<span class="fn">print</span>(<span class="st">"certain         :"</span>, entropy([<span class="nu">1.0</span>]), <span class="st">"bits"</span>)
+<span class="fn">print</span>(<span class="st">"fair 8-sided die:"</span>, entropy([<span class="nu">1</span>/<span class="nu">8</span>]*<span class="nu">8</span>), <span class="st">"bits  (= log2 8)"</span>)
+
+<span class="cm"># a node in a decision tree: 26% churners</span>
+<span class="fn">print</span>(<span class="st">"churn node (26/74):"</span>, entropy([<span class="nu">.26</span>, <span class="nu">.74</span>]).round(<span class="nu">3</span>), <span class="st">"bits"</span>)
+<span class="cm"># a split that separates them better lowers the average entropy -&gt; information gain (Ch 9)</span>
+left, right = [<span class="nu">.10</span>, <span class="nu">.90</span>], [<span class="nu">.45</span>, <span class="nu">.55</span>]           <span class="cm"># two children holding 55% and 45% of the rows</span>
+after = <span class="nu">0.55</span>*entropy(left) + <span class="nu">0.45</span>*entropy(right)
+<span class="fn">print</span>(<span class="st">"after split:"</span>, after.round(<span class="nu">3</span>), <span class="st">"bits  -&gt; gain"</span>, (entropy([<span class="nu">.26</span>,<span class="nu">.74</span>]) - after).round(<span class="nu">3</span>))
+<span class="out"># fair coin       : 1.0 bits</span>
+<span class="out"># loaded 90/10    : 0.469 bits</span>
+<span class="out"># certain         : 0.0 bits</span>
+<span class="out"># fair 8-sided die: 3.0 bits  (= log2 8)</span>
+<span class="out"># churn node (26/74): 0.827 bits</span>
+<span class="out"># after split: 0.705 bits  -&gt; gain 0.122</span></code></pre>
+
+<div class="callout key"><div class="title">Key idea</div>
+<p>Three ideas in this chapter are secretly the same idea. <strong>Entropy</strong> measures the surprise in a distribution. <strong>Cross-entropy loss</strong> measures the surprise of the true labels under the <em>model's</em> distribution: a confident wrong prediction is very surprising and costs a lot. And <strong>maximum likelihood</strong> minimises exactly that cross-entropy. When you train a classifier, you are teaching it to be less surprised by the data.</p>
+</div>
+
+<h3>Which tool do I reach for at work?</h3>
+<div class="tbl-wrap">
+<table class="tbl">
+<thead><tr><th>You are asked…</th><th>Reach for</th><th>Section</th></tr></thead>
+<tbody>
+<tr><td>"How similar are these two customers / documents?"</td><td>Euclidean distance on scaled features; cosine for text and embeddings</td><td>§3</td></tr>
+<tr><td>"Why isn't training converging?"</td><td>Loss curve; learning rate; feature scaling (contour shape)</td><td>§4</td></tr>
+<tr><td>"What does this probability output mean?"</td><td>Sigmoid/softmax: monotone in the score; calibrate before trusting (Ch 6)</td><td>§5</td></tr>
+<tr><td>"The test/model flagged it, how sure are we?"</td><td>Bayes with the base rate; count per 1,000</td><td>§6</td></tr>
+<tr><td>"Which loss should I use?"</td><td>Match the label's distribution: Gaussian → MSE, Bernoulli → log-loss, counts → Poisson</td><td>§7</td></tr>
+<tr><td>"Is this improvement real or noise?"</td><td>Standard error / bootstrap CI on the metric; a p-value as a sanity check</td><td>§8</td></tr>
+<tr><td>"Does X cause Y?"</td><td>An experiment or causal methods; never a correlation or a feature importance</td><td>§8, Ch 22</td></tr>
+<tr><td>"Which feature is most informative?"</td><td>Information gain / mutual information; correlation only for linear relations</td><td>§9, Ch 9</td></tr>
+</tbody>
+</table>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="quiz">Quiz</h2>
+<div class="quiz">
+  <h3>Check your understanding</h3>
+
+  <div class="q">
+    <p class="question">1. <code>X</code> has shape (2000, 8) and <code>W</code> has shape (8, 16). What is the shape of <code>X @ W</code>, and what does it represent?</p>
+    <ul class="opts">
+      <li><button>(8, 8): the covariance of the features</button></li>
+      <li><button data-correct>(2000, 16): 16 new weighted-sum features for each of the 2000 rows</button></li>
+      <li><button>(16, 2000): a transposed copy of the data</button></li>
+      <li><button>It is a shape error because 2000 ≠ 16</button></li>
+    </ul>
+    <div class="explain">Inner dimensions (8 and 8) match and vanish; the outer ones (2000 and 16) remain. Each column of W is one weight vector, so every row gets 16 scores: exactly what a neural-network layer computes (§2).</div>
+  </div>
+
+  <div class="q">
+    <p class="question">2. At the current parameters the gradient of the loss is (−6, 18). With learning rate 0.1, what is the next update?</p>
+    <ul class="opts">
+      <li><button>Add (−0.6, 1.8) to the parameters</button></li>
+      <li><button data-correct>Add (0.6, −1.8) to the parameters</button></li>
+      <li><button>Multiply the parameters by 0.1</button></li>
+      <li><button>Set the parameters to (−6, 18)</button></li>
+    </ul>
+    <div class="explain">The gradient points uphill, so we step against it: w ← w − 0.1 × (−6, 18) = w + (0.6, −1.8). The second parameter moves more because its slope is steeper (§4).</div>
+  </div>
+
+  <div class="q">
+    <p class="question">3. Two document vectors are (1, 2, 0) and (10, 20, 0). Which statement is true?</p>
+    <ul class="opts">
+      <li><button>Their Euclidean distance is 0, so they are identical</button></li>
+      <li><button data-correct>Their cosine similarity is 1; Euclidean distance is large; cosine is the better choice for word counts</button></li>
+      <li><button>Their cosine similarity is 0.1 because one is ten times longer</button></li>
+      <li><button>Cosine similarity cannot be computed for vectors with a zero entry</button></li>
+    </ul>
+    <div class="explain">The second vector is 10× the first: same direction, so cosine = 1, while Euclidean distance is about 20. For word counts, length reflects document size, not content, so cosine is the sensible measure (§3).</div>
+  </div>
+
+  <div class="q">
+    <p class="question">4. A fraud model has sensitivity 90% and specificity 99%. Fraud occurs in 0.5% of transactions. Roughly what fraction of flagged transactions are actually fraud?</p>
+    <ul class="opts">
+      <li><button>About 90%</button></li>
+      <li><button>About 99%</button></li>
+      <li><button data-correct>About 31%</button></li>
+      <li><button>About 0.5%</button></li>
+    </ul>
+    <div class="explain">Per 10,000 transactions: 50 frauds, 45 caught; 9,950 legitimate, 1% = 99.5 false alarms. Posterior = 45 / (45 + 99.5) ≈ 0.31. The base rate dominates (§6).</div>
+  </div>
+
+  <div class="q">
+    <p class="question">5. You measured a model's accuracy on 400 test rows as 75%. A colleague's variant scores 77% on the same rows. What is the most defensible conclusion?</p>
+    <ul class="opts">
+      <li><button>The variant is better; 77 &gt; 75</button></li>
+      <li><button data-correct>The difference is within sampling error (SE ≈ 2.2 points); more test data or a paired bootstrap is needed</button></li>
+      <li><button>The original is better because it is simpler</button></li>
+      <li><button>Accuracy cannot be compared between models</button></li>
+    </ul>
+    <div class="explain">SE = √(0.75 × 0.25 / 400) ≈ 0.022, so the 95% interval is about ±4.2 points; a 2-point gap is noise at this sample size. Compute a CI on the <em>difference</em> (paired bootstrap over the same rows) before claiming an improvement (§8).</div>
+  </div>
+
+  <div class="q">
+    <p class="question">6. A decision-tree node has 50% churners. After a candidate split, the two children (equal size) have 50% and 50% churners. What is the information gain?</p>
+    <ul class="opts">
+      <li><button>1 bit</button></li>
+      <li><button>0.5 bits</button></li>
+      <li><button data-correct>0 bits: the split told us nothing</button></li>
+      <li><button>It cannot be computed without the feature values</button></li>
+    </ul>
+    <div class="explain">Parent entropy is 1 bit; each child is also at p = 0.5, so 1 bit each; the weighted average is still 1 bit and the gain is 0. A split only gains information if it makes the children purer (§9).</div>
+  </div>
+</div>
+
+<h2 id="exercises">Exercises</h2>
+
+<div class="exercise"><div class="title">Exercise 3.1 — Chain rule by hand, then by numpy</div>
+<p>Let <em>u</em> = <em>w</em>·<em>x</em> with <em>x</em> = 2, then <em>p</em> = σ(<em>u</em>), then loss <em>L</em> = −log <em>p</em> (the log-loss for a positive example). At <em>w</em> = 0.5: (a) compute <em>u</em>, <em>p</em> and <em>L</em>; (b) using dL/dp = −1/p, dp/du = p(1−p), du/dw = x, compute dL/dw by the chain rule; (c) verify numerically with a finite difference of h = 10<sup>−5</sup>; (d) say which direction gradient descent moves <em>w</em>, and why that makes sense.</p>
+<details class="answer"><summary>Show answer</summary>
+<p>(a) u = 1.0, p = σ(1) = 0.731, L = −ln 0.731 = 0.313. (b) dL/dw = (−1/p)·p(1−p)·x = −(1−p)·x = −0.269 × 2 = −0.538. (c) <code>(L(0.5+1e-5) − L(0.5−1e-5)) / 2e-5</code> ≈ −0.538. (d) The derivative is negative, so gradient descent <em>increases</em> w, which raises u and p: the model becomes more confident about a positive example, lowering the loss. Note the neat simplification dL/du = p − y (with y = 1): this is why logistic regression's gradient is just "(prediction − label) × features" (Chapter 6).</p>
+</details>
+</div>
+
+<div class="exercise"><div class="title">Exercise 3.2 — Bootstrap a model metric</div>
+<p>Train <code>LogisticRegression</code> on <code>load_breast_cancer</code> with a stratified 70/30 split (<code>random_state=0</code>). Compute test accuracy. Then bootstrap the <em>test set</em> 1,000 times (resample test rows with replacement, recompute accuracy on the resampled rows using the same trained model) and report the 2.5th and 97.5th percentiles. How wide is the interval, and what does that imply about comparing two models that differ by 1 point on this test set?</p>
+<details class="answer"><summary>Show answer</summary>
+<p>Accuracy will be about 0.97–0.98 with 171 test rows. The bootstrap interval is roughly ±2.5 points wide (e.g. [0.953, 0.994]). A 1-point difference between two models is well inside this interval and cannot be called an improvement from this test set alone. To compare models fairly, bootstrap the <em>difference</em> in accuracy on the same resampled rows (paired), or use repeated cross-validation (Chapter 13). Example code: <code>idx = rng.integers(0, len(y_te), len(y_te)); acc = (pred[idx] == y_te.values[idx]).mean()</code>.</p>
+</details>
+</div>
+
+<div class="exercise"><div class="title">Exercise 3.3 — The base-rate memo (do it at work)</div>
+<p>Find one classifier or alerting rule in use at your company (fraud flags, lead scoring, a monitoring alert, a medical or quality screen). Find or estimate three numbers: the base rate of the condition, the rule's sensitivity (share of true cases it catches) and its false-positive rate. Compute, per 1,000 cases, how many alerts are true and how many are false, and the precision (posterior). Write a half-page memo with the tree from Figure 3.8 filled in and a recommendation: is the rule worth the false alarms, and what threshold or base-rate change would fix it?</p>
+<details class="answer"><summary>Show answer</summary>
+<p>A good memo contains: the three numbers with their sources (or clearly labelled estimates); the 1,000-person tree; precision as a single sentence ("of every 10 alerts, about 3 are real"); the cost of a false alarm versus a missed case in business terms; and a recommendation that moves one lever, usually raising the threshold to trade sensitivity for specificity, or applying the rule only to a higher-base-rate subgroup (which is what Bayes tells you: the prior matters as much as the test). Chapter 6 gives you the precision–recall curve to choose that threshold quantitatively.</p>
+</details>
+</div>
+
+<div class="summary">
+  <h3>Chapter summary</h3>
+  <ul class="checklist">
+    <li>A vector is a row of features; the dot product w·x is both a weighted sum (a model's score) and a similarity (‖w‖‖x‖cos θ).</li>
+    <li>Matrix × vector scores every row at once; matrix × matrix applies k models at once (a layer). Inner dimensions must match: (n×d)(d×k) → (n×k).</li>
+    <li>Euclidean and Manhattan measure distance (scale features first); cosine measures direction only and suits text and embeddings.</li>
+    <li>The derivative is the slope; the gradient is the slope in every parameter direction and points uphill. Training = step against it: w ← w − η∇L.</li>
+    <li>The chain rule multiplies local derivatives along a composition; backpropagation is the chain rule applied layer by layer.</li>
+    <li>Convex losses have one minimum (linear models); non-convex ones (neural nets) have many, so starting point and optimiser matter.</li>
+    <li>Logs turn products into sums and prevent underflow; sigmoid squashes a score to (0,1); softmax turns K scores into a distribution.</li>
+    <li>Bernoulli, binomial, normal, uniform and Poisson cover most modelling; know their means and variances.</li>
+    <li>Bayes: posterior ∝ likelihood × prior. Count per 1,000 people; rare conditions make positive tests mostly false alarms.</li>
+    <li>Maximum likelihood = minimising negative log-likelihood; every standard loss is one. MSE assumes Gaussian noise, log-loss assumes Bernoulli labels.</li>
+    <li>Every statistic has sampling error: SE = s/√n, bootstrap for anything else. p-values check noise, not importance. Correlation is not causation.</li>
+    <li>Entropy = expected surprise in bits; information gain drives decision trees; cross-entropy loss is the same formula with model probabilities inside.</li>
+  </ul>
+</div>
+
+<div class="mark-done"></div>
+<nav class="pager"></nav>
+
+</div></main>
+</div>
+
+<script src="../assets/chapters.js"></script>
+<script src="../assets/app.js"></script>
+<script>
+(function () {
+  /* ---------- Widget 1: tangent line ---------- */
+  var sl = document.getElementById("tan-x"), svg = document.getElementById("tan-svg");
+  var outF = document.getElementById("tan-f"), outD = document.getElementById("tan-d"), outDir = document.getElementById("tan-dir"), outX = document.getElementById("tan-x-out");
+  function f(x) { return x * x * x / 3 - x; }
+  function df(x) { return x * x - 1; }
+  var X0 = 350, Y0 = 130, SX = 120, SY = 60;     /* x in [-2.5,2.5] -> px, y in [-1.5,1.5] */
+  function px(x) { return X0 + x * SX; } function py(y) { return Y0 - y * SY; }
+  function render() {
+    var x = sl.value / 100, y = f(x), m = df(x);
+    outX.textContent = x.toFixed(2);
+    var s = '';
+    s += '<line x1="' + px(-2.6) + '" y1="' + Y0 + '" x2="' + px(2.6) + '" y2="' + Y0 + '" stroke="currentColor" stroke-opacity=".4"/>';
+    s += '<line x1="' + X0 + '" y1="' + py(1.9) + '" x2="' + X0 + '" y2="' + py(-1.9) + '" stroke="currentColor" stroke-opacity=".4"/>';
+    [-2, -1, 1, 2].forEach(function (t) { s += '<text x="' + px(t) + '" y="' + (Y0 + 14) + '" text-anchor="middle" font-size="10" opacity=".7">' + t + '</text>'; });
+    s += '<text x="' + (px(2.6) - 4) + '" y="' + (Y0 - 6) + '" text-anchor="end" font-size="11" opacity=".7">x</text>';
+    s += '<text x="' + (X0 + 6) + '" y="' + (py(1.9) + 10) + '" font-size="11" opacity=".7">f(x)</text>';
+    var pts = [];
+    for (var t = -2.3; t <= 2.3001; t += 0.05) pts.push(px(t).toFixed(1) + ',' + py(f(t)).toFixed(1));
+    s += '<polyline points="' + pts.join(' ') + '" fill="none" stroke="var(--s1)" stroke-width="2.5"/>';
+    /* flat points */
+    s += '<circle cx="' + px(-1) + '" cy="' + py(f(-1)) + '" r="3.5" fill="var(--warn)"/><text x="' + (px(-1) - 8) + '" y="' + (py(f(-1)) - 10) + '" text-anchor="end" font-size="10" fill="var(--warn)">local max, slope 0</text>';
+    s += '<circle cx="' + px(1) + '" cy="' + py(f(1)) + '" r="3.5" fill="var(--good)"/><text x="' + (px(1) + 8) + '" y="' + (py(f(1)) + 16) + '" font-size="10" fill="var(--good)">local min, slope 0</text>';
+    /* tangent line: y - y0 = m (x - x0), draw over dx = ±0.9 */
+    var dx = 0.9, x1 = x - dx, x2 = x + dx;
+    s += '<line x1="' + px(x1) + '" y1="' + py(y + m * (x1 - x)) + '" x2="' + px(x2) + '" y2="' + py(y + m * (x2 - x)) + '" stroke="var(--s7)" stroke-width="2.5"/>';
+    /* rise/run triangle */
+    var run = 0.5;
+    s += '<path d="M' + px(x) + ',' + py(y) + ' L' + px(x + run) + ',' + py(y) + ' L' + px(x + run) + ',' + py(y + m * run) + '" fill="none" stroke="var(--s2)" stroke-width="1.5" stroke-dasharray="3 2"/>';
+    s += '<text x="' + (px(x + run) + 5) + '" y="' + py(y + m * run / 2) + '" font-size="10" fill="var(--s2)">rise ' + (m * run).toFixed(2) + '</text>';
+    s += '<text x="' + px(x + run / 2) + '" y="' + (py(y) + 12) + '" text-anchor="middle" font-size="10" fill="var(--s2)">run 0.5</text>';
+    s += '<circle cx="' + px(x) + '" cy="' + py(y) + '" r="6" fill="var(--s7)" stroke="var(--surface)" stroke-width="2"/>';
+    /* step arrow */
+    var dir = m > 0 ? -1 : 1, len = Math.min(60, 25 * Math.abs(m) + 10);
+    if (Math.abs(m) > 0.02) s += '<line x1="' + px(x) + '" y1="' + (py(y) - 26) + '" x2="' + (px(x) + dir * len) + '" y2="' + (py(y) - 26) + '" stroke="var(--s3)" stroke-width="2.5"/><text x="' + (px(x) + dir * (len + 4)) + '" y="' + (py(y) - 22) + '" text-anchor="' + (dir > 0 ? 'start' : 'end') + '" font-size="10" fill="var(--s3)" font-weight="700">−η·f′(x)</text>';
+    s += '<text x="20" y="250" font-size="11" opacity=".75">Violet: tangent, slope = f′(x). Orange triangle: rise over run. Aqua: the gradient-descent step (opposite the slope).</text>';
+    svg.innerHTML = s;
+    outF.textContent = y.toFixed(3); outD.textContent = m.toFixed(3);
+    outDir.textContent = Math.abs(m) < 0.02 ? 'nowhere (flat)' : (m > 0 ? 'left (slope +)' : 'right (slope −)');
+  }
+  sl.addEventListener("input", render); render();
+
+  /* ---------- Widget 2: Bayes calculator ---------- */
+  var sP = document.getElementById("by-prev"), sS = document.getElementById("by-sens"), sQ = document.getElementById("by-spec");
+  var bsvg = document.getElementById("by-svg"), oPost = document.getElementById("by-post"), oNeg = document.getElementById("by-neg");
+  var oP = document.getElementById("by-prev-out");
+  function renderBayes() {
+    var prev = sP.value / 1000, sens = sS.value / 100, spec = sQ.value / 100;
+    oP.textContent = (prev * 100).toFixed(1);
+    var tp = prev * sens, fn = prev * (1 - sens), fp = (1 - prev) * (1 - spec), tn = (1 - prev) * spec;
+    var post = tp / (tp + fp), postNeg = fn / (fn + tn);
+    /* grid of 100 cells: allocate counts by largest remainder */
+    var raw = [tp * 100, fn * 100, fp * 100, tn * 100], cnt = raw.map(Math.floor), rem = 100 - cnt.reduce(function (a, b) { return a + b; }, 0);
+    var order = raw.map(function (v, i) { return [v - Math.floor(v), i]; }).sort(function (a, b) { return b[0] - a[0]; });
+    for (var k = 0; k < rem; k++) cnt[order[k][1]]++;
+    if (prev > 0 && cnt[0] + cnt[1] === 0) { cnt[0] = 1; cnt[3]--; }   /* always show at least one sick cell */
+    var cols = ['var(--s2)', 'var(--s4)', 'var(--s7)', 'var(--ink-3)'], ops = [1, 1, 1, .35];
+    var s = '', idx = 0;
+    for (var g = 0; g < 4; g++) for (var c = 0; c < cnt[g]; c++, idx++) {
+      var r = Math.floor(idx / 10), q = idx % 10;
+      s += '<rect x="' + (30 + q * 22) + '" y="' + (20 + r * 22) + '" width="19" height="19" rx="3" fill="' + cols[g] + '" fill-opacity="' + ops[g] + '"/>';
+    }
+    s += '<text x="140" y="252" text-anchor="middle" font-size="11" opacity=".75">100 people (each cell = 1%)</text>';
+    /* legend + numbers, per 1000 */
+    var L = [['sick & test +', tp, cols[0], 1], ['sick & test − (missed)', fn, cols[1], 1], ['healthy & test + (false alarm)', fp, cols[2], 1], ['healthy & test −', tn, cols[3], .35]];
+    L.forEach(function (row, i) {
+      var y = 34 + i * 26;
+      s += '<rect x="290" y="' + (y - 11) + '" width="14" height="14" rx="3" fill="' + row[2] + '" fill-opacity="' + row[3] + '"/>';
+      s += '<text x="312" y="' + y + '" font-size="12">' + row[0] + ': <tspan font-weight="700">' + (row[1] * 1000).toFixed(1) + '</tspan> per 1,000</text>';
+    });
+    s += '<text x="290" y="160" font-size="12" font-weight="700">P(sick | positive) = ' + (tp * 1000).toFixed(1) + ' / (' + (tp * 1000).toFixed(1) + ' + ' + (fp * 1000).toFixed(1) + ') = <tspan fill="var(--s2)" font-size="15">' + (post * 100).toFixed(1) + '%</tspan></text>';
+    /* posterior bar */
+    s += '<rect x="290" y="176" width="380" height="16" fill="var(--ink-3)" fill-opacity=".2"/>';
+    s += '<rect x="290" y="176" width="' + (380 * post) + '" height="16" fill="var(--s2)"/>';
+    s += '<text x="290" y="212" font-size="11" opacity=".8">prior ' + (prev * 100).toFixed(1) + '% → posterior ' + (post * 100).toFixed(1) + '% after a positive test (×' + (post / prev).toFixed(1) + ')</text>';
+    s += '<text x="290" y="232" font-size="11" opacity=".8">after a negative test: ' + (postNeg * 100).toFixed(2) + '%</text>';
+    s += '<text x="290" y="252" font-size="11" opacity=".8">false alarms per true positive: ' + (tp > 0 ? (fp / tp).toFixed(1) : '∞') + '</text>';
+    bsvg.innerHTML = s;
+    oPost.textContent = (post * 100).toFixed(1) + '%'; oNeg.textContent = (postNeg * 100).toFixed(2) + '%';
+  }
+  [sP, sS, sQ].forEach(function (el) { el.addEventListener("input", renderBayes); }); renderBayes();
+})();
+</script>
+</body>
+</html>

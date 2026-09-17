@@ -1,0 +1,1071 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>09 · Decision Trees — ML: Zero to Expert</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body data-chapter="09">
+<header class="topbar"></header>
+<div class="progress-track"><div></div></div>
+<div class="shell">
+<nav class="sidebar"></nav>
+<main class="content"><div class="container">
+
+<header class="ch-header">
+  <div class="kicker">Part II · The Core Toolkit · Chapter 09</div>
+  <h1>Decision Trees</h1>
+  <p class="lede">A decision tree is a flowchart the computer writes for itself: a stack of yes/no questions that carves the data into boxes. It is the most readable model you will ever ship, the building block of the strongest tabular models in Chapter 10, and the fastest way to understand what "overfitting" physically looks like.</p>
+  <div class="meta"><span class="level intermediate">Intermediate</span> <span>⏱ 65 min read</span> <span>·</span> <span>Prereqs: Ch 3, 6, 7</span></div>
+</header>
+
+<div class="objectives">
+  <h3>By the end of this chapter you will be able to</h3>
+  <ul>
+    <li>Read a tree diagram and translate it into the rectangles it draws in feature space.</li>
+    <li>Compute Gini impurity, entropy, and information gain by hand for a candidate split — and say which split a tree would pick.</li>
+    <li>Explain why an unpruned tree memorizes the training data, and control it with <code>max_depth</code>, <code>min_samples_leaf</code> and cost-complexity pruning.</li>
+    <li>Fit classification and regression trees in scikit-learn, export their rules as text, and read feature importances with the right suspicion.</li>
+    <li>Know exactly where a single tree fails (instability, extrapolation) and why that motivates forests and boosting.</li>
+    <li>Decide when a single readable tree is the right deliverable for a business.</li>
+  </ul>
+</div>
+
+<div class="toc-inline"><strong>In this chapter</strong>
+<ol>
+  <li><a href="#s1">Twenty questions</a></li>
+  <li><a href="#s2">Anatomy: nodes, leaves, and rectangles</a></li>
+  <li><a href="#s3">How a split is chosen: impurity and information gain</a></li>
+  <li><a href="#s4">Regression trees</a></li>
+  <li><a href="#s5">The greedy recursive algorithm</a></li>
+  <li><a href="#s6">Why trees overfit, and the controls</a></li>
+  <li><a href="#s7">Feature importance and its biases</a></li>
+  <li><a href="#s8">Strengths, weaknesses, and practicalities</a></li>
+  <li><a href="#s9">At work: when one tree is the right answer</a></li>
+  <li><a href="#quiz">Quiz &amp; exercises</a></li>
+</ol></div>
+
+<!-- ============================================================ -->
+<h2 id="s1">1. Twenty questions</h2>
+
+<p>You have played the game. "Is it alive?" — "Is it bigger than a cat?" — "Does it live in water?" Each question splits the set of possible answers in two, and a good player asks the question that cuts the remaining possibilities the most. Twenty well-chosen questions distinguish about a million things.</p>
+
+<p>A decision tree is that game, played by an algorithm against a table of data. Each question is a test on one feature: <em>is support_calls &gt; 1.5? is plan == basic? is monthly_spend ≤ 42.7?</em> The rows that answer "yes" go one way, "no" go the other, and the process repeats on each side until the rows in a group mostly share the same label. To classify a new customer, you start at the top and follow the answers down to a <strong>leaf</strong>, which holds the prediction.</p>
+
+<div class="callout eli9"><div class="title">Explain it like I'm 9</div>
+<p>Imagine sorting a big pile of mixed Lego bricks into "goes in the castle box" and "goes in the spaceship box." You don't look at every brick individually; you ask one question at a time about the whole pile: "Is it grey? Grey bricks are almost all spaceship." Then, in the not-grey pile: "Is it a flat tile? Flat tiles are almost all castle." Each question makes the sub-piles purer. When a sub-pile is nearly all one kind, you stop and label the box. That stack of questions is a decision tree.</p>
+</div>
+
+<p>Three things make trees special. They are <strong>non-linear</strong> without any feature engineering: a tree can represent "risk is high for the very young and the very old" with two splits, which a linear model cannot do without a hand-crafted feature. They are <strong>indifferent to scale</strong>: only the ordering of values matters, so log transforms and StandardScaler change nothing (Chapter 8). And they are <strong>readable</strong>: a depth-3 tree is a paragraph of rules that a compliance officer can audit line by line.</p>
+
+<p>The example threaded through this chapter is the churn table from Chapter 8: tenure, monthly spend, support calls, plan, region. A tree built on it asks questions a customer-success manager would recognize — and, as we will see, will happily ask a hundred more that nobody would.</p>
+
+<!-- ============================================================ -->
+<h2 id="s2">2. Anatomy: nodes, leaves, and rectangles</h2>
+
+<p>The vocabulary is small. The <strong>root</strong> is the first question, applied to all training rows. <strong>Internal nodes</strong> are subsequent questions. <strong>Leaves</strong> (terminal nodes) hold no question, only a prediction: the majority class (classification) or the mean target (regression) of the training rows that landed there. <strong>Depth</strong> is the number of questions on the longest path from root to leaf. A node's <strong>samples</strong> is how many training rows reach it, and its <strong>value</strong> is their class counts.</p>
+
+<figure class="fig">
+<svg viewBox="0 0 800 340" role="img" aria-label="A depth-3 decision tree for churn: the root asks whether support calls exceed 1.5; the left child asks whether tenure is at most 6 months; the right child asks whether the plan is basic; leaves show class counts and predicted class. Root, internal nodes, leaves and depth are labeled">
+  <defs><marker id="arr-t1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+  <!-- depth labels on left -->
+  <g class="lbl" font-size="11">
+    <text x="24" y="62">depth 0</text><text x="24" y="152">depth 1</text><text x="24" y="194">depth 2</text>
+    <line x1="20" y1="70" x2="780" y2="70" class="grid" stroke-dasharray="3 4"/>
+    <line x1="20" y1="160" x2="780" y2="160" class="grid" stroke-dasharray="3 4"/>
+    <line x1="20" y1="200" x2="780" y2="200" class="grid" stroke-dasharray="3 4"/>
+  </g>
+  <!-- root -->
+  <rect x="320" y="26" width="200" height="48" class="box-accent"/>
+  <text x="420" y="46" text-anchor="middle" class="lbl-strong">support_calls ≤ 1.5 ?</text>
+  <text x="420" y="63" text-anchor="middle" class="lbl" font-size="11">samples 2000 · [1628 stay, 372 churn]</text>
+  <text x="540" y="40" class="lbl-strong" fill="var(--accent)" font-size="11">← root</text>
+  <!-- edges to depth 1 -->
+  <line x1="380" y1="74" x2="230" y2="116" class="arrow" marker-end="url(#arr-t1)"/>
+  <text x="290" y="88" class="lbl" font-size="11">yes (≤)</text>
+  <line x1="460" y1="74" x2="610" y2="116" class="arrow" marker-end="url(#arr-t1)"/>
+  <text x="545" y="88" text-anchor="end" class="lbl" font-size="11">no (&gt;)</text>
+  <!-- internal nodes -->
+  <rect x="130" y="118" width="200" height="48" class="box"/>
+  <text x="230" y="138" text-anchor="middle" class="lbl-strong">tenure_months ≤ 6 ?</text>
+  <text x="230" y="155" text-anchor="middle" class="lbl" font-size="11">samples 1310 · [1180, 130]</text>
+  <rect x="510" y="118" width="200" height="48" class="box"/>
+  <text x="610" y="138" text-anchor="middle" class="lbl-strong">plan = basic ?</text>
+  <text x="610" y="155" text-anchor="middle" class="lbl" font-size="11">samples 690 · [448, 242]</text>
+  <text x="722" y="132" class="lbl-strong" fill="var(--ink-2)" font-size="11">← internal</text>
+  <text x="722" y="147" class="lbl-strong" fill="var(--ink-2)" font-size="11">    nodes</text>
+  <!-- edges to depth 2 -->
+  <line x1="190" y1="166" x2="135" y2="206" class="arrow" marker-end="url(#arr-t1)"/>
+  <line x1="270" y1="166" x2="330" y2="206" class="arrow" marker-end="url(#arr-t1)"/>
+  <line x1="570" y1="166" x2="500" y2="206" class="arrow" marker-end="url(#arr-t1)"/>
+  <line x1="650" y1="166" x2="720" y2="206" class="arrow" marker-end="url(#arr-t1)"/>
+  <!-- leaves -->
+  <rect x="60" y="208" width="150" height="56" rx="8" fill="var(--s1)" fill-opacity=".18" stroke="var(--s1)" stroke-width="1.5"/>
+  <text x="135" y="228" text-anchor="middle" class="lbl-strong">leaf: STAY</text>
+  <text x="135" y="244" text-anchor="middle" class="lbl" font-size="11">[420, 70] · 86% stay</text>
+  <text x="135" y="257" text-anchor="middle" class="lbl" font-size="10">new customers, few calls</text>
+  <rect x="250" y="208" width="160" height="56" rx="8" fill="var(--s1)" fill-opacity=".18" stroke="var(--s1)" stroke-width="1.5"/>
+  <text x="330" y="228" text-anchor="middle" class="lbl-strong">leaf: STAY</text>
+  <text x="330" y="244" text-anchor="middle" class="lbl" font-size="11">[760, 60] · 93% stay</text>
+  <text x="330" y="257" text-anchor="middle" class="lbl" font-size="10">loyal, quiet customers</text>
+  <rect x="420" y="208" width="160" height="56" rx="8" fill="var(--s2)" fill-opacity=".18" stroke="var(--s2)" stroke-width="1.5"/>
+  <text x="500" y="228" text-anchor="middle" class="lbl-strong">leaf: CHURN</text>
+  <text x="500" y="244" text-anchor="middle" class="lbl" font-size="11">[150, 190] · 56% churn</text>
+  <text x="500" y="257" text-anchor="middle" class="lbl" font-size="10">basic plan + many calls</text>
+  <rect x="640" y="208" width="150" height="56" rx="8" fill="var(--s1)" fill-opacity=".18" stroke="var(--s1)" stroke-width="1.5"/>
+  <text x="715" y="228" text-anchor="middle" class="lbl-strong">leaf: STAY</text>
+  <text x="715" y="244" text-anchor="middle" class="lbl" font-size="11">[298, 52] · 85% stay</text>
+  <text x="715" y="257" text-anchor="middle" class="lbl" font-size="10">paid plan, many calls</text>
+  <text x="400" y="300" text-anchor="middle" class="lbl">A new customer follows the answers from the root down to exactly one leaf; the leaf's majority class is the prediction,</text>
+  <text x="400" y="318" text-anchor="middle" class="lbl">and the leaf's class fractions are the predicted probabilities (e.g. P(churn) = 190/340 = 0.56).</text>
+</svg>
+<figcaption><strong>Figure 9.1 — Anatomy of a tree.</strong> Root, internal nodes and leaves; depth counts questions on the longest path. Each leaf stores the training counts that reached it, which give both the predicted class and a probability.</figcaption>
+</figure>
+
+<p>Every question in a tree tests one feature against one threshold, so each split draws a line <em>parallel to an axis</em>. Two features, three splits: the plane is chopped into four rectangles, each labeled with a class. This geometric view is the key to everything that follows — depth is the number of times you are allowed to slice, and overfitting is slicing until every rectangle contains one point.</p>
+
+<figure class="fig">
+<svg viewBox="0 0 800 330" role="img" aria-label="Left: a small decision tree with root split on support calls at 1.5 and a second split on tenure at 24 for the right branch. Right: the same tree drawn as axis-aligned rectangles over a scatter of customers in the support-calls versus tenure plane">
+  <defs><marker id="arr-t2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+  <text x="190" y="24" text-anchor="middle" class="lbl-strong" font-size="14">The tree…</text>
+  <rect x="100" y="44" width="180" height="40" class="box-accent"/><text x="190" y="69" text-anchor="middle" class="lbl-strong">support_calls ≤ 1.5</text>
+  <line x1="150" y1="84" x2="100" y2="126" class="arrow" marker-end="url(#arr-t2)"/><text x="108" y="100" class="lbl" font-size="11">yes</text>
+  <line x1="230" y1="84" x2="280" y2="126" class="arrow" marker-end="url(#arr-t2)"/><text x="266" y="100" text-anchor="end" class="lbl" font-size="11">no</text>
+  <rect x="30" y="128" width="130" height="40" rx="8" fill="var(--s1)" fill-opacity=".18" stroke="var(--s1)" stroke-width="1.5"/><text x="95" y="153" text-anchor="middle" class="lbl-strong">A: stay</text>
+  <rect x="200" y="128" width="170" height="40" class="box"/><text x="285" y="153" text-anchor="middle" class="lbl-strong">tenure ≤ 24</text>
+  <line x1="245" y1="168" x2="215" y2="210" class="arrow" marker-end="url(#arr-t2)"/><text x="218" y="185" class="lbl" font-size="11">yes</text>
+  <line x1="325" y1="168" x2="355" y2="210" class="arrow" marker-end="url(#arr-t2)"/><text x="354" y="185" text-anchor="end" class="lbl" font-size="11">no</text>
+  <rect x="140" y="212" width="140" height="40" rx="8" fill="var(--s2)" fill-opacity=".18" stroke="var(--s2)" stroke-width="1.5"/><text x="210" y="237" text-anchor="middle" class="lbl-strong">B: churn</text>
+  <rect x="300" y="212" width="140" height="40" rx="8" fill="var(--s1)" fill-opacity=".18" stroke="var(--s1)" stroke-width="1.5"/><text x="370" y="237" text-anchor="middle" class="lbl-strong">C: stay</text>
+  <text x="190" y="300" text-anchor="middle" class="lbl">3 leaves = 3 rectangles. Each split is one axis-parallel cut.</text>
+  <!-- right: rectangles -->
+  <text x="610" y="24" text-anchor="middle" class="lbl-strong" font-size="14">…is a set of rectangles</text>
+  <line x1="470" y1="270" x2="770" y2="270" class="axis" marker-end="url(#arr-t2)"/>
+  <line x1="470" y1="270" x2="470" y2="40" class="axis" marker-end="url(#arr-t2)"/>
+  <text x="620" y="294" text-anchor="middle" class="lbl">support_calls</text>
+  <text x="452" y="155" text-anchor="middle" class="lbl" transform="rotate(-90 452 155)">tenure (months)</text>
+  <!-- regions: x 470..760, y 50..270; split at calls=1.5 -> x=570; tenure=24 -> y=190 (tenure increases upward) -->
+  <rect x="470" y="50" width="100" height="220" fill="var(--s1)" fill-opacity=".14"/>
+  <rect x="570" y="190" width="190" height="80" fill="var(--s2)" fill-opacity=".14"/>
+  <rect x="570" y="50" width="190" height="140" fill="var(--s1)" fill-opacity=".14"/>
+  <line x1="570" y1="50" x2="570" y2="270" stroke="var(--s7)" stroke-width="2.5"/>
+  <line x1="570" y1="190" x2="760" y2="190" stroke="var(--s7)" stroke-width="2.5"/>
+  <text x="574" y="64" class="lbl" fill="var(--s7)" font-weight="700" font-size="11">calls = 1.5</text>
+  <text x="756" y="204" text-anchor="end" class="lbl" fill="var(--s7)" font-weight="700" font-size="11">tenure = 24</text>
+  <text x="520" y="160" text-anchor="middle" class="lbl-strong" fill="var(--s1)">A</text>
+  <text x="665" y="240" text-anchor="middle" class="lbl-strong" fill="var(--s2)">B</text>
+  <text x="665" y="120" text-anchor="middle" class="lbl-strong" fill="var(--s1)">C</text>
+  <!-- points -->
+  <g class="fill-s1">
+    <circle cx="490" cy="90" r="4"/><circle cx="510" cy="140" r="4"/><circle cx="530" cy="210" r="4"/><circle cx="500" cy="245" r="4"/><circle cx="545" cy="110" r="4"/><circle cx="520" cy="70" r="4"/><circle cx="550" cy="250" r="4"/><circle cx="485" cy="180" r="4"/>
+    <circle cx="600" cy="80" r="4"/><circle cx="650" cy="120" r="4"/><circle cx="700" cy="70" r="4"/><circle cx="740" cy="150" r="4"/><circle cx="620" cy="165" r="4"/><circle cx="690" cy="100" r="4"/><circle cx="730" cy="60" r="4"/>
+    <circle cx="640" cy="230" r="4"/>
+  </g>
+  <g class="fill-s2">
+    <circle cx="600" cy="220" r="4"/><circle cx="640" cy="250" r="4"/><circle cx="680" cy="210" r="4"/><circle cx="720" cy="240" r="4"/><circle cx="750" cy="255" r="4"/><circle cx="610" cy="255" r="4"/><circle cx="700" cy="225" r="4"/>
+    <circle cx="540" cy="225" r="4"/><circle cx="660" cy="150" r="4"/>
+  </g>
+</svg>
+<figcaption><strong>Figure 9.2 — Tree ↔ partition.</strong> Every leaf is a rectangle (in 2-D) or a box (in n-D) with edges parallel to the axes. A few points sit in the "wrong" rectangle: the tree stopped at three leaves rather than cutting until every point is isolated.</figcaption>
+</figure>
+
+<div class="callout key"><div class="title">Key idea</div>
+<p>A tree is a <strong>piecewise-constant</strong> function: inside each rectangle the prediction is one constant. That single fact explains its strengths (any shape can be approximated by enough boxes; no scaling needed) and its weaknesses (diagonal boundaries need staircases of boxes; outside the training range the prediction is flat).</p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s3">3. How a split is chosen: impurity and information gain</h2>
+
+<p>The whole algorithm rests on one question: <em>given a node full of rows, which feature and which threshold should we split on?</em> The answer is "the split that makes the children as pure as possible," so we need a number that says how mixed a group is.</p>
+
+<div class="callout eli9"><div class="title">Explain it like I'm 9</div>
+<p>You have a bag of marbles. If they are all red, the bag is <em>pure</em> — you know exactly what you'll pull out. If it is half red and half blue, the bag is as <em>mixed</em> as it can be. <strong>Impurity</strong> is a score for how mixed the bag is: 0 for all-one-color, biggest for an even mix. A good question splits one mixed bag into two purer bags.</p>
+</div>
+
+<div class="callout math"><div class="title">The math (optional): Gini impurity</div>
+<div class="formula">Gini(node) = 1 − ∑<sub>k</sub> p<sub>k</sub><sup>2</sup></div>
+<p><em>p<sub>k</sub></em> is the fraction of rows in the node that belong to class <em>k</em>, and the sum runs over the classes. Interpretation: pick two rows at random from the node (with replacement); Gini is the probability they have <em>different</em> labels. Pure node → 0. Two classes 50/50 → 1 − (0.25 + 0.25) = 0.5, the maximum for two classes. This is scikit-learn's default criterion.</p>
+</div>
+
+<div class="callout math"><div class="title">The math (optional): entropy and information gain</div>
+<div class="formula">H(node) = − ∑<sub>k</sub> p<sub>k</sub> log<sub>2</sub> p<sub>k</sub> &nbsp;&nbsp;&nbsp;&nbsp; IG(split) = H(parent) − [ (n<sub>L</sub>/n)·H(left) + (n<sub>R</sub>/n)·H(right) ]</div>
+<p><em>H</em> is Shannon entropy in bits; with two classes it runs from 0 (pure) to 1 (50/50). <em>n<sub>L</sub></em> and <em>n<sub>R</sub></em> are the number of rows sent left and right, <em>n</em> = <em>n<sub>L</sub></em> + <em>n<sub>R</sub></em>. <strong>Information gain</strong> is how much entropy the split removes, weighting each child by its share of rows. The same weighted-average construction with Gini in place of <em>H</em> gives the <em>Gini decrease</em>. The tree picks the split with the largest gain (or decrease). In practice Gini and entropy choose the same split about 98% of the time; Gini is marginally faster because it has no logarithm.</p>
+</div>
+
+<div class="widget" id="w-gini">
+  <div class="w-title">Interactive: Gini vs. entropy as the class mix changes</div>
+  <div class="controls">
+    <label>Fraction of class 1 (p) <input type="range" id="gi-p" min="0" max="100" value="30" data-out="gi-p-o"> <output id="gi-p-o">30</output>%</label>
+    <span>Gini = <span class="readout" id="gi-g">–</span></span>
+    <span>Entropy = <span class="readout" id="gi-h">–</span> bits</span>
+  </div>
+  <svg viewBox="0 0 700 250" id="gi-svg" role="img" aria-label="Curves of Gini impurity and entropy as a function of the class-1 fraction p, with a marker at the current p"></svg>
+  <div class="note">Both curves are 0 at p = 0 and p = 1 (pure) and peak at p = 0.5 (maximally mixed). Gini tops out at 0.5, entropy at 1 bit; the shapes are nearly the same, which is why the two criteria almost always pick the same split.</div>
+</div>
+
+<h3>A fully worked split</h3>
+
+<p>Ten customers, one feature (support calls), and the label. Five stayed, five churned, so the parent node has Gini = 1 − (0.5² + 0.5²) = 0.5 and entropy = 1 bit. A tree considers every threshold between consecutive distinct values of the feature — here 0.5, 1.5, 2.5, 3.5, 4.5, 5.5 — and evaluates each one.</p>
+
+<figure class="fig">
+<svg viewBox="0 0 800 380" role="img" aria-label="Ten customers on a support-calls number line colored by churn; six candidate thresholds shown as dashed lines; a bar chart of the weighted Gini after each candidate split with the minimum at calls of 1.5; boxes showing the left and right child counts and Gini values for the best split">
+  <defs><marker id="arr-t3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+  <text x="20" y="24" class="lbl-strong" font-size="14">10 customers · parent: [5 stay, 5 churn] · Gini = 0.500 · entropy = 1.000</text>
+  <!-- number line -->
+  <line x1="60" y1="90" x2="480" y2="90" class="axis" marker-end="url(#arr-t3)"/>
+  <text x="270" y="122" text-anchor="middle" class="lbl">support_calls</text>
+  <g class="lbl" font-size="11">
+    <text x="80" y="108" text-anchor="middle">0</text><text x="140" y="108" text-anchor="middle">1</text><text x="200" y="108" text-anchor="middle">2</text><text x="260" y="108" text-anchor="middle">3</text><text x="320" y="108" text-anchor="middle">4</text><text x="380" y="108" text-anchor="middle">5</text><text x="440" y="108" text-anchor="middle">6</text>
+  </g>
+  <!-- points: calls [0,0,1,1,2,2,3,4,5,6], churn [0,0,0,0,0,1,1,1,0,1]; stack duplicates -->
+  <circle cx="80" cy="82" r="6" fill="var(--s1)"/><circle cx="80" cy="68" r="6" fill="var(--s1)"/>
+  <circle cx="140" cy="82" r="6" fill="var(--s1)"/><circle cx="140" cy="68" r="6" fill="var(--s1)"/>
+  <circle cx="200" cy="82" r="6" fill="var(--s1)"/><circle cx="200" cy="68" r="6" fill="var(--s2)"/>
+  <circle cx="260" cy="82" r="6" fill="var(--s2)"/><circle cx="320" cy="82" r="6" fill="var(--s2)"/><circle cx="380" cy="82" r="6" fill="var(--s1)"/><circle cx="440" cy="82" r="6" fill="var(--s2)"/>
+  <text x="500" y="72" class="lbl" font-size="11" fill="var(--s1)" font-weight="700">● stayed</text>
+  <text x="500" y="90" class="lbl" font-size="11" fill="var(--s2)" font-weight="700">● churned</text>
+  <!-- candidate thresholds -->
+  <g stroke="var(--ink-3)" stroke-dasharray="3 3">
+    <line x1="110" y1="56" x2="110" y2="96"/><line x1="230" y1="56" x2="230" y2="96"/><line x1="290" y1="56" x2="290" y2="96"/><line x1="350" y1="56" x2="350" y2="96"/><line x1="410" y1="56" x2="410" y2="96"/>
+  </g>
+  <line x1="170" y1="52" x2="170" y2="98" stroke="var(--s7)" stroke-width="2.5"/>
+  <text x="170" y="47" text-anchor="middle" class="lbl-strong" fill="var(--s7)" font-size="11">best: 1.5</text>
+  <!-- bar chart of weighted gini -->
+  <text x="20" y="160" class="lbl-strong">Weighted Gini of the children, per candidate threshold (lower is better)</text>
+  <line x1="60" y1="300" x2="480" y2="300" class="axis"/>
+  <line x1="60" y1="300" x2="60" y2="170" class="axis"/>
+  <text x="44" y="304" text-anchor="end" class="lbl" font-size="10">0</text>
+  <text x="44" y="240" text-anchor="end" class="lbl" font-size="10">0.25</text>
+  <text x="44" y="176" text-anchor="end" class="lbl" font-size="10">0.5</text>
+  <line x1="60" y1="236" x2="480" y2="236" class="grid"/>
+  <line x1="60" y1="172" x2="480" y2="172" class="grid"/>
+  <!-- bars: values 0.400,0.267,0.317,0.419,0.475,0.400 ; scale 0.5 -> 128px -->
+  <g fill="var(--s1)" fill-opacity=".75">
+    <rect x="80" y="197.6" width="40" height="102.4"/>
+    <rect x="212" y="218.9" width="40" height="81.1"/>
+    <rect x="278" y="192.7" width="40" height="107.3"/>
+    <rect x="344" y="178.4" width="40" height="121.6"/>
+    <rect x="410" y="197.6" width="40" height="102.4"/>
+  </g>
+  <rect x="146" y="231.6" width="40" height="68.4" fill="var(--s7)"/>
+  <g class="lbl" font-size="10">
+    <text x="100" y="192" text-anchor="middle">0.400</text><text x="166" y="226" text-anchor="middle" fill="var(--s7)" font-weight="700">0.267</text><text x="232" y="213" text-anchor="middle">0.317</text>
+    <text x="298" y="187" text-anchor="middle">0.419</text><text x="364" y="173" text-anchor="middle">0.475</text><text x="430" y="192" text-anchor="middle">0.400</text>
+  </g>
+  <g class="lbl" font-size="11">
+    <text x="100" y="316" text-anchor="middle">≤ 0.5</text><text x="166" y="316" text-anchor="middle">≤ 1.5</text><text x="232" y="316" text-anchor="middle">≤ 2.5</text><text x="298" y="316" text-anchor="middle">≤ 3.5</text><text x="364" y="316" text-anchor="middle">≤ 4.5</text><text x="430" y="316" text-anchor="middle">≤ 5.5</text>
+  </g>
+  <!-- right: worked numbers for best split -->
+  <rect x="520" y="150" width="260" height="190" class="box"/>
+  <text x="650" y="172" text-anchor="middle" class="lbl-strong">Split: support_calls ≤ 1.5</text>
+  <text x="532" y="196" class="lbl-strong" font-size="11" fill="var(--s1)">Left (4 rows): [4 stay, 0 churn]</text>
+  <text x="532" y="212" class="lbl" font-size="11">Gini = 1 − (1² + 0²) = 0</text>
+  <text x="532" y="238" class="lbl-strong" font-size="11" fill="var(--s2)">Right (6 rows): [2 stay, 4 churn]</text>
+  <text x="532" y="254" class="lbl" font-size="11">Gini = 1 − (⅓² + ⅔²) = 0.444</text>
+  <text x="532" y="280" class="lbl" font-size="11">Weighted = 0.4·0 + 0.6·0.444 = 0.267</text>
+  <text x="532" y="296" class="lbl" font-size="11">Gini decrease = 0.500 − 0.267 = 0.233</text>
+  <text x="532" y="320" class="lbl" font-size="11">Entropy: 0.4·0 + 0.6·0.918 = 0.551</text>
+  <text x="532" y="334" class="lbl" font-size="11">Information gain = 1 − 0.551 = 0.449</text>
+  <text x="20" y="362" class="lbl">Both criteria rank "≤ 1.5" first. The left child is pure and becomes a leaf; the right child [2, 4] gets split again on the next-best feature.</text>
+</svg>
+<figcaption><strong>Figure 9.3 — A split, computed by hand.</strong> Every midpoint between distinct feature values is a candidate; each is scored by the weighted impurity of its two children; the minimum wins. With many features, the same scan is done per feature and the best (feature, threshold) pair across all of them is chosen.</figcaption>
+</figure>
+
+<pre class="code" data-lang="python"><code><span class="cm"># The worked split by hand: 10 customers, which support-call threshold separates churners best?</span>
+<span class="kw">import</span> numpy <span class="kw">as</span> np
+
+<span class="kw">def</span> <span class="fn">gini</span>(counts):
+    p = np.asarray(counts) / np.sum(counts)
+    <span class="kw">return</span> <span class="nu">1</span> - np.sum(p ** <span class="nu">2</span>)
+
+<span class="kw">def</span> <span class="fn">entropy</span>(counts):
+    p = np.asarray(counts) / np.sum(counts)
+    p = p[p &gt; <span class="nu">0</span>]
+    <span class="kw">return</span> -np.sum(p * np.log2(p))
+
+calls   = np.array([<span class="nu">0</span>, <span class="nu">0</span>, <span class="nu">1</span>, <span class="nu">1</span>, <span class="nu">2</span>, <span class="nu">2</span>, <span class="nu">3</span>, <span class="nu">4</span>, <span class="nu">5</span>, <span class="nu">6</span>])
+churned = np.array([<span class="nu">0</span>, <span class="nu">0</span>, <span class="nu">0</span>, <span class="nu">0</span>, <span class="nu">0</span>, <span class="nu">1</span>, <span class="nu">1</span>, <span class="nu">1</span>, <span class="nu">0</span>, <span class="nu">1</span>])   <span class="cm"># 5 stayed, 5 churned</span>
+
+parent = [<span class="nu">5</span>, <span class="nu">5</span>]
+<span class="fn">print</span>(<span class="st">f"parent     : Gini={gini(parent):.3f}  entropy={entropy(parent):.3f}"</span>)
+<span class="kw">for</span> thr <span class="kw">in</span> [<span class="nu">0.5</span>, <span class="nu">1.5</span>, <span class="nu">2.5</span>, <span class="nu">3.5</span>, <span class="nu">4.5</span>, <span class="nu">5.5</span>]:
+    left, right = churned[calls &lt;= thr], churned[calls &gt; thr]
+    cl = [<span class="fn">int</span>((left == <span class="nu">0</span>).sum()), <span class="fn">int</span>((left == <span class="nu">1</span>).sum())]
+    cr = [<span class="fn">int</span>((right == <span class="nu">0</span>).sum()), <span class="fn">int</span>((right == <span class="nu">1</span>).sum())]
+    wl, wr = <span class="fn">len</span>(left) / <span class="nu">10</span>, <span class="fn">len</span>(right) / <span class="nu">10</span>
+    g  = wl * gini(cl) + wr * gini(cr)
+    ig = entropy(parent) - (wl * entropy(cl) + wr * entropy(cr))
+    <span class="fn">print</span>(<span class="st">f"calls&lt;={thr}: left(stay,churn)={cl} right={cr}  weighted Gini={g:.3f}  info gain={ig:.3f}"</span>)
+<span class="out"># parent     : Gini=0.500  entropy=1.000</span>
+<span class="out"># calls&lt;=0.5: left(stay,churn)=[2, 0] right=[4, 4]  weighted Gini=0.400  info gain=0.200</span>
+<span class="out"># calls&lt;=1.5: left(stay,churn)=[4, 0] right=[2, 4]  weighted Gini=0.267  info gain=0.449</span>
+<span class="out"># calls&lt;=2.5: left(stay,churn)=[5, 1] right=[1, 3]  weighted Gini=0.317  info gain=0.285</span>
+<span class="out"># calls&lt;=3.5: left(stay,churn)=[5, 2] right=[1, 2]  weighted Gini=0.419  info gain=0.120</span>
+<span class="out"># calls&lt;=4.5: left(stay,churn)=[5, 3] right=[1, 1]  weighted Gini=0.475  info gain=0.036</span>
+<span class="out"># calls&lt;=5.5: left(stay,churn)=[6, 3] right=[0, 1]  weighted Gini=0.400  info gain=0.174</span></code></pre>
+
+<p>Notice that the split is scored by <em>weighted</em> impurity. A split that peels off one pure row (≤ 5.5 above) looks tempting — one child is perfectly pure — but it barely changes the other child, so its weighted score is poor. The weighting is what stops trees from wasting splits on single outliers early on.</p>
+
+<div class="callout warn"><div class="title">Common mistake</div>
+<p>Believing a tree "finds the best tree." It does not. At each node it picks the split that is best <em>right now</em>, without looking ahead. A greedy choice at the root can lock the tree into a worse overall structure — the XOR pattern is the classic case, where no single split helps but two together separate perfectly. Random forests and boosting (Chapter 10) soften this by building many trees; a single tree simply lives with it.</p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s4">4. Regression trees</h2>
+
+<p>Swap the label for a number and almost nothing changes. A leaf predicts the <strong>mean</strong> of the training targets that reached it, and impurity becomes the <strong>variance</strong> (equivalently, the mean squared error around the leaf mean). A split is chosen to make the weighted variance of the children as small as possible: rows with similar target values are grouped together.</p>
+
+<div class="callout math"><div class="title">The math (optional)</div>
+<div class="formula">MSE(node) = (1/n) ∑<sub>i∈node</sub> (y<sub>i</sub> − ȳ<sub>node</sub>)<sup>2</sup> &nbsp;&nbsp;&nbsp; Δ = MSE(parent) − [ (n<sub>L</sub>/n)·MSE(left) + (n<sub>R</sub>/n)·MSE(right) ]</div>
+<p><em>ȳ<sub>node</sub></em> is the mean target of rows in the node — also the leaf's prediction, because the mean is the constant that minimizes squared error. <em>Δ</em> is the variance reduction; the split with the largest Δ wins. Use <code>criterion="absolute_error"</code> to predict the median instead (robust to outliers in <em>y</em>, but slower), or <code>"poisson"</code> for count targets.</p>
+</div>
+
+<figure class="fig">
+<svg viewBox="0 0 800 300" role="img" aria-label="Noisy sine-shaped data points with a regression tree fit drawn as a step function; each step is one leaf predicting the mean of the points in its interval; the true sine curve is drawn faintly">
+  <defs><marker id="arr-t4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+  <line x1="60" y1="250" x2="770" y2="250" class="axis" marker-end="url(#arr-t4)"/>
+  <line x1="60" y1="250" x2="60" y2="30" class="axis" marker-end="url(#arr-t4)"/>
+  <text x="415" y="278" text-anchor="middle" class="lbl">x</text>
+  <text x="34" y="140" text-anchor="middle" class="lbl" transform="rotate(-90 34 140)">y</text>
+  <g class="lbl" font-size="10"><text x="60" y="266" text-anchor="middle">0</text><text x="178" y="266" text-anchor="middle">1</text><text x="296" y="266" text-anchor="middle">2</text><text x="414" y="266" text-anchor="middle">3</text><text x="532" y="266" text-anchor="middle">4</text><text x="650" y="266" text-anchor="middle">5</text><text x="768" y="266" text-anchor="middle">6</text></g>
+  <text x="50" y="145" text-anchor="end" class="lbl" font-size="10">0</text><text x="50" y="65" text-anchor="end" class="lbl" font-size="10">1</text><text x="50" y="225" text-anchor="end" class="lbl" font-size="10">−1</text>
+  <!-- true sine: x in [0,6] -> px 60 + 118x ; y -> 140 - 80*sin(x) -->
+  <path d="M60,140 C120,90 160,56 178,56 C230,56 270,80 296,110 C330,148 370,180 414,200 C450,215 480,220 500,220 C530,220 560,200 590,175 C620,150 650,110 690,86 C720,68 750,64 768,64" fill="none" stroke="var(--ink-3)" stroke-width="1.5" stroke-dasharray="5 4"/>
+  <text x="770" y="48" text-anchor="end" class="lbl" font-size="11">true curve (dashed)</text>
+  <!-- noisy points -->
+  <g fill="var(--s1)" fill-opacity=".8">
+    <circle cx="70" cy="128" r="3.5"/><circle cx="85" cy="124" r="3.5"/><circle cx="100" cy="98" r="3.5"/><circle cx="118" cy="105" r="3.5"/><circle cx="135" cy="76" r="3.5"/><circle cx="150" cy="70" r="3.5"/><circle cx="165" cy="48" r="3.5"/><circle cx="182" cy="62" r="3.5"/><circle cx="196" cy="50" r="3.5"/><circle cx="210" cy="74" r="3.5"/>
+    <circle cx="228" cy="58" r="3.5"/><circle cx="243" cy="90" r="3.5"/><circle cx="258" cy="78" r="3.5"/><circle cx="275" cy="104" r="3.5"/><circle cx="290" cy="96" r="3.5"/><circle cx="306" cy="130" r="3.5"/><circle cx="322" cy="122" r="3.5"/><circle cx="338" cy="150" r="3.5"/><circle cx="355" cy="170" r="3.5"/><circle cx="372" cy="160" r="3.5"/>
+    <circle cx="390" cy="192" r="3.5"/><circle cx="405" cy="186" r="3.5"/><circle cx="420" cy="212" r="3.5"/><circle cx="437" cy="198" r="3.5"/><circle cx="452" cy="226" r="3.5"/><circle cx="470" cy="208" r="3.5"/><circle cx="486" cy="232" r="3.5"/><circle cx="502" cy="214" r="3.5"/><circle cx="518" cy="228" r="3.5"/><circle cx="534" cy="206" r="3.5"/>
+    <circle cx="552" cy="196" r="3.5"/><circle cx="568" cy="212" r="3.5"/><circle cx="584" cy="170" r="3.5"/><circle cx="600" cy="182" r="3.5"/><circle cx="616" cy="150" r="3.5"/><circle cx="632" cy="140" r="3.5"/><circle cx="648" cy="118" r="3.5"/><circle cx="664" cy="124" r="3.5"/><circle cx="680" cy="94" r="3.5"/><circle cx="696" cy="100" r="3.5"/>
+    <circle cx="712" cy="70" r="3.5"/><circle cx="728" cy="78" r="3.5"/><circle cx="744" cy="60" r="3.5"/><circle cx="758" cy="72" r="3.5"/>
+  </g>
+  <!-- step function fit (leaf means) -->
+  <path d="M60,118 L112,118 L112,74 L160,74 L160,58 L236,58 L236,94 L298,94 L298,132 L348,132 L348,170 L400,170 L400,204 L470,204 L470,220 L540,220 L540,196 L590,196 L590,158 L640,158 L640,110 L700,110 L700,70 L768,70" fill="none" stroke="var(--s2)" stroke-width="2.5"/>
+  <g stroke="var(--s2)" stroke-opacity=".35" stroke-dasharray="2 3">
+    <line x1="112" y1="250" x2="112" y2="60"/><line x1="160" y1="250" x2="160" y2="60"/><line x1="236" y1="250" x2="236" y2="60"/><line x1="298" y1="250" x2="298" y2="60"/><line x1="348" y1="250" x2="348" y2="60"/><line x1="400" y1="250" x2="400" y2="60"/><line x1="470" y1="250" x2="470" y2="60"/><line x1="540" y1="250" x2="540" y2="60"/><line x1="590" y1="250" x2="590" y2="60"/><line x1="640" y1="250" x2="640" y2="60"/><line x1="700" y1="250" x2="700" y2="60"/>
+  </g>
+  <text x="505" y="245" text-anchor="middle" class="lbl" font-size="10" fill="var(--s2)">one leaf = one flat step</text>
+  <text x="200" y="245" text-anchor="middle" class="lbl" font-size="11" fill="var(--s2)" font-weight="700">tree fit (12 leaves)</text>
+</svg>
+<figcaption><strong>Figure 9.4 — A regression tree is a staircase.</strong> Each leaf covers an interval of x and predicts the mean y of the training points inside it. More leaves → finer steps → closer to the curve, until the steps start chasing individual noisy points.</figcaption>
+</figure>
+
+<pre class="code" data-lang="python"><code><span class="cm"># Regression tree on a sine wave: a step function that cannot extrapolate</span>
+<span class="kw">import</span> numpy <span class="kw">as</span> np
+<span class="kw">from</span> sklearn.tree <span class="kw">import</span> DecisionTreeRegressor
+<span class="kw">from</span> sklearn.metrics <span class="kw">import</span> mean_squared_error
+
+rng = np.random.default_rng(<span class="nu">0</span>)
+X = np.sort(rng.uniform(<span class="nu">0</span>, <span class="nu">6</span>, <span class="nu">120</span>)).reshape(-<span class="nu">1</span>, <span class="nu">1</span>)
+y = np.sin(X.ravel()) + rng.normal(<span class="nu">0</span>, <span class="nu">0.2</span>, <span class="nu">120</span>)
+
+<span class="kw">for</span> leaf <span class="kw">in</span> [<span class="nu">1</span>, <span class="nu">5</span>, <span class="nu">15</span>]:
+    t = DecisionTreeRegressor(min_samples_leaf=leaf, random_state=<span class="nu">0</span>).fit(X, y)
+    X_new = np.sort(rng.uniform(<span class="nu">0</span>, <span class="nu">6</span>, <span class="nu">400</span>)).reshape(-<span class="nu">1</span>, <span class="nu">1</span>)
+    rmse = mean_squared_error(np.sin(X_new.ravel()), t.predict(X_new)) ** <span class="nu">0.5</span>
+    <span class="fn">print</span>(<span class="st">f"min_samples_leaf={leaf:2d}: leaves={t.get_n_leaves():3d}  RMSE vs true curve={rmse:.3f}"</span>)
+
+t = DecisionTreeRegressor(min_samples_leaf=<span class="nu">5</span>, random_state=<span class="nu">0</span>).fit(X, y)
+<span class="fn">print</span>(<span class="st">"prediction at x=5.9:"</span>, t.predict([[<span class="nu">5.9</span>]]).round(<span class="nu">2</span>), <span class="st">" at x=9.0:"</span>, t.predict([[<span class="nu">9.0</span>]]).round(<span class="nu">2</span>), <span class="st">" at x=50:"</span>, t.predict([[<span class="nu">50.0</span>]]).round(<span class="nu">2</span>))
+<span class="fn">print</span>(<span class="st">"true sin(9.0) ="</span>, np.sin(<span class="nu">9.0</span>).round(<span class="nu">2</span>))
+<span class="out"># min_samples_leaf= 1: leaves=120  RMSE vs true curve=0.216</span>
+<span class="out"># min_samples_leaf= 5: leaves= 18  RMSE vs true curve=0.123</span>
+<span class="out"># min_samples_leaf=15: leaves=  6  RMSE vs true curve=0.153</span>
+<span class="out"># prediction at x=5.9: [-0.46]  at x=9.0: [-0.46]  at x=50: [-0.46]</span>
+<span class="out"># true sin(9.0) = 0.41</span></code></pre>
+
+<div class="callout eli9"><div class="title">Explain it like I'm 9</div>
+<p>Guess how tall a kid is without seeing them. If I tell you nothing, your best guess is the average of the whole school. If I tell you "they're in the third grade," you guess the third-grade average and you're much closer. A regression tree keeps asking questions that sort kids into groups whose heights are as similar as possible, and then guesses each group's average. The "steps" in Figure 9.4 are those group averages.</p>
+</div>
+
+<p>Two lessons in five lines of output. With <code>min_samples_leaf=1</code> the tree grows 120 leaves — one per training point — and its error against the <em>true</em> curve is the worst of the three, because every leaf reproduces one point's noise. With 5 points per leaf the noise averages out. And the last two lines show the flat-extrapolation problem we return to in Section 8: past the largest training x, the prediction is frozen at the last leaf's mean, forever.</p>
+
+<!-- ============================================================ -->
+<h2 id="s5">5. The greedy recursive algorithm</h2>
+
+<p>You now have every piece. The algorithm that builds a tree (known as CART, Classification And Regression Trees, which is what scikit-learn implements) is:</p>
+
+<ol class="steps">
+  <li><strong>Start with all training rows at the root.</strong> Compute the node's impurity (Gini/entropy for classes, MSE for numbers).</li>
+  <li><strong>Scan every feature and every threshold.</strong> For a numeric feature, sort its values and consider the midpoint between each pair of consecutive distinct values. For each candidate, split the rows, compute the weighted child impurity, and remember the best (feature, threshold).</li>
+  <li><strong>Apply the best split</strong> — unless a stopping rule fires: the node is pure, it has fewer than <code>min_samples_split</code> rows, a child would have fewer than <code>min_samples_leaf</code> rows, the depth reached <code>max_depth</code>, or the best split's impurity decrease is below <code>min_impurity_decrease</code>. Then it becomes a leaf.</li>
+  <li><strong>Recurse</strong> into the left child and the right child, each with its own subset of rows, and repeat from step 2.</li>
+  <li><strong>Label the leaves</strong> with the majority class (and class fractions) or the mean target.</li>
+</ol>
+
+<p>Cost: for <em>n</em> rows and <em>d</em> features, one node costs roughly <em>O(d · n log n)</em> for the sort-and-scan; a whole tree is typically <em>O(d · n log² n)</em>. Trees train fast, and prediction is a walk of at most <code>max_depth</code> comparisons — microseconds per row, which is why a tree-based model can sit in a latency-critical scoring path.</p>
+
+<pre class="code" data-lang="python"><code><span class="kw">from</span> sklearn.datasets <span class="kw">import</span> load_iris
+<span class="kw">from</span> sklearn.model_selection <span class="kw">import</span> train_test_split
+<span class="kw">from</span> sklearn.tree <span class="kw">import</span> DecisionTreeClassifier, export_text
+
+iris = load_iris()
+X_tr, X_te, y_tr, y_te = train_test_split(iris.data, iris.target, test_size=<span class="nu">0.3</span>, random_state=<span class="nu">0</span>, stratify=iris.target)
+tree = DecisionTreeClassifier(max_depth=<span class="nu">2</span>, random_state=<span class="nu">0</span>).fit(X_tr, y_tr)
+<span class="fn">print</span>(<span class="st">"train acc = %.3f   test acc = %.3f"</span> % (tree.score(X_tr, y_tr), tree.score(X_te, y_te)))
+<span class="fn">print</span>(<span class="st">"depth ="</span>, tree.get_depth(), <span class="st">" leaves ="</span>, tree.get_n_leaves())
+<span class="fn">print</span>(export_text(tree, feature_names=<span class="fn">list</span>(iris.feature_names), class_names=<span class="fn">list</span>(iris.target_names)))
+<span class="out"># train acc = 0.962   test acc = 0.956</span>
+<span class="out"># depth = 2  leaves = 3</span>
+<span class="out"># |--- petal width (cm) &lt;= 0.80</span>
+<span class="out"># |   |--- class: setosa</span>
+<span class="out"># |--- petal width (cm) &gt;  0.80</span>
+<span class="out"># |   |--- petal width (cm) &lt;= 1.75</span>
+<span class="out"># |   |   |--- class: versicolor</span>
+<span class="out"># |   |--- petal width (cm) &gt;  1.75</span>
+<span class="out"># |   |   |--- class: virginica</span></code></pre>
+
+<p>Two questions, 96% accuracy, and a rule set you can print on a card: <em>petal width under 0.8 cm → setosa; under 1.75 → versicolor; otherwise virginica.</em> <code>export_text</code> is the tool for handing rules to humans; <code>plot_tree</code> draws the same thing as a diagram, and <code>tree_.feature</code>, <code>tree_.threshold</code>, <code>tree_.value</code> expose the raw arrays if you need to translate a tree into SQL or a rules engine.</p>
+
+<div class="callout pro"><div class="title">At work</div>
+<p>Trees are one of the few models where the <em>shape</em> of the output matters as much as its accuracy. Before you tune anything, print <code>export_text</code> for a depth-3 tree and read it with the domain owner. If the top split is a feature that "shouldn't" matter, you have just found a leakage or a data-quality bug in five minutes — far cheaper than discovering it after deployment.</p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s6">6. Why trees overfit, and the controls</h2>
+
+<div class="callout eli9"><div class="title">Explain it like I'm 9</div>
+<p>Two ways to pass a spelling test: learn the rules ("i before e except after c") or memorize every single word on the practice sheet. Memorizing gets you 100% on the practice sheet and falls apart on new words. A tree that keeps splitting until every training row has its own box has memorized the practice sheet. Limiting depth, or demanding that each box hold many rows, forces it to learn rules instead.</p>
+</div>
+
+<p>Left alone, the recursion only stops when every leaf is pure or contains identical rows. On real data with noise that means growing until each leaf holds one or two rows — a tree with hundreds of leaves, 100% training accuracy, and rectangles so thin they exist only to fence in individual outliers. Such a tree has memorized, not learned; Chapter 7 called this high variance. The picture makes it obvious:</p>
+
+<figure class="fig">
+<svg viewBox="0 0 800 330" role="img" aria-label="Two panels of the same two-class scatter with a few noisy points. Left: a depth-2 tree yields four large rectangles and a few misclassified points. Right: an unpruned depth-20 tree yields dozens of thin rectangles that isolate every noisy point, giving perfect training accuracy but a jagged, implausible boundary">
+  <text x="200" y="24" text-anchor="middle" class="lbl-strong" font-size="14">max_depth = 2 · train acc 91%</text>
+  <text x="600" y="24" text-anchor="middle" class="lbl-strong" font-size="14">max_depth = None (20 levels) · train acc 100%</text>
+  <!-- left panel frame -->
+  <rect x="40" y="40" width="320" height="250" fill="none" stroke="var(--ink-3)"/>
+  <!-- regions: split x at 200, then y at 165 on the left, y at 130 on the right -->
+  <rect x="40" y="40" width="160" height="125" fill="var(--s1)" fill-opacity=".16"/>
+  <rect x="40" y="165" width="160" height="125" fill="var(--s2)" fill-opacity=".16"/>
+  <rect x="200" y="40" width="160" height="90" fill="var(--s2)" fill-opacity=".16"/>
+  <rect x="200" y="130" width="160" height="160" fill="var(--s1)" fill-opacity=".16"/>
+  <line x1="200" y1="40" x2="200" y2="290" stroke="var(--s7)" stroke-width="2"/>
+  <line x1="40" y1="165" x2="200" y2="165" stroke="var(--s7)" stroke-width="2"/>
+  <line x1="200" y1="130" x2="360" y2="130" stroke="var(--s7)" stroke-width="2"/>
+  <!-- points (same in both panels, offset by 400 on the right) -->
+  <g id="pts-blue" class="fill-s1">
+    <circle cx="70" cy="70" r="4"/><circle cx="110" cy="95" r="4"/><circle cx="150" cy="60" r="4"/><circle cx="90" cy="130" r="4"/><circle cx="170" cy="120" r="4"/><circle cx="130" cy="150" r="4"/><circle cx="60" cy="110" r="4"/>
+    <circle cx="240" cy="170" r="4"/><circle cx="280" cy="210" r="4"/><circle cx="330" cy="180" r="4"/><circle cx="250" cy="250" r="4"/><circle cx="300" cy="270" r="4"/><circle cx="340" cy="240" r="4"/><circle cx="220" cy="220" r="4"/><circle cx="310" cy="150" r="4"/>
+    <circle cx="120" cy="230" r="4"/><circle cx="290" cy="80" r="4"/>
+  </g>
+  <g id="pts-orange" class="fill-s2">
+    <circle cx="70" cy="200" r="4"/><circle cx="100" cy="260" r="4"/><circle cx="150" cy="190" r="4"/><circle cx="60" cy="270" r="4"/><circle cx="170" cy="250" r="4"/><circle cx="90" cy="230" r="4"/><circle cx="140" cy="275" r="4"/>
+    <circle cx="230" cy="60" r="4"/><circle cx="270" cy="100" r="4"/><circle cx="320" cy="55" r="4"/><circle cx="250" cy="115" r="4"/><circle cx="340" cy="100" r="4"/><circle cx="300" cy="120" r="4"/>
+    <circle cx="160" cy="80" r="4"/><circle cx="260" cy="200" r="4"/>
+  </g>
+  <!-- ring the misclassified ones on the left: (120,230) blue in orange region, (290,80) blue in orange, (160,80) orange in blue, (260,200) orange in blue, (310,150) ok -->
+  <g fill="none" stroke="var(--critical)" stroke-width="2">
+    <circle cx="120" cy="230" r="8"/><circle cx="290" cy="80" r="8"/><circle cx="160" cy="80" r="8"/><circle cx="260" cy="200" r="8"/>
+  </g>
+  <text x="200" y="312" text-anchor="middle" class="lbl" font-size="11">4 rectangles; 4 noisy points left "wrong"</text>
+  <!-- right panel -->
+  <rect x="440" y="40" width="320" height="250" fill="none" stroke="var(--ink-3)"/>
+  <rect x="440" y="40" width="160" height="125" fill="var(--s1)" fill-opacity=".16"/>
+  <rect x="440" y="165" width="160" height="125" fill="var(--s2)" fill-opacity=".16"/>
+  <rect x="600" y="40" width="160" height="90" fill="var(--s2)" fill-opacity=".16"/>
+  <rect x="600" y="130" width="160" height="160" fill="var(--s1)" fill-opacity=".16"/>
+  <!-- slivers isolating noisy points -->
+  <rect x="510" y="222" width="20" height="68" fill="var(--s1)" fill-opacity=".45"/>
+  <rect x="680" y="40" width="22" height="90" fill="var(--s1)" fill-opacity=".45"/>
+  <rect x="550" y="40" width="22" height="125" fill="var(--s2)" fill-opacity=".45"/>
+  <rect x="600" y="192" width="160" height="16" fill="var(--s2)" fill-opacity=".45"/>
+  <rect x="700" y="192" width="20" height="16" fill="var(--s1)" fill-opacity=".6"/>
+  <rect x="600" y="140" width="160" height="18" fill="var(--s1)" fill-opacity=".05"/>
+  <g stroke="var(--s7)" stroke-width="1.5">
+    <line x1="600" y1="40" x2="600" y2="290"/><line x1="440" y1="165" x2="600" y2="165"/><line x1="600" y1="130" x2="760" y2="130"/>
+    <line x1="510" y1="222" x2="510" y2="290"/><line x1="530" y1="222" x2="530" y2="290"/><line x1="510" y1="222" x2="530" y2="222"/>
+    <line x1="680" y1="40" x2="680" y2="130"/><line x1="702" y1="40" x2="702" y2="130"/>
+    <line x1="550" y1="40" x2="550" y2="165"/><line x1="572" y1="40" x2="572" y2="165"/>
+    <line x1="600" y1="192" x2="760" y2="192"/><line x1="600" y1="208" x2="760" y2="208"/><line x1="700" y1="192" x2="700" y2="208"/><line x1="720" y1="192" x2="720" y2="208"/>
+    <line x1="440" y1="120" x2="600" y2="120" stroke-dasharray="3 3"/><line x1="440" y1="240" x2="510" y2="240" stroke-dasharray="3 3"/><line x1="640" y1="130" x2="640" y2="290" stroke-dasharray="3 3"/><line x1="600" y1="250" x2="760" y2="250" stroke-dasharray="3 3"/>
+  </g>
+  <g class="fill-s1">
+    <circle cx="470" cy="70" r="4"/><circle cx="510" cy="95" r="4"/><circle cx="550" cy="60" r="4"/><circle cx="490" cy="130" r="4"/><circle cx="570" cy="120" r="4"/><circle cx="530" cy="150" r="4"/><circle cx="460" cy="110" r="4"/>
+    <circle cx="640" cy="170" r="4"/><circle cx="680" cy="210" r="4"/><circle cx="730" cy="180" r="4"/><circle cx="650" cy="250" r="4"/><circle cx="700" cy="270" r="4"/><circle cx="740" cy="240" r="4"/><circle cx="620" cy="220" r="4"/><circle cx="710" cy="150" r="4"/>
+    <circle cx="520" cy="230" r="4"/><circle cx="690" cy="80" r="4"/>
+  </g>
+  <g class="fill-s2">
+    <circle cx="470" cy="200" r="4"/><circle cx="500" cy="260" r="4"/><circle cx="550" cy="190" r="4"/><circle cx="460" cy="270" r="4"/><circle cx="570" cy="250" r="4"/><circle cx="490" cy="230" r="4"/><circle cx="540" cy="275" r="4"/>
+    <circle cx="630" cy="60" r="4"/><circle cx="670" cy="100" r="4"/><circle cx="720" cy="55" r="4"/><circle cx="650" cy="115" r="4"/><circle cx="740" cy="100" r="4"/><circle cx="700" cy="120" r="4"/>
+    <circle cx="560" cy="80" r="4"/><circle cx="660" cy="200" r="4"/>
+  </g>
+  <text x="600" y="312" text-anchor="middle" class="lbl" font-size="11">a sliver per noisy point: memorization, not learning</text>
+</svg>
+<figcaption><strong>Figure 9.5 — Depth 2 versus unlimited depth on the same data.</strong> The shallow tree accepts a few training errors and draws a boundary that looks like the truth. The deep tree fences off every stray point; its 100% training accuracy is memorization, and those slivers will misclassify new data.</figcaption>
+</figure>
+
+<div class="widget" id="w-depth">
+  <div class="w-title">Interactive: grow a tree one level at a time</div>
+  <div class="controls">
+    <label>max_depth <input type="range" id="dp-d" min="1" max="10" value="2" data-out="dp-d-o"> <output id="dp-d-o">2</output></label>
+    <span>leaves: <span class="readout" id="dp-l">–</span></span>
+    <span>training accuracy: <span class="readout" id="dp-a">–</span></span>
+  </div>
+  <svg viewBox="0 0 700 300" id="dp-svg" role="img" aria-label="Decision regions of a greedy decision tree on sixty two-class points, redrawn as the maximum depth changes"></svg>
+  <div class="note">A real CART tree (Gini criterion, greedy midpoint splits) built in your browser on 60 points whose true boundary is a diagonal line, with four deliberately mislabeled points. Depth 1–3 builds a staircase toward the diagonal; beyond that the extra rectangles chase the mislabeled points. Watch training accuracy climb to 100% as depth increases, and watch what the rectangles have to do to get there. Ask yourself at each depth: would I trust this boundary on tomorrow's data?</div>
+</div>
+
+<h3>The controls</h3>
+
+<p>scikit-learn gives you several knobs. They overlap, and you rarely need more than two of them.</p>
+
+<div class="tbl-wrap">
+<table class="tbl">
+<thead><tr><th>Parameter</th><th>What it limits</th><th>Typical values</th><th>Notes</th></tr></thead>
+<tbody>
+<tr><td><code>max_depth</code></td><td>Longest root-to-leaf path</td><td>3–10 (None = unlimited)</td><td>The most intuitive knob and the one to tune first. Depth 3 = at most 8 leaves.</td></tr>
+<tr><td><code>min_samples_leaf</code></td><td>Smallest number (or fraction) of rows a leaf may hold</td><td>5–50, or 0.5–2% of rows</td><td>My favourite: directly forbids the slivers in Figure 9.5 and makes leaf probabilities meaningful.</td></tr>
+<tr><td><code>min_samples_split</code></td><td>Smallest node that may still be split</td><td>10–100</td><td>Similar effect to min_samples_leaf, slightly weaker.</td></tr>
+<tr><td><code>max_leaf_nodes</code></td><td>Total number of leaves; grows best-first</td><td>8–64</td><td>Useful when a stakeholder says "no more than 16 rules".</td></tr>
+<tr><td><code>min_impurity_decrease</code></td><td>Minimum gain a split must achieve</td><td>0.001–0.01</td><td>Rarely tuned directly; pruning does this better.</td></tr>
+<tr><td><code>ccp_alpha</code></td><td>Cost-complexity pruning strength (post-hoc)</td><td>from <code>cost_complexity_pruning_path</code></td><td>Grow fully, then cut back the branches that don't pay for themselves. Principled and data-driven.</td></tr>
+<tr><td><code>max_features</code></td><td>Features considered per split</td><td>"sqrt", 0.3–0.8</td><td>Mostly a random-forest knob (Chapter 10); adds randomness to a single tree.</td></tr>
+<tr><td><code>class_weight</code></td><td>Reweights classes in impurity</td><td>"balanced"</td><td>For imbalanced targets (Chapter 13); shifts splits toward the rare class.</td></tr>
+</tbody>
+</table>
+</div>
+
+<pre class="code" data-lang="python"><code><span class="cm"># Depth sweep: where does a single tree stop improving?</span>
+<span class="kw">import</span> numpy <span class="kw">as</span> np
+<span class="kw">from</span> sklearn.datasets <span class="kw">import</span> load_wine
+<span class="kw">from</span> sklearn.model_selection <span class="kw">import</span> cross_val_score, StratifiedKFold
+<span class="kw">from</span> sklearn.tree <span class="kw">import</span> DecisionTreeClassifier
+
+X, y = load_wine(return_X_y=<span class="kw">True</span>)
+cv = StratifiedKFold(<span class="nu">5</span>, shuffle=<span class="kw">True</span>, random_state=<span class="nu">0</span>)
+<span class="kw">for</span> d <span class="kw">in</span> [<span class="nu">1</span>, <span class="nu">2</span>, <span class="nu">3</span>, <span class="nu">4</span>, <span class="nu">6</span>, <span class="nu">8</span>, <span class="kw">None</span>]:
+    t = DecisionTreeClassifier(max_depth=d, random_state=<span class="nu">0</span>)
+    s = cross_val_score(t, X, y, cv=cv)
+    t.fit(X, y)
+    <span class="fn">print</span>(<span class="st">f"max_depth={str(d):4s}  train={t.score(X, y):.3f}  cv={s.mean():.3f} ± {s.std():.3f}  leaves={t.get_n_leaves()}"</span>)
+<span class="out"># max_depth=1     train=0.697  cv=0.618 ± 0.038  leaves=2</span>
+<span class="out"># max_depth=2     train=0.921  cv=0.843 ± 0.036  leaves=4</span>
+<span class="out"># max_depth=3     train=0.978  cv=0.938 ± 0.041  leaves=8</span>
+<span class="out"># max_depth=4     train=0.989  cv=0.927 ± 0.051  leaves=11</span>
+<span class="out"># max_depth=6     train=1.000  cv=0.927 ± 0.051  leaves=12</span>
+<span class="out"># max_depth=8     train=1.000  cv=0.927 ± 0.051  leaves=12</span>
+<span class="out"># max_depth=None  train=1.000  cv=0.927 ± 0.051  leaves=12</span></code></pre>
+
+<p>The classic picture from Chapter 7: training accuracy climbs monotonically to 100%; cross-validated accuracy peaks (here at depth 3) and then drifts down as the extra leaves fit noise. Note that on this small, clean dataset the full tree only needs 12 leaves and the damage is mild — on a noisy business table with 100,000 rows the unlimited tree grows thousands of leaves and the gap between train and CV becomes a canyon.</p>
+
+<h3>Cost-complexity pruning</h3>
+
+<p>Pre-setting <code>max_depth</code> is blunt: it stops every branch at the same depth even though some regions of the data deserve more detail than others. <strong>Cost-complexity pruning</strong> (also called weakest-link pruning) grows the full tree and then removes branches whose contribution is not worth their complexity:</p>
+
+<div class="callout math"><div class="title">The math (optional)</div>
+<div class="formula">R<sub>α</sub>(T) = R(T) + α · |leaves(T)|</div>
+<p><em>R(T)</em> is the tree's total training impurity (misclassification or squared error, summed over leaves and weighted by samples); <em>|leaves(T)|</em> is the number of leaves; <em>α</em> ≥ 0 is the price per leaf. For each α there is a unique smallest subtree minimizing <em>R<sub>α</sub></em>. As α increases from 0, branches are collapsed one at a time in order of the least impurity gain per leaf they provide — that ordered sequence is the <em>pruning path</em>. You choose α by cross-validation.</p>
+</div>
+
+<figure class="fig">
+<svg viewBox="0 0 800 300" role="img" aria-label="Line chart of training accuracy and cross-validated accuracy versus pruning strength alpha; training accuracy falls from 1.0 as alpha grows while cross-validated accuracy rises to a peak near alpha of 0.013 and then falls; the number of leaves at several alphas is annotated">
+  <defs><marker id="arr-t6" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+  <line x1="70" y1="240" x2="770" y2="240" class="axis" marker-end="url(#arr-t6)"/>
+  <line x1="70" y1="240" x2="70" y2="30" class="axis" marker-end="url(#arr-t6)"/>
+  <text x="420" y="270" text-anchor="middle" class="lbl">ccp_alpha (pruning strength) →</text>
+  <text x="34" y="135" text-anchor="middle" class="lbl" transform="rotate(-90 34 135)">accuracy</text>
+  <g class="lbl" font-size="10">
+    <text x="60" y="244" text-anchor="end">0.6</text><text x="60" y="192" text-anchor="end">0.7</text><text x="60" y="140" text-anchor="end">0.8</text><text x="60" y="88" text-anchor="end">0.9</text><text x="60" y="36" text-anchor="end">1.0</text>
+    <text x="70" y="256" text-anchor="middle">0</text><text x="220" y="256" text-anchor="middle">0.005</text><text x="370" y="256" text-anchor="middle">0.013</text><text x="520" y="256" text-anchor="middle">0.025</text><text x="700" y="256" text-anchor="middle">0.06</text>
+  </g>
+  <g class="grid"><line x1="70" y1="188" x2="770" y2="188"/><line x1="70" y1="136" x2="770" y2="136"/><line x1="70" y1="84" x2="770" y2="84"/><line x1="70" y1="32" x2="770" y2="32"/></g>
+  <!-- train: from 1.0 down -->
+  <path d="M70,32 L130,40 L190,52 L250,66 L310,80 L370,94 L430,106 L490,118 L550,132 L610,150 L670,172 L730,200" fill="none" stroke="var(--s1)" stroke-width="2.5"/>
+  <!-- cv: rise then fall -->
+  <path d="M70,147 L130,138 L190,126 L250,116 L310,106 L370,100 L430,104 L490,112 L550,124 L610,142 L670,168 L730,200" fill="none" stroke="var(--s2)" stroke-width="2.5"/>
+  <g fill="var(--s1)"><circle cx="70" cy="32" r="4"/><circle cx="370" cy="94" r="4"/><circle cx="730" cy="200" r="4"/></g>
+  <g fill="var(--s2)"><circle cx="70" cy="147" r="4"/><circle cx="370" cy="100" r="5"/><circle cx="730" cy="200" r="4"/></g>
+  <line x1="370" y1="240" x2="370" y2="95" stroke="var(--s7)" stroke-width="2" stroke-dasharray="6 3"/>
+  <text x="378" y="60" class="lbl-strong" fill="var(--s7)" font-size="11">best α by CV</text>
+  <text x="80" y="24" class="lbl" font-size="10">62 leaves</text>
+  <text x="380" y="84" class="lbl" font-size="10">10 leaves</text>
+  <text x="735" y="222" class="lbl" font-size="10" text-anchor="end">1 leaf (root only)</text>
+  <text x="640" y="60" class="lbl-strong" fill="var(--s1)">— training accuracy</text>
+  <text x="640" y="78" class="lbl-strong" fill="var(--s2)">— 5-fold CV accuracy</text>
+  <text x="180" y="170" class="lbl" font-size="11">α = 0: full tree, memorized</text>
+  <text x="560" y="192" class="lbl" font-size="11" text-anchor="middle">large α: underfit</text>
+</svg>
+<figcaption><strong>Figure 9.6 — The pruning path.</strong> Increasing α collapses branches in order of least value. Training accuracy can only fall; CV accuracy rises while the pruned branches were fitting noise, then falls once real structure is cut. Choose the peak.</figcaption>
+</figure>
+
+<pre class="code" data-lang="python"><code><span class="cm"># Cost-complexity pruning: grow fully, then find the alpha that generalizes best</span>
+<span class="kw">import</span> numpy <span class="kw">as</span> np
+<span class="kw">from</span> sklearn.datasets <span class="kw">import</span> make_classification
+<span class="kw">from</span> sklearn.model_selection <span class="kw">import</span> train_test_split, cross_val_score
+<span class="kw">from</span> sklearn.tree <span class="kw">import</span> DecisionTreeClassifier
+
+X, y = make_classification(n_samples=<span class="nu">800</span>, n_features=<span class="nu">20</span>, n_informative=<span class="nu">6</span>, n_redundant=<span class="nu">4</span>,
+                           flip_y=<span class="nu">0.08</span>, random_state=<span class="nu">3</span>)
+X_tr, X_te, y_tr, y_te = train_test_split(X, y, test_size=<span class="nu">0.3</span>, random_state=<span class="nu">1</span>, stratify=y)
+full = DecisionTreeClassifier(random_state=<span class="nu">0</span>).fit(X_tr, y_tr)
+path = full.cost_complexity_pruning_path(X_tr, y_tr)
+alphas = path.ccp_alphas[:-<span class="nu">1</span>]           <span class="cm"># the last alpha collapses the tree to its root</span>
+<span class="fn">print</span>(<span class="st">f"{len(alphas)} candidate alphas; full tree has {full.get_n_leaves()} leaves, train acc {full.score(X_tr, y_tr):.2f}"</span>)
+
+best = <span class="kw">None</span>
+<span class="kw">for</span> a <span class="kw">in</span> alphas:
+    cv = cross_val_score(DecisionTreeClassifier(random_state=<span class="nu">0</span>, ccp_alpha=a), X_tr, y_tr, cv=<span class="nu">5</span>).mean()
+    <span class="kw">if</span> best <span class="kw">is</span> <span class="kw">None</span> <span class="kw">or</span> cv &gt; best[<span class="nu">1</span>]:
+        best = (a, cv)
+pruned = DecisionTreeClassifier(random_state=<span class="nu">0</span>, ccp_alpha=best[<span class="nu">0</span>]).fit(X_tr, y_tr)
+<span class="fn">print</span>(<span class="st">f"best alpha = {best[0]:.4f}  (cv acc {best[1]:.3f})"</span>)
+<span class="fn">print</span>(<span class="st">f"full  : leaves={full.get_n_leaves():3d}  test acc={full.score(X_te, y_te):.3f}"</span>)
+<span class="fn">print</span>(<span class="st">f"pruned: leaves={pruned.get_n_leaves():3d}  test acc={pruned.score(X_te, y_te):.3f}"</span>)
+<span class="out"># 36 candidate alphas; full tree has 62 leaves, train acc 1.00</span>
+<span class="out"># best alpha = 0.0128  (cv acc 0.814)</span>
+<span class="out"># full  : leaves= 62  test acc=0.779</span>
+<span class="out"># pruned: leaves= 10  test acc=0.846</span></code></pre>
+
+<p>From 62 leaves to 10, and test accuracy goes <em>up</em> by seven points. That is the typical size of the win on noisy data, and 10 leaves is a tree a human can still read. In practice I tune <code>ccp_alpha</code> (or <code>min_samples_leaf</code>) with <code>GridSearchCV</code> exactly as Chapter 8 tuned a pipeline; the loop above just makes the mechanism visible.</p>
+
+<div class="callout key"><div class="title">Key idea</div>
+<p>Every control on a tree is a way of saying "don't believe a pattern unless enough rows support it." <code>min_samples_leaf</code> says it directly; <code>max_depth</code> says it by limiting how specific a rule can get; <code>ccp_alpha</code> says it by charging a price per leaf. Tune one of them by cross-validation and leave the rest at their defaults.</p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s7">7. Feature importance and its biases</h2>
+
+<p>After fitting, <code>tree.feature_importances_</code> gives one number per feature that sums to 1. It is the <strong>total impurity decrease</strong> attributable to that feature — every split on the feature contributes its (sample-weighted) Gini or MSE reduction — normalized across features. Features used near the root, on many rows, score high; features never used score 0. It is free, it is intuitive, and it is biased in two specific ways you must know about.</p>
+
+<ol class="steps">
+  <li><strong>High-cardinality bias.</strong> A feature with many distinct values offers many candidate thresholds, so purely by chance it can find a split that reduces impurity a little. A continuous noise column will beat a genuinely informative binary flag in the impurity ranking, because the flag offers exactly one threshold.</li>
+  <li><strong>Correlated-feature masking.</strong> If two features carry the same signal, the tree uses whichever wins the first tie-break, and the other gets near-zero importance. The ranking then says "feature B is irrelevant" when it is really "feature B is redundant given A" — a very different statement for the person deciding which data to keep collecting.</li>
+</ol>
+
+<pre class="code" data-lang="python"><code><span class="cm"># Impurity-based importance is biased toward high-cardinality features</span>
+<span class="kw">import</span> numpy <span class="kw">as</span> np, pandas <span class="kw">as</span> pd
+<span class="kw">from</span> sklearn.datasets <span class="kw">import</span> load_breast_cancer
+<span class="kw">from</span> sklearn.model_selection <span class="kw">import</span> train_test_split
+<span class="kw">from</span> sklearn.tree <span class="kw">import</span> DecisionTreeClassifier
+<span class="kw">from</span> sklearn.inspection <span class="kw">import</span> permutation_importance
+
+data = load_breast_cancer()
+weak = [<span class="st">"mean texture"</span>, <span class="st">"mean smoothness"</span>, <span class="st">"mean symmetry"</span>, <span class="st">"mean fractal dimension"</span>]
+X = pd.DataFrame(data.data, columns=data.feature_names)[weak]
+rng = np.random.default_rng(<span class="nu">0</span>)
+X[<span class="st">"random_id"</span>] = rng.random(<span class="fn">len</span>(X))            <span class="cm"># pure noise, 569 distinct values</span>
+X[<span class="st">"random_coin"</span>] = rng.integers(<span class="nu">0</span>, <span class="nu">2</span>, <span class="fn">len</span>(X))  <span class="cm"># pure noise, only 2 distinct values</span>
+X_tr, X_te, y_tr, y_te = train_test_split(X, data.target, random_state=<span class="nu">0</span>, stratify=data.target)
+tree = DecisionTreeClassifier(random_state=<span class="nu">0</span>).fit(X_tr, y_tr)
+perm = permutation_importance(tree, X_te, y_te, n_repeats=<span class="nu">30</span>, random_state=<span class="nu">0</span>)
+out = pd.DataFrame({<span class="st">"impurity"</span>: tree.feature_importances_.round(<span class="nu">3</span>),
+                    <span class="st">"permutation"</span>: perm.importances_mean.round(<span class="nu">3</span>)}, index=X.columns)
+<span class="fn">print</span>(out.sort_values(<span class="st">"impurity"</span>, ascending=<span class="kw">False</span>))
+<span class="out">#                         impurity  permutation</span>
+<span class="out"># mean texture               0.347        0.127</span>
+<span class="out"># mean smoothness            0.239        0.113</span>
+<span class="out"># mean fractal dimension     0.202        0.035</span>
+<span class="out"># mean symmetry              0.124        0.002</span>
+<span class="out"># random_id                  0.088        0.014</span>
+<span class="out"># random_coin                0.000        0.000</span></code></pre>
+
+<figure class="fig">
+<svg viewBox="0 0 800 290" role="img" aria-label="Grouped horizontal bars comparing impurity-based and permutation importance for six features; the pure-noise continuous feature random_id receives nine percent impurity importance but near zero permutation importance, while the binary noise feature receives zero in both">
+  <text x="20" y="24" class="lbl-strong" font-size="14">Two importance measures for the same tree (test-set permutation vs. training impurity)</text>
+  <g class="lbl" font-size="11" text-anchor="end">
+    <text x="190" y="66">mean texture</text><text x="190" y="102">mean smoothness</text><text x="190" y="138">mean fractal dimension</text><text x="190" y="174">mean symmetry</text><text x="190" y="210" fill="var(--critical)" font-weight="700">random_id (noise, 569 values)</text><text x="190" y="246" fill="var(--critical)" font-weight="700">random_coin (noise, 2 values)</text>
+  </g>
+  <line x1="200" y1="40" x2="200" y2="258" class="axis"/>
+  <!-- impurity bars: scale 0.35 -> 300px ; permutation scale 0.13 -> 300px ; two separate scales, labeled -->
+  <g fill="var(--s1)" fill-opacity=".85">
+    <rect x="200" y="52" width="297" height="12"/><rect x="200" y="88" width="205" height="12"/><rect x="200" y="124" width="173" height="12"/><rect x="200" y="160" width="106" height="12"/><rect x="200" y="196" width="75" height="12"/><rect x="200" y="232" width="1" height="12"/>
+  </g>
+  <g fill="var(--s2)" fill-opacity=".85">
+    <rect x="200" y="66" width="293" height="12"/><rect x="200" y="102" width="261" height="12"/><rect x="200" y="138" width="81" height="12"/><rect x="200" y="174" width="5" height="12"/><rect x="200" y="210" width="32" height="12"/><rect x="200" y="246" width="1" height="12"/>
+  </g>
+  <g class="lbl" font-size="10">
+    <text x="502" y="62">0.347</text><text x="410" y="98">0.239</text><text x="378" y="134">0.202</text><text x="311" y="170">0.124</text><text x="280" y="206">0.088</text><text x="206" y="242">0.000</text>
+    <text x="498" y="76">0.127</text><text x="466" y="112">0.113</text><text x="286" y="148">0.035</text><text x="210" y="184">0.002</text><text x="237" y="220">0.014</text><text x="206" y="256">0.000</text>
+  </g>
+  <text x="560" y="130" class="lbl-strong" fill="var(--s1)">■ impurity importance (sums to 1)</text>
+  <text x="560" y="148" class="lbl-strong" fill="var(--s2)">■ permutation importance (accuracy drop)</text>
+  <text x="560" y="176" class="lbl" font-size="11">bars drawn on separate scales;</text>
+  <text x="560" y="191" class="lbl" font-size="11">compare the ranking, not the length</text>
+  <text x="20" y="272" class="lbl" font-size="11">random_id gets 9% of the impurity credit — more than nothing, because 569 thresholds give it many chances —</text>
+  <text x="20" y="286" class="lbl" font-size="11">but shuffling it on test data changes almost nothing.</text>
+</svg>
+<figcaption><strong>Figure 9.7 — Impurity importance rewards features with many split points.</strong> The continuous noise column earns real-looking impurity importance; its binary twin earns none. Permutation importance, measured on held-out data, puts both noise columns where they belong.</figcaption>
+</figure>
+
+<div class="callout key"><div class="title">Key idea</div>
+<p>Importance answers "which columns did <em>this model</em> lean on," never "what causes the outcome." Impurity importance is computed on training data during fitting and inherits the tree's biases; permutation importance is computed on held-out data after fitting and measures what the model actually needs to predict well. Report the second, and always alongside the caveat about correlated features.</p>
+</div>
+
+<p><strong>Permutation importance</strong> is the fix: shuffle one feature's column in the <em>test</em> set, re-score the model, and record how much the score drops. A feature the model truly relies on hurts when scrambled; a noise feature does not. It is model-agnostic, measured on unseen data, and honest about high-cardinality columns. Its own weakness — correlated features can substitute for each other, so both look unimportant — is handled by SHAP values and grouped permutation in Chapter 20.</p>
+
+<div class="callout warn"><div class="title">Common mistake</div>
+<p>Reporting <code>feature_importances_</code> to a business audience as "what drives churn." It is a description of how <em>this tree</em> used the columns, not of causation, and it is biased toward continuous columns with many values (customer id, timestamps, amounts). Use permutation importance on a held-out set for the ranking, and never let a raw id column into <code>X</code> in the first place.</p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s8">8. Strengths, weaknesses, and practicalities</h2>
+
+<div class="grid2">
+  <div class="card good"><h4>✅ What trees do well</h4>
+    <ul>
+      <li><strong>No scaling, no transforms.</strong> Splits depend only on order; log, z-score and min-max leave the tree unchanged.</li>
+      <li><strong>Mixed types.</strong> Numbers, ordered codes, and (with native support or one-hot) categories, in one model.</li>
+      <li><strong>Non-linear and interacting effects for free.</strong> "High risk if young AND basic plan" is two splits.</li>
+      <li><strong>Interpretable.</strong> A shallow tree is a readable rule set; probabilities come from leaf counts.</li>
+      <li><strong>Fast</strong> to train and near-instant to predict; robust to outliers in the features (an outlier just lands in the end box).</li>
+      <li><strong>Missing values</strong> are handled natively (sklearn ≥ 1.3): each split learns a default direction for NaN.</li>
+    </ul>
+  </div>
+  <div class="card bad"><h4>❌ Where a single tree fails</h4>
+    <ul>
+      <li><strong>Unstable.</strong> Remove 5% of the rows and the root split can change, taking the whole structure with it (Figure 9.9).</li>
+      <li><strong>Overfits by default.</strong> Must be constrained or pruned; the defaults are not safe.</li>
+      <li><strong>Cannot extrapolate.</strong> Predictions are flat outside the training range (Figure 9.8) — dangerous for trends, prices, growth.</li>
+      <li><strong>Axis-aligned.</strong> A diagonal boundary needs a staircase of many splits; a linear model gets it with one line.</li>
+      <li><strong>Coarse probabilities.</strong> A 10-leaf tree emits at most 10 distinct probability values; calibrate (Chapter 13) before using them as risk scores.</li>
+      <li><strong>Greedy.</strong> Locally-best splits are not globally best (the XOR problem).</li>
+    </ul>
+  </div>
+</div>
+
+<figure class="fig">
+<svg viewBox="0 0 800 300" role="img" aria-label="Training points along an upward trend from x equals 0 to 6; a regression tree's step-function fit follows them and then stays flat for x beyond 6, while a linear model's line continues upward and the true trend continues rising; the region beyond the training range is shaded">
+  <defs><marker id="arr-t8" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+  <line x1="60" y1="250" x2="770" y2="250" class="axis" marker-end="url(#arr-t8)"/>
+  <line x1="60" y1="250" x2="60" y2="30" class="axis" marker-end="url(#arr-t8)"/>
+  <text x="415" y="278" text-anchor="middle" class="lbl">months since launch</text>
+  <text x="34" y="140" text-anchor="middle" class="lbl" transform="rotate(-90 34 140)">monthly revenue</text>
+  <!-- training range 60..480 (x 0..6); beyond shaded -->
+  <rect x="480" y="30" width="290" height="220" fill="var(--s7)" fill-opacity=".07"/>
+  <text x="625" y="48" text-anchor="middle" class="lbl-strong" fill="var(--s7)">outside the training range</text>
+  <line x1="480" y1="30" x2="480" y2="250" stroke="var(--s7)" stroke-dasharray="5 3"/>
+  <!-- true trend: y = 230 - 25x (x in months 0..10) px: x=60+70m -->
+  <line x1="60" y1="230" x2="760" y2="60" stroke="var(--ink-3)" stroke-width="1.5" stroke-dasharray="5 4"/>
+  <text x="462" y="122" class="lbl" font-size="10" text-anchor="end">true trend (dashed)</text>
+  <!-- points along trend, months 0..6, noise -->
+  <g fill="var(--s1)" fill-opacity=".85">
+    <circle cx="70" cy="224" r="4"/><circle cx="95" cy="230" r="4"/><circle cx="120" cy="210" r="4"/><circle cx="150" cy="212" r="4"/><circle cx="180" cy="196" r="4"/><circle cx="205" cy="204" r="4"/><circle cx="230" cy="186" r="4"/><circle cx="260" cy="178" r="4"/><circle cx="285" cy="186" r="4"/><circle cx="310" cy="166" r="4"/>
+    <circle cx="335" cy="172" r="4"/><circle cx="360" cy="154" r="4"/><circle cx="385" cy="160" r="4"/><circle cx="410" cy="142" r="4"/><circle cx="435" cy="150" r="4"/><circle cx="460" cy="134" r="4"/><circle cx="475" cy="138" r="4"/>
+  </g>
+  <!-- tree step fit -->
+  <path d="M60,226 L135,226 L135,206 L215,206 L215,186 L300,186 L300,168 L370,168 L370,152 L445,152 L445,137 L760,137" fill="none" stroke="var(--s2)" stroke-width="2.5"/>
+  <text x="620" y="128" text-anchor="middle" class="lbl-strong" fill="var(--s2)" font-size="11">tree: flat forever at the last leaf's mean</text>
+  <!-- linear fit -->
+  <line x1="60" y1="229" x2="760" y2="63" stroke="var(--s3)" stroke-width="2.5"/>
+  <text x="560" y="76" text-anchor="middle" class="lbl-strong" fill="var(--s3)" font-size="11">linear model: keeps the trend</text>
+  <g class="lbl" font-size="10"><text x="60" y="264" text-anchor="middle">0</text><text x="270" y="264" text-anchor="middle">3</text><text x="480" y="264" text-anchor="middle">6</text><text x="690" y="264" text-anchor="middle">9</text></g>
+  <text x="620" y="232" text-anchor="middle" class="lbl" font-size="11">forecast error grows every month</text>
+</svg>
+<figcaption><strong>Figure 9.8 — Trees cannot extrapolate.</strong> Beyond the largest training value the tree repeats its last leaf's mean. For anything with a trend — revenue, prices, usage growth — model the trend with a linear component or forecast differences (Chapter 14), and let the tree handle the rest.</figcaption>
+</figure>
+
+<h3>Missing values and categorical features</h3>
+
+<p>Since scikit-learn 1.3, <code>DecisionTreeClassifier</code> and <code>DecisionTreeRegressor</code> accept NaN in numeric features (with the default <code>splitter="best"</code>). At each split the algorithm tries sending the missing rows left and right and keeps whichever is better — so "missingness" becomes something the tree can use, exactly the MNAR argument from Chapter 8. No imputer needed:</p>
+
+<pre class="code" data-lang="python"><code><span class="cm"># Since scikit-learn 1.3, trees accept NaN: each split learns which side missing values go to</span>
+<span class="kw">import</span> numpy <span class="kw">as</span> np
+<span class="kw">from</span> sklearn.datasets <span class="kw">import</span> load_breast_cancer
+<span class="kw">from</span> sklearn.model_selection <span class="kw">import</span> cross_val_score, StratifiedKFold
+<span class="kw">from</span> sklearn.tree <span class="kw">import</span> DecisionTreeClassifier
+
+X, y = load_breast_cancer(return_X_y=<span class="kw">True</span>)
+rng = np.random.default_rng(<span class="nu">0</span>)
+X_miss = np.where(rng.random(X.shape) &lt; <span class="nu">0.2</span>, np.nan, X)     <span class="cm"># 20% of cells blanked</span>
+cv = StratifiedKFold(<span class="nu">5</span>, shuffle=<span class="kw">True</span>, random_state=<span class="nu">0</span>)
+tree = DecisionTreeClassifier(max_depth=<span class="nu">4</span>, random_state=<span class="nu">0</span>)
+<span class="fn">print</span>(<span class="st">"complete data :"</span>, cross_val_score(tree, X, y, cv=cv).mean().round(<span class="nu">3</span>))
+<span class="fn">print</span>(<span class="st">"20% NaN, no imputation:"</span>, cross_val_score(tree, X_miss, y, cv=cv).mean().round(<span class="nu">3</span>))
+tree.fit(X_miss, y)
+<span class="fn">print</span>(<span class="st">"NaN rows predicted fine:"</span>, tree.predict(X_miss[:<span class="nu">3</span>]), <span class="st">" (true:"</span>, y[:<span class="nu">3</span>], <span class="st">")"</span>)
+<span class="out"># complete data : 0.926</span>
+<span class="out"># 20% NaN, no imputation: 0.903</span>
+<span class="out"># NaN rows predicted fine: [0 0 0]  (true: [0 0 0] )</span></code></pre>
+
+<p>Categorical features are the one place sklearn's trees are still behind. They require numbers, so you either <strong>one-hot encode</strong> (fine for a handful of levels; each level becomes its own yes/no split, which is exactly what a tree wants) or <strong>ordinal-encode</strong> (compact, but the tree can only cut the levels in the encoded order — with 20 regions coded 0–19 it needs several splits to isolate regions {3, 11, 17}). <code>HistGradientBoostingClassifier(categorical_features=…)</code>, LightGBM and CatBoost implement true categorical splits that can send any subset of levels left; when categories matter, those are the tools (Chapter 10).</p>
+
+<h3>Instability: why one tree is never the final model</h3>
+
+<figure class="fig">
+<svg viewBox="0 0 800 300" role="img" aria-label="Two small decision trees fitted on two 90 percent samples of the same data; the left tree's root splits on support calls and the right tree's root splits on tenure, and their lower levels differ entirely, illustrating instability">
+  <defs><marker id="arr-t9" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+  <text x="200" y="24" text-anchor="middle" class="lbl-strong" font-size="14">Tree on sample A (90% of rows)</text>
+  <rect x="110" y="40" width="180" height="40" class="box-accent"/><text x="200" y="65" text-anchor="middle" class="lbl-strong">support_calls ≤ 1.5</text>
+  <line x1="160" y1="80" x2="110" y2="118" class="arrow" marker-end="url(#arr-t9)"/><line x1="240" y1="80" x2="290" y2="118" class="arrow" marker-end="url(#arr-t9)"/>
+  <rect x="30" y="120" width="150" height="40" class="box"/><text x="105" y="145" text-anchor="middle" class="lbl-strong">tenure ≤ 6</text>
+  <rect x="220" y="120" width="150" height="40" class="box"/><text x="295" y="145" text-anchor="middle" class="lbl-strong">plan = basic</text>
+  <line x1="70" y1="160" x2="50" y2="196" class="arrow" marker-end="url(#arr-t9)"/><line x1="140" y1="160" x2="160" y2="196" class="arrow" marker-end="url(#arr-t9)"/>
+  <line x1="260" y1="160" x2="240" y2="196" class="arrow" marker-end="url(#arr-t9)"/><line x1="330" y1="160" x2="350" y2="196" class="arrow" marker-end="url(#arr-t9)"/>
+  <rect x="15" y="198" width="70" height="34" rx="8" fill="var(--s1)" fill-opacity=".18" stroke="var(--s1)"/><text x="50" y="220" text-anchor="middle" class="lbl" font-size="11">stay</text>
+  <rect x="125" y="198" width="70" height="34" rx="8" fill="var(--s1)" fill-opacity=".18" stroke="var(--s1)"/><text x="160" y="220" text-anchor="middle" class="lbl" font-size="11">stay</text>
+  <rect x="205" y="198" width="70" height="34" rx="8" fill="var(--s2)" fill-opacity=".18" stroke="var(--s2)"/><text x="240" y="220" text-anchor="middle" class="lbl" font-size="11">churn</text>
+  <rect x="315" y="198" width="70" height="34" rx="8" fill="var(--s1)" fill-opacity=".18" stroke="var(--s1)"/><text x="350" y="220" text-anchor="middle" class="lbl" font-size="11">stay</text>
+  <!-- right tree -->
+  <text x="600" y="24" text-anchor="middle" class="lbl-strong" font-size="14">Tree on sample B (a different 90%)</text>
+  <rect x="510" y="40" width="180" height="40" class="box-accent"/><text x="600" y="65" text-anchor="middle" class="lbl-strong">tenure ≤ 9</text>
+  <line x1="560" y1="80" x2="510" y2="118" class="arrow" marker-end="url(#arr-t9)"/><line x1="640" y1="80" x2="690" y2="118" class="arrow" marker-end="url(#arr-t9)"/>
+  <rect x="430" y="120" width="150" height="40" class="box"/><text x="505" y="145" text-anchor="middle" class="lbl-strong">plan = basic</text>
+  <rect x="620" y="120" width="160" height="40" class="box"/><text x="700" y="145" text-anchor="middle" class="lbl-strong">support_calls ≤ 2.5</text>
+  <line x1="470" y1="160" x2="450" y2="196" class="arrow" marker-end="url(#arr-t9)"/><line x1="540" y1="160" x2="560" y2="196" class="arrow" marker-end="url(#arr-t9)"/>
+  <line x1="660" y1="160" x2="640" y2="196" class="arrow" marker-end="url(#arr-t9)"/><line x1="740" y1="160" x2="760" y2="196" class="arrow" marker-end="url(#arr-t9)"/>
+  <rect x="415" y="198" width="70" height="34" rx="8" fill="var(--s2)" fill-opacity=".18" stroke="var(--s2)"/><text x="450" y="220" text-anchor="middle" class="lbl" font-size="11">churn</text>
+  <rect x="525" y="198" width="70" height="34" rx="8" fill="var(--s1)" fill-opacity=".18" stroke="var(--s1)"/><text x="560" y="220" text-anchor="middle" class="lbl" font-size="11">stay</text>
+  <rect x="605" y="198" width="70" height="34" rx="8" fill="var(--s1)" fill-opacity=".18" stroke="var(--s1)"/><text x="640" y="220" text-anchor="middle" class="lbl" font-size="11">stay</text>
+  <rect x="725" y="198" width="70" height="34" rx="8" fill="var(--s2)" fill-opacity=".18" stroke="var(--s2)"/><text x="760" y="220" text-anchor="middle" class="lbl" font-size="11">churn</text>
+  <text x="400" y="262" text-anchor="middle" class="lbl">Same population, 10% of rows swapped: different root, different rules, similar accuracy.</text>
+  <text x="400" y="280" text-anchor="middle" class="lbl-strong">Averaging many such trees cancels the noise in each — that is a random forest (Chapter 10).</text>
+</svg>
+<figcaption><strong>Figure 9.9 — Instability.</strong> When two features are nearly tied at the root, a small change in the data flips the choice and every split below it changes. High variance in the structure is exactly what bagging and boosting exploit: many unstable trees averaged become one stable model.</figcaption>
+</figure>
+
+<p>This instability is not a bug to fix with a bigger dataset; it is a structural property of greedy, hierarchical splitting. A near-tie at the root — and with many correlated features there is always a near-tie — is resolved by whichever rows happen to be present. The lower levels then adapt to a different top split, and the two trees can look unrelated while scoring the same. Chapter 10 turns the weakness into a strength: fit hundreds of trees on bootstrap samples and average them (random forests), or fit trees sequentially to each other's errors (gradient boosting). Those ensembles are the strongest general-purpose models for tabular data, and everything you learned here about splits, depth, leaves and importance carries over unchanged.</p>
+
+<!-- ============================================================ -->
+<h2 id="s9">9. At work: when one tree is the right answer</h2>
+
+<p>Given that a forest almost always scores better, why would you ever deploy a single tree? Because accuracy is not the only deliverable. A single shallow tree is the right answer when:</p>
+
+<div class="grid2">
+  <div class="card accent"><h4>The rules must be read by people</h4>
+    <p>Triage rules for a support queue, eligibility rules for a promotion, a fraud-review checklist, a clinical screening protocol. A depth-3 tree is eight rules a manager can approve, print, and apply without software. Nobody can approve a 500-tree forest.</p></div>
+  <div class="card accent"><h4>The model must live outside Python</h4>
+    <p>A tree exports to SQL <code>CASE WHEN</code>, to a rules engine, to a spreadsheet, to a paper form. If the scoring environment is a legacy system or a regulated decision document, a tree ships where a forest cannot.</p></div>
+  <div class="card accent"><h4>You are exploring, not deploying</h4>
+    <p>A quick tree on a new dataset shows you the strongest interactions, the natural thresholds ("spend ≤ 42.7" often reveals a pricing tier), and suspicious features, in seconds. Use it as a flashlight before building the real model.</p></div>
+  <div class="card accent"><h4>Segments, not scores, are the goal</h4>
+    <p>Marketing wants "five customer segments with different churn rates and a description of each." A tree with <code>max_leaf_nodes=5</code> is precisely that: five boxes, each defined by two or three plain conditions, each with a measured churn rate.</p></div>
+</div>
+
+<div class="tbl-wrap">
+<table class="tbl">
+<thead><tr><th>Situation</th><th>Use</th><th>Why</th></tr></thead>
+<tbody>
+<tr><td>Rules must be auditable / hand-applied</td><td><strong>Single tree</strong>, depth ≤ 4, <code>min_samples_leaf</code> ≥ 1% of rows</td><td>Readable, exportable, stable enough when leaves are large.</td></tr>
+<tr><td>Best accuracy on a tabular dataset</td><td>Gradient boosting or random forest (Ch 10)</td><td>Ensembles fix instability and overfitting; same feature handling.</td></tr>
+<tr><td>Trend / extrapolation matters</td><td>Linear model, or linear + tree on residuals (Ch 14)</td><td>Trees are flat outside the training range.</td></tr>
+<tr><td>Mostly linear signal, few interactions</td><td>Logistic / linear regression (Ch 5–6)</td><td>A line beats a staircase; coefficients are the explanation.</td></tr>
+<tr><td>Calibrated probabilities needed</td><td>Ensemble + calibration (Ch 13)</td><td>A small tree emits only a handful of distinct probabilities.</td></tr>
+<tr><td>Exploring a new dataset</td><td>Single tree, depth 3, <code>export_text</code></td><td>Fastest way to see thresholds, interactions and leaks.</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="callout pro"><div class="title">At work</div>
+<p>When you do deploy a single tree as a rule set, set <code>min_samples_leaf</code> to at least 1–2% of the rows so that every rule is backed by real volume, cross-validate the depth, and — this is the step people skip — re-fit on two or three bootstrap samples and check that the top two splits stay the same. If they do not, the rules are an artefact of this sample, and you should either enlarge the leaves or hand the business a forest with SHAP explanations (Chapter 20) instead of a flowchart that will change next quarter.</p>
+</div>
+
+<div class="callout pro"><div class="title">At work: the tree as a debugging tool</div>
+<p>Fit <code>DecisionTreeClassifier(max_depth=3)</code> with the <em>model's errors</em> as the target (1 if your production model got the row wrong) and the original features as inputs. The resulting tree tells you, in three rules, <em>where</em> your model fails — "customers with tenure ≤ 2 and region = west" — which is exactly the segment to investigate, collect more data on, or hand-rule around. This is the cheapest error analysis in existence.</p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="quiz">Quiz</h2>
+<div class="quiz">
+  <h3>Check your understanding</h3>
+
+  <div class="q">
+    <p class="question">1. A node holds 8 rows of class A and 2 of class B. Its Gini impurity is…</p>
+    <ul class="opts">
+      <li><button>0.20</button></li>
+      <li><button data-correct>0.32</button></li>
+      <li><button>0.50</button></li>
+      <li><button>0.80</button></li>
+    </ul>
+    <div class="explain">Gini = 1 − (0.8² + 0.2²) = 1 − (0.64 + 0.04) = 0.32. It is the chance that two random draws from the node disagree.</div>
+  </div>
+
+  <div class="q">
+    <p class="question">2. You apply <code>np.log1p</code> to the <code>monthly_spend</code> column and refit the same <code>DecisionTreeClassifier(random_state=0)</code>. What happens to the tree?</p>
+    <ul class="opts">
+      <li><button>It becomes shallower because the skew is gone</button></li>
+      <li><button>Its splits on spend move to different rows</button></li>
+      <li><button data-correct>Nothing — the same rows go left and right at every split; only the printed thresholds change</button></li>
+      <li><button>It overfits more</button></li>
+    </ul>
+    <div class="explain">Splits are chosen by ordering; a monotonic transform preserves order, so every candidate split partitions the rows identically and the same one wins. The threshold is now printed on the log scale.</div>
+  </div>
+
+  <div class="q">
+    <p class="question">3. A colleague's tree has 100% training accuracy and 71% cross-validated accuracy. Which single change is most likely to help?</p>
+    <ul class="opts">
+      <li><button>Switch the criterion from Gini to entropy</button></li>
+      <li><button>Add StandardScaler before the tree</button></li>
+      <li><button data-correct>Set <code>min_samples_leaf</code> (or tune <code>ccp_alpha</code>) so leaves need real support</button></li>
+      <li><button>Increase <code>max_depth</code></button></li>
+    </ul>
+    <div class="explain">The gap is variance: the tree memorized. Requiring more rows per leaf, or pruning, removes the slivers that fit noise. Criterion choice and scaling do not address it; more depth makes it worse.</div>
+  </div>
+
+  <div class="q">
+    <p class="question">4. A regression tree trained on sales for months 1–24 is asked to predict month 36. The prediction will be…</p>
+    <ul class="opts">
+      <li><button>An extrapolation of the recent trend</button></li>
+      <li><button data-correct>The same value it predicts for the last training months — the last leaf's mean</button></li>
+      <li><button>The overall training mean</button></li>
+      <li><button>NaN, because the input is out of range</button></li>
+    </ul>
+    <div class="explain">Beyond the largest training value every row falls into the same final rectangle, whose prediction is constant. Trees cannot extrapolate; model trends with a linear component or differences (Chapter 14).</div>
+  </div>
+
+  <div class="q">
+    <p class="question">5. In a fitted tree, <code>customer_id</code> (a unique integer per row) has the highest <code>feature_importances_</code>. The right conclusion is…</p>
+    <ul class="opts">
+      <li><button>Customer identity strongly drives the outcome</button></li>
+      <li><button data-correct>The id should never have been a feature; impurity importance is inflated for high-cardinality columns and the tree is memorizing rows</button></li>
+      <li><button>Use entropy instead, which is unbiased</button></li>
+      <li><button>One-hot encode the id to fix it</button></li>
+    </ul>
+    <div class="explain">A unique id offers a threshold between every pair of rows, so the tree can isolate individual rows with it — pure memorization, rewarded by impurity importance. Drop it; use permutation importance for rankings.</div>
+  </div>
+
+  <div class="q">
+    <p class="question">6. Legal requires that a loan-screening rule be written on one page and applied by staff without software. The best choice is…</p>
+    <ul class="opts">
+      <li><button>A random forest with 500 trees</button></li>
+      <li><button>Gradient boosting with SHAP plots</button></li>
+      <li><button data-correct>A single tree with <code>max_depth=3</code> and a large <code>min_samples_leaf</code>, exported with <code>export_text</code></button></li>
+      <li><button>A neural network</button></li>
+    </ul>
+    <div class="explain">The deliverable is a readable, hand-applicable rule set; only a shallow single tree satisfies it. Large leaves keep the rules stable and supported by volume; you accept some accuracy loss for auditability.</div>
+  </div>
+</div>
+
+<h2 id="exercises">Exercises</h2>
+
+<div class="exercise"><div class="title">Exercise 9.1 — Score the second split by hand</div>
+<p>After the best split in Figure 9.3, the right child holds six customers with <code>calls ∈ {2, 3, 4, 5, 6}</code> and labels [stay, churn, churn, churn, stay, churn] (the two customers with 2 calls are one stay, one churn). Compute the weighted Gini for the candidate thresholds 2.5, 3.5, 4.5 and 5.5 within this child. Which does the tree pick, and what does the resulting leaf structure look like?</p>
+<details class="answer"><summary>Show answer</summary>
+<p>Child counts: [2 stay, 4 churn], Gini 0.444. Threshold 2.5: left {2,2} = [1,1] Gini 0.5; right {3,4,5,6} = [1,3] Gini 0.375 → weighted (2/6)·0.5 + (4/6)·0.375 = 0.417. Threshold 3.5: left [1,2] Gini 0.444; right [1,2] Gini 0.444 → 0.444 (no gain). Threshold 4.5: left [1,3] Gini 0.375; right [1,1] Gini 0.5 → 0.417. Threshold 5.5: left [2,3] Gini 0.48; right [0,1] Gini 0 → (5/6)·0.48 = 0.400. The tree picks 5.5 (weighted 0.400, the smallest), peeling off the 6-call churner into a pure leaf. With <code>min_samples_leaf=2</code> that split would be forbidden and it would fall back to 2.5 or 4.5 (tied at 0.417; sklearn takes the first feature/threshold found). This is the kind of low-support split pruning removes.</p>
+</details>
+</div>
+
+<div class="exercise"><div class="title">Exercise 9.2 — Instability, measured</div>
+<p>Using <code>load_breast_cancer</code>, draw 20 bootstrap samples (sample rows with replacement, <code>rng.integers(0, n, n)</code>), fit <code>DecisionTreeClassifier(max_depth=3, random_state=0)</code> on each, and record the root feature (<code>tree.tree_.feature[0]</code>) and root threshold. How many distinct root features appear? Repeat with <code>min_samples_leaf=30</code>. Then repeat with <code>RandomForestClassifier(n_estimators=200)</code> and compare the <em>predictions</em> (not the structure) across bootstraps by measuring the standard deviation of <code>predict_proba</code> on a fixed test set.</p>
+<details class="answer"><summary>Show answer</summary>
+<p>Typically 3–5 distinct root features appear across the 20 trees (e.g. "worst radius", "worst perimeter", "mean concave points", "worst area" — all highly correlated, so they trade places). Larger leaves reduce but do not eliminate the switching. The forest's per-row probability standard deviation across bootstraps is several times smaller than the single tree's: averaging cancels the structural noise, which is the whole argument of Chapter 10.</p>
+</details>
+</div>
+
+<div class="exercise"><div class="title">Exercise 9.3 — Do it at work: an eight-rule model</div>
+<p>Take a classification table from your job (or the Chapter 8 churn pipeline). Fit a single tree inside a <code>Pipeline</code> with your preprocessing, restricted to <code>max_depth=3</code> and <code>min_samples_leaf</code> = 2% of rows. Cross-validate it and compare with an unconstrained tree and with <code>HistGradientBoostingClassifier</code>. Export the eight rules with <code>export_text</code>, translate them into plain English, and show them to the person who currently makes the decision by hand. Write down (a) which rules they already knew, (b) which surprised them, and (c) which they think are leakage or data artefacts.</p>
+<details class="answer"><summary>Show answer</summary>
+<p>Expect the constrained tree to sit a few points below the boosted model and well above the unconstrained tree on CV. The valuable output is the conversation: rules the expert already knew validate the data; surprises are either discoveries or bugs; and "that field is only filled in after we decide" is the sentence that finds leakage. Whichever model you eventually deploy, keep the eight rules in the project documentation as the human-readable summary of what the data says.</p>
+</details>
+</div>
+
+<div class="summary">
+  <h3>Chapter summary</h3>
+  <ul class="checklist">
+    <li>A decision tree is a stack of one-feature threshold questions; each leaf predicts the majority class or the mean target of its training rows.</li>
+    <li>Geometrically a tree is an axis-aligned partition: leaves are rectangles, the prediction is constant inside each.</li>
+    <li>Splits are chosen greedily to minimize weighted child impurity: Gini 1 − ∑p², entropy −∑p log₂p, or MSE for regression; information gain is the parent's impurity minus the weighted children's.</li>
+    <li>Growing to purity memorizes noise. Control with <code>max_depth</code>, <code>min_samples_leaf</code>, <code>max_leaf_nodes</code>, or prune with <code>ccp_alpha</code> chosen by cross-validation.</li>
+    <li>Trees need no scaling, handle mixed types and (since sklearn 1.3) NaN natively, train fast, and export as readable rules.</li>
+    <li>Impurity importance is biased toward high-cardinality and hides correlated features; use permutation importance on held-out data.</li>
+    <li>Single trees are unstable and cannot extrapolate; ensembles (Chapter 10) fix the first, a linear component fixes the second.</li>
+    <li>Deploy a single shallow tree when rules must be read, audited, or applied by hand; otherwise use it as a flashlight and ship an ensemble.</li>
+  </ul>
+</div>
+
+<div class="mark-done"></div>
+<nav class="pager"></nav>
+
+</div></main>
+</div>
+
+<script src="../assets/chapters.js"></script>
+<script src="../assets/app.js"></script>
+<script>
+(function () {
+  // ---------- Widget: Gini vs entropy ----------
+  var svg = document.getElementById("gi-svg"), sl = document.getElementById("gi-p"),
+      rg = document.getElementById("gi-g"), rh = document.getElementById("gi-h");
+  if (!svg) return;
+  var x0 = 60, x1 = 660, y0 = 210, y1 = 30;
+  function X(p) { return x0 + p * (x1 - x0); }
+  function Y(v) { return y0 - v * (y0 - y1); }
+  function gini(p) { return 2 * p * (1 - p); }
+  function ent(p) { if (p <= 0 || p >= 1) return 0; return -(p * Math.log2(p) + (1 - p) * Math.log2(1 - p)); }
+  function render() {
+    var p = sl.value / 100, s = "";
+    s += '<line x1="' + x0 + '" y1="' + y0 + '" x2="' + x1 + '" y2="' + y0 + '" stroke="currentColor" stroke-opacity=".5"/>';
+    s += '<line x1="' + x0 + '" y1="' + y0 + '" x2="' + x0 + '" y2="' + y1 + '" stroke="currentColor" stroke-opacity=".5"/>';
+    for (var t = 0; t <= 1; t += 0.25) { s += '<text x="' + X(t) + '" y="' + (y0 + 16) + '" text-anchor="middle" font-size="11">' + t + '</text>'; s += '<text x="' + (x0 - 8) + '" y="' + (Y(t) + 4) + '" text-anchor="end" font-size="11">' + t + '</text>'; s += '<line x1="' + x0 + '" y1="' + Y(t) + '" x2="' + x1 + '" y2="' + Y(t) + '" stroke="currentColor" stroke-opacity=".12"/>'; }
+    s += '<text x="' + ((x0 + x1) / 2) + '" y="' + (y0 + 34) + '" text-anchor="middle" font-size="12">p = fraction of rows in class 1</text>';
+    var g = "", h = "";
+    for (var i = 0; i <= 100; i++) { var q = i / 100; g += (i ? "L" : "M") + X(q) + "," + Y(gini(q)) + " "; h += (i ? "L" : "M") + X(q) + "," + Y(ent(q)) + " "; }
+    s += '<path d="' + g + '" fill="none" stroke="var(--s1)" stroke-width="2.5"/>';
+    s += '<path d="' + h + '" fill="none" stroke="var(--s2)" stroke-width="2.5"/>';
+    s += '<line x1="' + X(p) + '" y1="' + y0 + '" x2="' + X(p) + '" y2="' + y1 + '" stroke="var(--s7)" stroke-dasharray="5 3" stroke-width="1.5"/>';
+    s += '<circle cx="' + X(p) + '" cy="' + Y(gini(p)) + '" r="6" fill="var(--s1)"/>';
+    s += '<circle cx="' + X(p) + '" cy="' + Y(ent(p)) + '" r="6" fill="var(--s2)"/>';
+    s += '<text x="' + (x0 + 10) + '" y="' + (y1 + 10) + '" font-size="12" font-weight="700" fill="var(--s2)">entropy (bits), max 1.0</text>';
+    s += '<text x="' + (x0 + 10) + '" y="' + (y1 + 28) + '" font-size="12" font-weight="700" fill="var(--s1)">Gini, max 0.5</text>';
+    svg.innerHTML = s;
+    rg.textContent = gini(p).toFixed(3); rh.textContent = ent(p).toFixed(3);
+  }
+  sl.addEventListener("input", render); render();
+})();
+(function () {
+  // ---------- Widget: greedy CART tree with max_depth ----------
+  var svg = document.getElementById("dp-svg"), sl = document.getElementById("dp-d"),
+      rl = document.getElementById("dp-l"), ra = document.getElementById("dp-a");
+  if (!svg) return;
+  var seed = 7;
+  function rnd() { seed = (seed * 1103515245 + 12345) % 2147483648; return seed / 2147483648; }
+  function gauss() { var u = rnd() || 1e-9, v = rnd(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v); }
+  var pts = [];
+  for (var i = 0; i < 60; i++) { var x = 0.03 + 0.94 * rnd(), y = 0.03 + 0.94 * rnd(); pts.push({ x: x, y: y, c: (x + 0.8 * y > 0.9) ? 1 : 0 }); }
+  [5, 19, 33, 47].forEach(function (k) { pts[k].c = 1 - pts[k].c; });   // deliberate label noise
+  function gini(rows) { if (!rows.length) return 0; var n1 = 0; rows.forEach(function (r) { n1 += r.c; }); var p = n1 / rows.length; return 2 * p * (1 - p); }
+  function majority(rows) { var n1 = 0; rows.forEach(function (r) { n1 += r.c; }); return n1 * 2 > rows.length ? 1 : 0; }
+  function build(rows, depth, maxd) {
+    var g = gini(rows);
+    if (depth >= maxd || g === 0 || rows.length < 2) return { leaf: true, c: majority(rows), n: rows.length };
+    var best = null;
+    ["x", "y"].forEach(function (f) {
+      var sorted = rows.slice().sort(function (a, b) { return a[f] - b[f]; });
+      for (var i = 1; i < sorted.length; i++) {
+        if (sorted[i][f] === sorted[i - 1][f]) continue;
+        var thr = (sorted[i][f] + sorted[i - 1][f]) / 2, L = sorted.slice(0, i), R = sorted.slice(i);
+        var w = (L.length * gini(L) + R.length * gini(R)) / rows.length;
+        if (!best || w < best.w) best = { f: f, thr: thr, w: w, L: L, R: R };
+      }
+    });
+    if (!best || best.w >= g - 1e-9) return { leaf: true, c: majority(rows), n: rows.length };
+    return { leaf: false, f: best.f, thr: best.thr, left: build(best.L, depth + 1, maxd), right: build(best.R, depth + 1, maxd) };
+  }
+  function predict(node, p) { while (!node.leaf) node = p[node.f] <= node.thr ? node.left : node.right; return node.c; }
+  var W = 700, H = 300, ox = 40, oy = 20, w = 620, h = 260;
+  function px(x) { return ox + x * w; } function py(y) { return oy + (1 - y) * h; }
+  function draw(node, bx0, bx1, by0, by1, out) {
+    if (node.leaf) {
+      out.rects += '<rect x="' + px(bx0) + '" y="' + py(by1) + '" width="' + ((bx1 - bx0) * w) + '" height="' + ((by1 - by0) * h) + '" fill="' + (node.c ? "var(--s2)" : "var(--s1)") + '" fill-opacity=".18"/>';
+      out.leaves++; return;
+    }
+    if (node.f === "x") {
+      out.lines += '<line x1="' + px(node.thr) + '" y1="' + py(by0) + '" x2="' + px(node.thr) + '" y2="' + py(by1) + '" stroke="var(--s7)" stroke-width="1.8"/>';
+      draw(node.left, bx0, node.thr, by0, by1, out); draw(node.right, node.thr, bx1, by0, by1, out);
+    } else {
+      out.lines += '<line x1="' + px(bx0) + '" y1="' + py(node.thr) + '" x2="' + px(bx1) + '" y2="' + py(node.thr) + '" stroke="var(--s7)" stroke-width="1.8"/>';
+      draw(node.left, bx0, bx1, by0, node.thr, out); draw(node.right, bx0, bx1, node.thr, by1, out);
+    }
+  }
+  function render() {
+    var maxd = +sl.value, tree = build(pts, 0, maxd), out = { rects: "", lines: "", leaves: 0 };
+    draw(tree, 0, 1, 0, 1, out);
+    var s = out.rects + out.lines, correct = 0;
+    s += '<rect x="' + ox + '" y="' + oy + '" width="' + w + '" height="' + h + '" fill="none" stroke="currentColor" stroke-opacity=".5"/>';
+    pts.forEach(function (p) {
+      var ok = predict(tree, p) === p.c; if (ok) correct++;
+      s += '<circle cx="' + px(p.x) + '" cy="' + py(p.y) + '" r="5" fill="' + (p.c ? "var(--s2)" : "var(--s1)") + '"' + (ok ? ' stroke="var(--surface)" stroke-width="1.2"' : ' stroke="var(--critical)" stroke-width="2.5"') + '/>';
+    });
+    s += '<text x="' + (ox + w / 2) + '" y="' + (H - 3) + '" text-anchor="middle" font-size="11">feature x₁ →</text>';
+    s += '<text x="12" y="' + (oy + h / 2) + '" text-anchor="middle" font-size="11" transform="rotate(-90 12 ' + (oy + h / 2) + ')">feature x₂ →</text>';
+    svg.innerHTML = s;
+    rl.textContent = out.leaves; ra.textContent = Math.round(100 * correct / pts.length) + "%";
+  }
+  sl.addEventListener("input", render); render();
+})();
+</script>
+</body>
+</html>

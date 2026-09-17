@@ -1,0 +1,542 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>14 · Time Series Forecasting — ML: Zero to Expert</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body data-chapter="14">
+<header class="topbar"></header>
+<div class="progress-track"><div></div></div>
+<div class="shell">
+<nav class="sidebar"></nav>
+<main class="content"><div class="container">
+
+<header class="ch-header">
+  <div class="kicker">Part II · The Core Toolkit · Chapter 14</div>
+  <h1>Time Series Forecasting</h1>
+  <p class="lede">Demand, revenue, traffic, load, headcount: most numbers a business cares about are indexed by time. This chapter teaches you to forecast them honestly, from baselines nobody beats by accident, through classical smoothing and ARIMA, to gradient boosting on lag features, with backtests and prediction intervals you can defend in a planning meeting.</p>
+  <div class="meta"><span class="level intermediate">Intermediate</span> <span>⏱ 90 min read</span> <span>·</span> <span>Prereqs: Ch 5, 8, 10</span></div>
+</header>
+
+<div class="objectives">
+  <h3>By the end of this chapter you will be able to</h3>
+  <ul>
+    <li>Explain why a random train/test split is wrong for time series and set up a backtest that never leaks the future.</li>
+    <li>Decompose a series into trend, seasonality and noise, test it for stationarity, and read an ACF/PACF plot.</li>
+    <li>Build the four baselines every forecast must beat, then fit Holt-Winters, SARIMA and a gradient-boosting forecaster and compare them on the same holdout.</li>
+    <li>Turn a series into a supervised table with lag, rolling and calendar features without leaking, and forecast many steps ahead (recursive, direct, multi-output).</li>
+    <li>Choose the right metric (MAE, RMSE, MAPE, sMAPE, MASE), ship prediction intervals instead of naked point forecasts, and scale to hundreds of series with a global model.</li>
+  </ul>
+</div>
+
+<div class="toc-inline"><strong>In this chapter</strong>
+<ol>
+  <li><a href="#s1">What makes time series different</a></li>
+  <li><a href="#s2">The four components</a></li>
+  <li><a href="#s3">Stationarity, differencing and autocorrelation</a></li>
+  <li><a href="#s4">Baselines you must beat</a></li>
+  <li><a href="#s5">Exponential smoothing</a></li>
+  <li><a href="#s6">ARIMA and SARIMA</a></li>
+  <li><a href="#s7">The ML approach: lag features + boosting</a></li>
+  <li><a href="#s8">Multi-step forecasts and honest backtesting</a></li>
+  <li><a href="#s9">Metrics and prediction intervals</a></li>
+  <li><a href="#s10">Leakage traps, global models, deep learning, anomalies</a></li>
+  <li><a href="#s11">Which one do I use at work?</a></li>
+  <li><a href="#quiz">Quiz &amp; exercises</a></li>
+</ol></div>
+
+<p>A running example threads through the chapter. You work for a retailer that sells a cold-brew coffee maker. You have <strong>eight years of monthly unit sales</strong> (96 numbers) and procurement needs a <strong>12-month-ahead forecast</strong> every quarter, with a range they can plan stock against. Every method below is fitted to this series, tested on the same final 12 months, and compared in one table at the end. The series is synthetic so you can regenerate it exactly, but its shape (growth, a summer peak, sticky noise) is what real demand looks like.</p>
+
+<!-- ============================================================ -->
+<h2 id="s1">1. What makes time series different</h2>
+
+<p>In every previous chapter the rows of your table were <em>exchangeable</em>: shuffle the customers, nothing changes. A time series is the opposite. Row 37 is March 2020 and row 38 is April 2020, and the whole point is that April depends on March. Three consequences follow, and each one breaks a habit you learned in Chapter 7.</p>
+
+<ol class="steps">
+  <li><strong>Order carries information.</strong> The most predictive feature of next month is usually this month. Lose the order and you lose the signal.</li>
+  <li><strong>Observations are autocorrelated.</strong> Neighbouring values are similar. Errors are too. So "n = 96 independent samples" is a fiction; your effective sample size is much smaller, and your confidence in any result should be correspondingly humbler.</li>
+  <li><strong>You cannot shuffle.</strong> A random train/test split puts June 2023 in the training set and May 2023 in the test set. The model then "predicts" May from a June it already saw. Scores look wonderful. They are a lie.</li>
+</ol>
+
+<figure class="fig">
+<svg viewBox="0 0 800 300" role="img" aria-label="Top: a random split scatters test months among training months so the model sees the future. Bottom: a chronological split trains on the past and tests on the future only.">
+  <defs><marker id="arr-f1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+  <text x="20" y="28" class="lbl-strong" font-size="14">Random split (wrong for time series)</text>
+  <line x1="40" y1="80" x2="760" y2="80" class="axis"/>
+  <text x="40" y="100" class="lbl">2017</text><text x="760" y="100" class="lbl" text-anchor="end">2024</text>
+  <g>
+    <circle cx="55" cy="80" r="7" fill="var(--s1)"/><circle cx="85" cy="80" r="7" fill="var(--s1)"/><circle cx="115" cy="80" r="7" fill="var(--s2)"/><circle cx="145" cy="80" r="7" fill="var(--s1)"/><circle cx="175" cy="80" r="7" fill="var(--s1)"/><circle cx="205" cy="80" r="7" fill="var(--s1)"/><circle cx="235" cy="80" r="7" fill="var(--s2)"/><circle cx="265" cy="80" r="7" fill="var(--s1)"/><circle cx="295" cy="80" r="7" fill="var(--s1)"/><circle cx="325" cy="80" r="7" fill="var(--s2)"/><circle cx="355" cy="80" r="7" fill="var(--s1)"/><circle cx="385" cy="80" r="7" fill="var(--s1)"/><circle cx="415" cy="80" r="7" fill="var(--s1)"/><circle cx="445" cy="80" r="7" fill="var(--s2)"/><circle cx="475" cy="80" r="7" fill="var(--s1)"/><circle cx="505" cy="80" r="7" fill="var(--s1)"/><circle cx="535" cy="80" r="7" fill="var(--s2)"/><circle cx="565" cy="80" r="7" fill="var(--s1)"/><circle cx="595" cy="80" r="7" fill="var(--s1)"/><circle cx="625" cy="80" r="7" fill="var(--s2)"/><circle cx="655" cy="80" r="7" fill="var(--s1)"/><circle cx="685" cy="80" r="7" fill="var(--s1)"/><circle cx="715" cy="80" r="7" fill="var(--s2)"/><circle cx="745" cy="80" r="7" fill="var(--s1)"/>
+  </g>
+  <path d="M445,66 C460,40 500,40 505,66" fill="none" stroke="var(--critical)" stroke-width="1.8" marker-end="url(#arr-f1)"/>
+  <path d="M445,66 C430,40 390,40 385,66" fill="none" stroke="var(--critical)" stroke-width="1.8" marker-end="url(#arr-f1)"/>
+  <text x="445" y="40" text-anchor="middle" class="lbl" fill="var(--critical)" font-weight="700">test month is surrounded by training months it "predicts" from</text>
+  <text x="400" y="125" text-anchor="middle" class="lbl" fill="var(--critical)">Score: fantastic. Meaning: none. The model interpolated between known neighbours.</text>
+
+  <text x="20" y="178" class="lbl-strong" font-size="14">Chronological split (right)</text>
+  <line x1="40" y1="230" x2="760" y2="230" class="axis"/>
+  <text x="40" y="250" class="lbl">2017</text><text x="760" y="250" class="lbl" text-anchor="end">2024</text>
+  <g fill="var(--s1)">
+    <circle cx="55" cy="230" r="7"/><circle cx="85" cy="230" r="7"/><circle cx="115" cy="230" r="7"/><circle cx="145" cy="230" r="7"/><circle cx="175" cy="230" r="7"/><circle cx="205" cy="230" r="7"/><circle cx="235" cy="230" r="7"/><circle cx="265" cy="230" r="7"/><circle cx="295" cy="230" r="7"/><circle cx="325" cy="230" r="7"/><circle cx="355" cy="230" r="7"/><circle cx="385" cy="230" r="7"/><circle cx="415" cy="230" r="7"/><circle cx="445" cy="230" r="7"/><circle cx="475" cy="230" r="7"/><circle cx="505" cy="230" r="7"/><circle cx="535" cy="230" r="7"/><circle cx="565" cy="230" r="7"/>
+  </g>
+  <g fill="var(--s2)">
+    <circle cx="595" cy="230" r="7"/><circle cx="625" cy="230" r="7"/><circle cx="655" cy="230" r="7"/><circle cx="685" cy="230" r="7"/><circle cx="715" cy="230" r="7"/><circle cx="745" cy="230" r="7"/>
+  </g>
+  <line x1="580" y1="200" x2="580" y2="260" stroke="var(--s7)" stroke-width="2" stroke-dasharray="5 4"/>
+  <text x="575" y="195" text-anchor="end" class="lbl" fill="var(--s7)" font-weight="700">forecast origin</text>
+  <text x="310" y="275" text-anchor="middle" class="lbl-strong" fill="var(--s1)">train: the past only</text>
+  <text x="670" y="275" text-anchor="middle" class="lbl-strong" fill="var(--s2)">test: the future, in order</text>
+  <text x="400" y="295" text-anchor="middle" class="lbl">Score: honest. This is what the model will actually face after deployment.</text>
+</svg>
+<figcaption><strong>Figure 14.1 — A random split leaks the future.</strong> With shuffled rows, each test month has training neighbours on both sides and the model simply interpolates. Only a chronological split, with all test data after a forecast origin, measures what deployment will feel like.</figcaption>
+</figure>
+
+<div class="callout eli9"><div class="title">Explain it like I'm 9</div>
+<p>Guessing the weather for a day in the middle of last week is easy if you're told what happened the day before <em>and</em> the day after: you just say "somewhere in between." That's the random split. Forecasting is guessing <em>next Tuesday</em> when all you know is up to today. Every test you run has to look like that, or you're grading yourself on the easy game and then playing the hard one for real.</p>
+</div>
+
+<div class="callout key"><div class="title">Key idea</div>
+<p><strong>Time only flows one way, and your validation must too.</strong> Every feature must be computable from information available <em>at the moment the forecast is made</em>, and every test set must lie strictly after its training set. Almost every time-series failure at work is a violation of one of those two sentences.</p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s2">2. The four components</h2>
+
+<p>Before modelling anything, take the series apart. Nearly every business series is a sum (or a product) of four things:</p>
+
+<div class="grid2">
+  <div class="card accent"><h4>Trend</h4><p>The slow, long-run direction. Our coffee maker sells about 2.5 more units every month than the month before: the business is growing.</p></div>
+  <div class="card accent"><h4>Seasonality</h4><p>A pattern that repeats with a <em>fixed, known period</em>: 12 for monthly, 7 for daily, 24 for hourly. Cold brew peaks in June and troughs in December, every year.</p></div>
+  <div class="card"><h4>Cycles</h4><p>Ups and downs with <em>no fixed period</em>: business cycles, product hype waves, multi-year commodity swings. Harder to model because you can't set a calendar to them. Often folded into "trend."</p></div>
+  <div class="card"><h4>Noise (residual)</h4><p>What's left. Ideally unpredictable and small. If it still shows structure (autocorrelation, a leftover season), your decomposition missed something.</p></div>
+</div>
+
+<figure class="fig">
+<svg viewBox="0 0 800 470" role="img" aria-label="Four stacked panels: the observed monthly series rising with yearly bumps; a smooth rising trend; a repeating yearly seasonal wave; and small irregular residuals around zero.">
+  <text x="20" y="22" class="lbl-strong" font-size="13">Observed  =  Trend  +  Seasonal  +  Residual   (additive decomposition, period = 12)</text>
+  <!-- panel 1 observed -->
+  <line x1="60" y1="110" x2="740" y2="110" class="axis"/><line x1="60" y1="30" x2="60" y2="110" class="axis"/>
+  <text x="52" y="35" text-anchor="end" class="lbl" font-size="10">470</text><text x="52" y="112" text-anchor="end" class="lbl" font-size="10">165</text>
+  <polyline points="60,110 67,108 74,99 81,91 89,93 96,93 103,91 110,94 117,97 124,103 132,103 139,102 146,101 153,94 160,88 167,86 175,80 182,81 189,79 196,83 203,88 210,94 217,93 225,95 232,95 239,91 246,83 253,77 260,72 268,69 275,65 282,72 289,79 296,86 303,87 311,85 318,85 325,83 332,79 339,70 346,64 353,61 361,64 368,67 375,71 382,76 389,77 396,78 404,75 411,72 418,66 425,59 432,60 439,58 447,59 454,63 461,67 468,66 475,73 482,71 489,74 497,69 504,61 511,53 518,47 525,44 532,47 540,52 547,54 554,60 561,67 568,70 575,68 583,60 590,53 597,45 604,42 611,40 618,39 625,43 633,47 640,54 647,58 654,59 661,59 668,52 676,46 683,40 690,33 697,30 704,30 711,35 719,41 726,45 733,53 740,56" fill="none" stroke="var(--s1)" stroke-width="2"/>
+  <text x="748" y="72" class="lbl-strong" fill="var(--s1)" font-size="11">units</text>
+  <!-- panel 2 trend -->
+  <line x1="60" y1="225" x2="740" y2="225" class="axis"/><line x1="60" y1="140" x2="60" y2="225" class="axis"/>
+  <polyline points="103,220 110,219 117,217 124,216 132,215 139,214 146,212 153,211 160,209 167,208 175,207 182,206 189,205 196,205 203,204 210,204 217,202 225,201 232,200 239,198 246,197 253,196 260,195 268,194 275,193 282,192 289,191 296,190 303,189 311,189 318,188 325,188 332,187 339,186 346,184 353,183 361,182 368,181 375,180 382,178 389,177 396,177 404,176 411,176 418,175 425,174 432,174 439,173 447,172 454,172 461,172 468,171 475,170 482,168 489,167 497,165 504,164 511,163 518,162 525,162 532,161 540,160 547,159 554,158 561,157 568,157 575,156 583,155 590,154 597,153 604,152 611,151 618,150 625,149 633,148 640,147 647,146 654,145 661,144 668,143 676,142 683,141 690,140 697,140" fill="none" stroke="var(--s2)" stroke-width="2.5"/>
+  <text x="748" y="185" class="lbl-strong" fill="var(--s2)" font-size="11">trend</text>
+  <text x="400" y="240" text-anchor="middle" class="lbl" font-size="11">centred 12-month moving average → loses 6 months at each end; slope ≈ +2.4 units/month</text>
+  <!-- panel 3 seasonal -->
+  <line x1="60" y1="330" x2="740" y2="330" class="axis"/><line x1="60" y1="250" x2="60" y2="330" class="axis"/>
+  <line x1="60" y1="290" x2="740" y2="290" class="grid" stroke-dasharray="3 3"/>
+  <text x="52" y="254" text-anchor="end" class="lbl" font-size="10">+43</text><text x="52" y="294" text-anchor="end" class="lbl" font-size="10">0</text><text x="52" y="332" text-anchor="end" class="lbl" font-size="10">−39</text>
+  <polyline points="60,330 67,313 74,293 81,270 89,256 96,250 103,255 110,273 117,292 124,313 132,325 139,329 146,330 153,313 160,293 167,270 175,256 182,250 189,255 196,273 203,292 210,313 217,325 225,329 232,330 239,313 246,293 253,270 260,256 268,250 275,255 282,273 289,292 296,313 303,325 311,329 318,330 325,313 332,293 339,270 346,256 353,250 361,255 368,273 375,292 382,313 389,325 396,329 404,330 411,313 418,293 425,270 432,256 439,250 447,255 454,273 461,292 468,313 475,325 482,329 489,330 497,313 504,293 511,270 518,256 525,250 532,255 540,273 547,292 554,313 561,325 568,329 575,330 583,313 590,293 597,270 604,256 611,250 618,255 625,273 633,292 640,313 647,325 654,329 661,330 668,313 676,293 683,270 690,256 697,250 704,255 711,273 719,292 726,313 733,325 740,329" fill="none" stroke="var(--s3)" stroke-width="2"/>
+  <text x="748" y="292" class="lbl-strong" fill="var(--s3)" font-size="11">season</text>
+  <text x="96" y="247" text-anchor="middle" class="lbl" font-size="10">June peak</text>
+  <!-- panel 4 resid -->
+  <line x1="60" y1="440" x2="740" y2="440" class="axis"/><line x1="60" y1="360" x2="60" y2="440" class="axis"/>
+  <line x1="60" y1="400" x2="740" y2="400" class="grid" stroke-dasharray="3 3"/>
+  <text x="52" y="364" text-anchor="end" class="lbl" font-size="10">+25</text><text x="52" y="404" text-anchor="end" class="lbl" font-size="10">0</text><text x="52" y="442" text-anchor="end" class="lbl" font-size="10">−25</text>
+  <polyline points="103,414 110,408 117,406 124,413 132,395 139,388 146,385 153,376 160,380 167,408 175,403 182,422 189,402 196,398 203,402 210,408 217,389 225,400 232,402 239,412 246,402 253,403 260,399 268,398 275,371 282,389 289,405 296,415 303,405 311,391 318,388 325,407 332,418 339,406 346,396 353,393 361,410 368,401 375,404 382,401 389,393 396,397 404,380 411,388 418,388 425,388 432,418 439,418 447,418 454,414 461,410 468,375 475,399 482,387 489,411 497,413 504,407 511,400 518,390 525,382 532,394 540,398 547,385 554,390 561,415 568,427 575,420 583,403 590,397 597,389 604,399 611,398 618,390 625,393 633,388 640,398 647,405 654,411 661,415 668,401 676,407 683,406 690,395 697,389" fill="none" stroke="var(--ink-3)" stroke-width="1.5"/>
+  <text x="748" y="402" class="lbl-strong" font-size="11">resid</text>
+  <text x="400" y="462" text-anchor="middle" class="lbl">2017 → 2024 (96 months)</text>
+</svg>
+<figcaption><strong>Figure 14.2 — Decomposition of the coffee-maker series.</strong> <code>seasonal_decompose</code> estimates the trend with a centred moving average, averages each calendar month's deviation to get the seasonal profile, and calls the rest residual. The residual here still wobbles in runs (it is autocorrelated), which is a hint we will use in Section 3.</figcaption>
+</figure>
+
+<p><strong>Additive or multiplicative?</strong> If the seasonal swings grow as the level grows (a 10% summer bump, so bigger every year), the components multiply: y = T × S × R. Take the log and it becomes additive again. Rule of thumb: plot the series; if the "envelope" widens over time, use <code>model="multiplicative"</code> or log-transform first.</p>
+
+<pre class="code" data-lang="python"><code><span class="cm"># Build the running example: 8 years of monthly demand with trend, season and sticky noise</span>
+<span class="kw">import</span> numpy <span class="kw">as</span> np, pandas <span class="kw">as</span> pd
+<span class="kw">from</span> statsmodels.tsa.seasonal <span class="kw">import</span> seasonal_decompose
+
+rng = np.random.default_rng(<span class="nu">42</span>)
+idx = pd.date_range(<span class="st">"2017-01-01"</span>, periods=<span class="nu">96</span>, freq=<span class="st">"MS"</span>)      <span class="cm"># 8 years of month-starts</span>
+t = np.arange(<span class="nu">96</span>)
+e = rng.normal(<span class="nu">0</span>, <span class="nu">10</span>, size=<span class="nu">96</span>); noise = np.zeros(<span class="nu">96</span>)
+<span class="kw">for</span> i <span class="kw">in</span> <span class="fn">range</span>(<span class="nu">1</span>, <span class="nu">96</span>):
+    noise[i] = <span class="nu">0.6</span> * noise[i - <span class="nu">1</span>] + e[i]                        <span class="cm"># autocorrelated noise (AR(1))</span>
+y = pd.Series(<span class="nu">200</span> + <span class="nu">2.5</span>*t + <span class="nu">40</span>*np.sin(<span class="nu">2</span>*np.pi*(t - <span class="nu">2</span>)/<span class="nu">12</span>) + noise, index=idx, name=<span class="st">"units"</span>)
+
+<span class="fn">print</span>(y.head(<span class="nu">3</span>).round(<span class="nu">1</span>).to_string())
+<span class="fn">print</span>(<span class="st">"mean ="</span>, <span class="fn">round</span>(y.mean(), <span class="nu">1</span>), <span class="st">" std ="</span>, <span class="fn">round</span>(y.std(), <span class="nu">1</span>))
+dec = seasonal_decompose(y, model=<span class="st">"additive"</span>, period=<span class="nu">12</span>)
+<span class="fn">print</span>(<span class="st">"seasonal profile (Jan..Dec):"</span>, dec.seasonal[:<span class="nu">12</span>].round(<span class="nu">0</span>).astype(<span class="fn">int</span>).tolist())
+tr = dec.trend.dropna()
+<span class="fn">print</span>(<span class="st">"trend slope/month ≈"</span>, <span class="fn">round</span>(np.polyfit(np.arange(<span class="fn">len</span>(tr)), tr.values, <span class="nu">1</span>)[<span class="nu">0</span>], <span class="nu">2</span>))
+<span class="fn">print</span>(<span class="st">"residual std ≈"</span>, <span class="fn">round</span>(dec.resid.std(), <span class="nu">1</span>))
+<span class="out"># 2017-01-01    165.4</span>
+<span class="out"># 2017-02-01    172.1</span>
+<span class="out"># 2017-03-01    206.3</span>
+<span class="out"># Freq: MS</span>
+<span class="out"># mean = 318.5  std = 74.5</span>
+<span class="out"># seasonal profile (Jan..Dec): [-39, -22, -1, 22, 37, 43, 37, 19, 0, -22, -34, -38]</span>
+<span class="out"># trend slope/month ≈ 2.43</span>
+<span class="out"># residual std ≈ 7.3</span></code></pre>
+
+<p>The decomposition recovered what we put in: a slope of about 2.5 per month, a ±40 seasonal swing peaking in June, and residual noise around 7 to 10. On real data you don't know the answer, so this is your first diagnostic: <em>how much of the variance is trend, how much is season, how much is noise?</em> The noise share is roughly the floor on how good any forecast can get.</p>
+
+<div class="widget" id="w-builder">
+  <div class="w-title">Interactive: build a series from its components</div>
+  <div class="controls">
+    <label>Trend slope <input type="range" id="wb-slope" min="0" max="5" step="0.25" value="2.5" data-out="wb-slope-out"> <output id="wb-slope-out"></output></label>
+    <label>Seasonal amplitude <input type="range" id="wb-amp" min="0" max="80" step="5" value="40" data-out="wb-amp-out"> <output id="wb-amp-out"></output></label>
+    <label>Noise σ <input type="range" id="wb-noise" min="0" max="40" step="2" value="10" data-out="wb-noise-out"> <output id="wb-noise-out"></output></label>
+    <span>Noise share of variance: <span class="readout" id="wb-share">–</span></span>
+  </div>
+  <svg viewBox="0 0 760 330" id="wb-svg" role="img" aria-label="A synthetic monthly series and its trend, seasonal and noise components, redrawn as the sliders change"></svg>
+  <div class="note">Push noise up and watch the seasonal wave disappear into it: that is a series where seasonal-naive will barely beat naive. Push amplitude to 0 and trend to 0: pure noise, and the best forecast is a flat mean. The readout is the fraction of total variance that no model can explain.</div>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s3">3. Stationarity, differencing and autocorrelation</h2>
+
+<h3>Stationarity</h3>
+<p>A series is <strong>stationary</strong> if its statistical behaviour does not depend on <em>when</em> you look: same mean, same variance, same autocorrelation structure in 2017 as in 2024. Classical models (ARIMA in particular) assume it, because a model can only learn a pattern that stays put. Our coffee series is obviously not stationary: it drifts upward and it has a seasonal wave.</p>
+
+<div class="callout eli9"><div class="title">Explain it like I'm 9</div>
+<p>Imagine trying to learn the rules of a game while the rules keep changing. Stationary means the rules stay the same, so what you learned from last year still works this year. Differencing is a trick: instead of tracking your <em>score</em> (which keeps climbing), track how much your score <em>changed</em> since last turn. The changes usually follow stable rules even when the score doesn't.</p>
+</div>
+
+<p>Two transforms fix most non-stationarity:</p>
+<ul>
+  <li><strong>Differencing</strong> removes trend: replace y<sub>t</sub> with Δy<sub>t</sub> = y<sub>t</sub> − y<sub>t−1</sub>. A straight-line trend becomes a constant. <strong>Seasonal differencing</strong> removes a repeating pattern: y<sub>t</sub> − y<sub>t−12</sub> ("same month last year"). You can apply both.</li>
+  <li><strong>Log transform</strong> stabilises variance: if swings scale with the level, log(y) has constant-size swings. It also turns multiplicative seasonality into additive, and growth into a linear trend. Forecast in log space, then <code>exp()</code> back (and remember that exp of a mean forecast is a median, not a mean; add half the variance if you need the mean).</li>
+</ul>
+
+<figure class="fig">
+<svg viewBox="0 0 800 260" role="img" aria-label="Left: the raw series climbs and has seasonal waves; its mean changes over time. Right: after first differencing the series wanders around zero with constant spread, though a seasonal ripple remains.">
+  <text x="205" y="24" text-anchor="middle" class="lbl-strong" font-size="14">Raw: mean drifts upward</text>
+  <line x1="50" y1="200" x2="360" y2="200" class="axis"/><line x1="50" y1="40" x2="50" y2="200" class="axis"/>
+  <text x="44" y="44" text-anchor="end" class="lbl" font-size="10">470</text><text x="44" y="203" text-anchor="end" class="lbl" font-size="10">165</text>
+  <polyline points="50,200 53,196 57,178 60,162 63,165 66,165 70,162 73,167 76,175 79,187 83,186 86,184 89,181 92,167 96,156 99,152 102,141 105,142 109,138 112,145 115,156 119,168 122,167 125,171 128,170 132,162 135,146 138,133 141,123 145,118 148,110 151,124 154,139 158,153 161,154 164,150 167,149 171,146 174,138 177,120 181,107 184,102 187,109 190,114 194,123 197,131 200,134 203,136 207,131 210,124 213,112 216,99 220,99 223,95 226,98 229,105 233,113 236,113 239,126 243,121 246,128 249,118 252,103 256,87 259,75 262,68 265,74 269,84 272,89 275,100 278,114 282,119 285,116 288,100 291,86 295,70 298,64 301,59 305,58 308,67 311,74 314,88 318,95 321,98 324,98 327,83 331,73 334,59 337,47 340,41 344,40 347,49 350,62 353,71 357,86 360,91" fill="none" stroke="var(--s1)" stroke-width="2"/>
+  <line x1="50" y1="178" x2="360" y2="66" stroke="var(--s2)" stroke-width="2" stroke-dasharray="6 4"/>
+  <text x="300" y="150" class="lbl" fill="var(--s2)" font-weight="700">rolling mean rises</text>
+  <text x="205" y="222" text-anchor="middle" class="lbl">ADF p = 0.56 → cannot reject "unit root"</text>
+
+  <text x="585" y="24" text-anchor="middle" class="lbl-strong" font-size="14">After Δy = y<tspan font-size="10" dy="4">t</tspan><tspan dy="-4"> − y</tspan><tspan font-size="10" dy="4">t−1</tspan></text>
+  <line x1="430" y1="200" x2="740" y2="200" class="axis"/><line x1="430" y1="40" x2="430" y2="200" class="axis"/>
+  <line x1="430" y1="120" x2="740" y2="120" stroke="var(--s2)" stroke-width="2" stroke-dasharray="6 4"/>
+  <text x="424" y="44" text-anchor="end" class="lbl" font-size="10">+80</text><text x="424" y="124" text-anchor="end" class="lbl" font-size="10">0</text><text x="424" y="203" text-anchor="end" class="lbl" font-size="10">−80</text>
+  <polyline points="430,113 433,86 437,89 440,126 443,120 446,113 450,131 453,134 456,144 460,118 463,116 466,115 470,94 473,99 476,112 479,99 483,123 486,111 489,134 493,140 496,144 499,117 503,128 506,118 509,105 512,90 516,95 519,101 522,111 526,105 529,147 532,147 536,146 539,123 542,112 545,118 549,114 552,104 555,87 559,95 562,110 565,133 569,130 572,137 575,136 578,125 582,125 585,109 588,107 592,98 595,94 598,122 601,112 605,124 608,135 611,135 615,119 618,144 621,112 625,132 628,101 631,92 634,90 638,97 641,108 644,132 648,139 651,128 654,142 658,146 661,130 664,114 667,90 671,93 674,89 677,109 681,110 684,117 687,138 691,133 694,146 697,134 700,124 704,121 707,91 710,100 714,94 717,96 720,109 724,119 727,137 730,144 733,138 737,148 740,130" fill="none" stroke="var(--s1)" stroke-width="2"/>
+  <text x="700" y="80" text-anchor="end" class="lbl" fill="var(--s2)" font-weight="700">mean ≈ +2.5, flat</text>
+  <text x="585" y="222" text-anchor="middle" class="lbl">ADF p &lt; 0.001 → stationary (seasonal ripple still visible)</text>
+  <text x="400" y="250" text-anchor="middle" class="lbl">A second, seasonal difference (lag 12) would remove the ripple too.</text>
+</svg>
+<figcaption><strong>Figure 14.3 — Differencing turns a wandering series into a stable one.</strong> The differenced series has a constant mean (the trend slope) and constant spread. The leftover 12-month ripple is why seasonal models add a lag-12 difference as well.</figcaption>
+</figure>
+
+<h3>The ADF test in one paragraph</h3>
+<p>The <strong>Augmented Dickey-Fuller test</strong> asks: "does this series behave like a random walk (a <em>unit root</em>, non-stationary) or does it get pulled back toward a level?" Its null hypothesis is <em>non-stationary</em>; a small p-value (say &lt; 0.05) lets you reject that and treat the series as stationary. Use it as a sanity check, not a verdict: it has low power on short series, it cannot see seasonality, and a series can pass ADF while still having a seasonal pattern that wrecks your model. <strong>Plot first, test second.</strong></p>
+
+<h3>Autocorrelation: ACF and PACF</h3>
+<p>The <strong>autocorrelation function (ACF)</strong> at lag k is the correlation between y<sub>t</sub> and y<sub>t−k</sub>: how much does a value resemble the value k steps earlier? The <strong>partial autocorrelation (PACF)</strong> at lag k is the same correlation <em>after removing the effect of lags 1 through k−1</em>: the "direct" link at that distance.</p>
+
+<div class="callout eli9"><div class="title">Explain it like I'm 9</div>
+<p>ACF at lag 2 asks "is today like the day before yesterday?" But today is like yesterday, and yesterday is like the day before, so of course it is, a bit. PACF at lag 2 asks the sharper question: "<em>once I already know yesterday</em>, does the day before yesterday tell me anything <em>extra</em>?"</p>
+</div>
+
+<figure class="fig">
+<svg viewBox="0 0 800 300" role="img" aria-label="Three bar charts: the ACF of the raw series decays slowly with a bump at lag 12; the PACF has a large spike at lag 1 and a negative spike at lag 2 then is small; the ACF of the differenced series shows a sinusoidal pattern with peaks at lags 12 and 24.">
+  <defs><clipPath id="clip-f4"><rect x="0" y="0" width="800" height="300"/></clipPath></defs>
+  <g clip-path="url(#clip-f4)">
+  <!-- panel A: ACF raw -->
+  <text x="140" y="22" text-anchor="middle" class="lbl-strong" font-size="13">ACF of raw series</text>
+  <line x1="30" y1="150" x2="250" y2="150" class="axis"/>
+  <rect x="30" y="134" width="220" height="32" fill="var(--s7)" fill-opacity=".12"/>
+  <text x="252" y="140" class="lbl" font-size="9">±0.20</text>
+  <g fill="var(--s1)">
+    <rect x="38" y="70" width="6" height="80"/><rect x="47" y="74" width="6" height="76"/><rect x="56" y="81" width="6" height="69"/><rect x="65" y="90" width="6" height="60"/><rect x="74" y="97" width="6" height="53"/><rect x="83" y="104" width="6" height="46"/><rect x="92" y="108" width="6" height="42"/><rect x="101" y="108" width="6" height="42"/><rect x="110" y="107" width="6" height="43"/><rect x="119" y="104" width="6" height="46"/><rect x="128" y="100" width="6" height="50"/><rect x="137" y="98" width="6" height="52"/><rect x="146" y="99" width="6" height="51"/><rect x="155" y="102" width="6" height="48"/><rect x="164" y="108" width="6" height="42"/><rect x="173" y="114" width="6" height="36"/><rect x="182" y="121" width="6" height="29"/><rect x="191" y="127" width="6" height="23"/><rect x="200" y="131" width="6" height="19"/><rect x="209" y="132" width="6" height="18"/><rect x="218" y="130" width="6" height="20"/><rect x="227" y="127" width="6" height="23"/><rect x="236" y="124" width="6" height="26"/>
+  </g>
+  <text x="41" y="168" text-anchor="middle" class="lbl" font-size="10">1</text><text x="140" y="168" text-anchor="middle" class="lbl" font-size="10">12</text><text x="239" y="168" text-anchor="middle" class="lbl" font-size="10">23</text>
+  <text x="140" y="184" text-anchor="middle" class="lbl">lag (months)</text>
+  <text x="140" y="205" text-anchor="middle" class="lbl" font-size="11">Slow decay = trend.</text>
+  <text x="140" y="220" text-anchor="middle" class="lbl" font-size="11">Bump at 12 = yearly season.</text>
+  <text x="140" y="235" text-anchor="middle" class="lbl" font-size="11">Verdict: difference it.</text>
+
+  <!-- panel B: PACF raw -->
+  <text x="400" y="22" text-anchor="middle" class="lbl-strong" font-size="13">PACF of raw series</text>
+  <line x1="290" y1="110" x2="510" y2="110" class="axis"/>
+  <rect x="290" y="94" width="220" height="32" fill="var(--s7)" fill-opacity=".12"/>
+  <g fill="var(--s2)">
+    <rect x="298" y="33" width="6" height="77"/><rect x="307" y="110" width="6" height="37"/><rect x="316" y="110" width="6" height="5"/><rect x="325" y="100" width="6" height="10"/><rect x="334" y="108" width="6" height="2"/><rect x="343" y="88" width="6" height="22"/><rect x="352" y="83" width="6" height="27"/><rect x="361" y="97" width="6" height="13"/><rect x="370" y="104" width="6" height="6"/><rect x="379" y="110" width="6" height="2"/><rect x="388" y="110" width="6" height="8"/><rect x="397" y="110" width="6" height="13"/><rect x="406" y="110" width="6" height="18"/><rect x="415" y="109" width="6" height="1"/><rect x="424" y="110" width="6" height="8"/><rect x="433" y="110" width="6" height="9"/><rect x="442" y="100" width="6" height="10"/><rect x="451" y="110" width="6" height="5"/><rect x="460" y="96" width="6" height="14"/><rect x="469" y="104" width="6" height="6"/><rect x="478" y="110" width="6" height="6"/><rect x="487" y="110" width="6" height="2"/><rect x="496" y="109" width="6" height="1"/>
+  </g>
+  <text x="301" y="168" text-anchor="middle" class="lbl" font-size="10">1</text><text x="400" y="168" text-anchor="middle" class="lbl" font-size="10">12</text><text x="499" y="168" text-anchor="middle" class="lbl" font-size="10">23</text>
+  <text x="400" y="184" text-anchor="middle" class="lbl">lag (months)</text>
+  <text x="400" y="205" text-anchor="middle" class="lbl" font-size="11">Huge lag-1 spike, then a negative lag 2:</text>
+  <text x="400" y="220" text-anchor="middle" class="lbl" font-size="11">most of the memory is one step long.</text>
+  <text x="400" y="235" text-anchor="middle" class="lbl" font-size="11">Suggests a small AR order (p = 1 or 2).</text>
+
+  <!-- panel C: ACF diff -->
+  <text x="660" y="22" text-anchor="middle" class="lbl-strong" font-size="13">ACF after Δy</text>
+  <line x1="550" y1="110" x2="770" y2="110" class="axis"/>
+  <rect x="550" y="94" width="220" height="32" fill="var(--s7)" fill-opacity=".12"/>
+  <g fill="var(--s3)">
+    <rect x="558" y="59" width="6" height="51"/><rect x="567" y="81" width="6" height="29"/><rect x="576" y="110" width="6" height="2"/><rect x="585" y="110" width="6" height="27"/><rect x="594" y="110" width="6" height="47"/><rect x="603" y="110" width="6" height="58"/><rect x="612" y="110" width="6" height="54"/><rect x="621" y="110" width="6" height="29"/><rect x="630" y="110" width="6" height="5"/><rect x="639" y="84" width="6" height="26"/><rect x="648" y="63" width="6" height="47"/><rect x="657" y="56" width="6" height="54"/><rect x="666" y="64" width="6" height="46"/><rect x="675" y="81" width="6" height="29"/><rect x="684" y="108" width="6" height="2"/><rect x="693" y="110" width="6" height="18"/><rect x="702" y="110" width="6" height="41"/><rect x="711" y="110" width="6" height="50"/><rect x="720" y="110" width="6" height="46"/><rect x="729" y="110" width="6" height="29"/><rect x="738" y="110" width="6" height="5"/><rect x="747" y="91" width="6" height="19"/><rect x="756" y="71" width="6" height="39"/>
+  </g>
+  <text x="561" y="180" text-anchor="middle" class="lbl" font-size="10">1</text><text x="660" y="180" text-anchor="middle" class="lbl" font-size="10">12</text><text x="759" y="180" text-anchor="middle" class="lbl" font-size="10">23</text>
+  <text x="660" y="195" text-anchor="middle" class="lbl">lag (months)</text>
+  <text x="660" y="215" text-anchor="middle" class="lbl" font-size="11">Trend gone; a clean 12-month wave</text>
+  <text x="660" y="230" text-anchor="middle" class="lbl" font-size="11">remains: add a seasonal difference</text>
+  <text x="660" y="245" text-anchor="middle" class="lbl" font-size="11">(D = 1, s = 12).</text>
+  <text x="400" y="280" text-anchor="middle" class="lbl">Shaded band: ±1.96/√n ≈ ±0.20. Bars inside it are indistinguishable from zero.</text>
+  </g>
+</svg>
+<figcaption><strong>Figure 14.4 — Reading ACF and PACF.</strong> Slow ACF decay means trend (difference it). A spike at the seasonal lag means seasonality (seasonal-difference it, or model it). Once the series is stationary, a PACF that cuts off after lag p suggests AR(p); an ACF that cuts off after lag q suggests MA(q).</figcaption>
+</figure>
+
+<pre class="code" data-lang="python"><code><span class="cm"># Stationarity check and autocorrelations on the running example</span>
+<span class="kw">import</span> numpy <span class="kw">as</span> np, pandas <span class="kw">as</span> pd, warnings; warnings.filterwarnings(<span class="st">"ignore"</span>)
+<span class="kw">from</span> statsmodels.tsa.stattools <span class="kw">import</span> adfuller, acf, pacf
+rng = np.random.default_rng(<span class="nu">42</span>); idx = pd.date_range(<span class="st">"2017-01-01"</span>, periods=<span class="nu">96</span>, freq=<span class="st">"MS"</span>); t = np.arange(<span class="nu">96</span>)
+e = rng.normal(<span class="nu">0</span>, <span class="nu">10</span>, size=<span class="nu">96</span>); noise = np.zeros(<span class="nu">96</span>)
+<span class="kw">for</span> i <span class="kw">in</span> <span class="fn">range</span>(<span class="nu">1</span>, <span class="nu">96</span>): noise[i] = <span class="nu">0.6</span> * noise[i - <span class="nu">1</span>] + e[i]
+y = pd.Series(<span class="nu">200</span> + <span class="nu">2.5</span>*t + <span class="nu">40</span>*np.sin(<span class="nu">2</span>*np.pi*(t - <span class="nu">2</span>)/<span class="nu">12</span>) + noise, index=idx, name=<span class="st">"units"</span>)
+
+<span class="kw">for</span> name, s <span class="kw">in</span> [(<span class="st">"raw"</span>, y), (<span class="st">"diff(1)"</span>, y.diff().dropna()), (<span class="st">"diff(1)+diff(12)"</span>, y.diff().diff(<span class="nu">12</span>).dropna())]:
+    stat, p = adfuller(s, autolag=<span class="st">"AIC"</span>)[:<span class="nu">2</span>]
+    <span class="fn">print</span>(<span class="st">f"{name:18s} ADF={stat:6.2f}  p={p:.3f}  {'stationary' if p &lt; 0.05 else 'NOT stationary'}"</span>)
+a, pa = acf(y, nlags=<span class="nu">24</span>), pacf(y, nlags=<span class="nu">24</span>)
+<span class="fn">print</span>(<span class="st">"ACF  lags 1,2,3,6,12,24:"</span>, [<span class="fn">round</span>(<span class="fn">float</span>(a[k]),<span class="nu">2</span>) <span class="kw">for</span> k <span class="kw">in</span> (<span class="nu">1</span>,<span class="nu">2</span>,<span class="nu">3</span>,<span class="nu">6</span>,<span class="nu">12</span>,<span class="nu">24</span>)])
+<span class="fn">print</span>(<span class="st">"PACF lags 1,2,3,12    :"</span>, [<span class="fn">round</span>(<span class="fn">float</span>(pa[k]),<span class="nu">2</span>) <span class="kw">for</span> k <span class="kw">in</span> (<span class="nu">1</span>,<span class="nu">2</span>,<span class="nu">3</span>,<span class="nu">12</span>)])
+ad = acf(y.diff().dropna(), nlags=<span class="nu">24</span>)
+<span class="fn">print</span>(<span class="st">"ACF of diff(1) lags 1,6,12:"</span>, [<span class="fn">round</span>(<span class="fn">float</span>(ad[k]),<span class="nu">2</span>) <span class="kw">for</span> k <span class="kw">in</span> (<span class="nu">1</span>,<span class="nu">6</span>,<span class="nu">12</span>)])
+<span class="out"># raw                ADF= -1.46  p=0.555  NOT stationary</span>
+<span class="out"># diff(1)            ADF= -8.13  p=0.000  stationary</span>
+<span class="out"># diff(1)+diff(12)   ADF= -4.80  p=0.000  stationary</span>
+<span class="out"># ACF  lags 1,2,3,6,12,24: [0.95, 0.86, 0.75, 0.52, 0.64, 0.34]</span>
+<span class="out"># PACF lags 1,2,3,12    : [0.96, -0.46, -0.06, -0.16]</span>
+<span class="out"># ACF of diff(1) lags 1,6,12: [0.64, -0.72, 0.68]</span></code></pre>
+
+<div class="callout key"><div class="title">Key idea</div>
+<p>The ACF is your <strong>feature-selection tool</strong> for time series. Big bars at lags 1, 2 and 12 are telling you exactly which lag features to build in Section 7 (<code>lag_1</code>, <code>lag_2</code>, <code>lag_12</code>) and which ARIMA orders to try in Section 6. Look at it before you model anything.</p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s4">4. Baselines you must beat</h2>
+
+<p>Forecasting has a humbling secret: dumb methods are strong. In the M-competitions (the field's benchmark series, run since 1982), simple methods routinely beat sophisticated ones, and in industry a large share of "ML forecasting" projects never beat seasonal naive. So before any model, compute these four. They cost nothing and they are your <em>units of progress</em>: a model that is 30% better than seasonal naive is a result; a model with "MAE = 12.3" is a number without meaning.</p>
+
+<div class="callout math"><div class="title">The math: the four baselines</div>
+<div class="formula">Naive: ŷ<sub>T+h</sub> = y<sub>T</sub> &nbsp;&nbsp;&nbsp; Seasonal naive: ŷ<sub>T+h</sub> = y<sub>T+h−m</sub> &nbsp;&nbsp;&nbsp; Drift: ŷ<sub>T+h</sub> = y<sub>T</sub> + h · (y<sub>T</sub> − y<sub>1</sub>)/(T − 1) &nbsp;&nbsp;&nbsp; Moving average: ŷ<sub>T+h</sub> = (1/k) ∑<sub>i=0</sub><sup>k−1</sup> y<sub>T−i</sub></div>
+<p><strong>T</strong> is the last observed time (the forecast origin); <strong>h</strong> is how many steps ahead (the horizon); <strong>m</strong> is the seasonal period (12 for monthly); <strong>k</strong> is the moving-average window. Naive repeats the last value forever. Seasonal naive repeats "the same month last year". Drift draws a straight line from the first to the last observation and extends it. Moving average predicts the recent mean. Combine them: <em>seasonal naive + drift</em> repeats last year's pattern shifted up by a year's worth of trend, and it is a formidable opponent.</p>
+</div>
+
+<figure class="fig">
+<svg viewBox="0 0 800 270" role="img" aria-label="The last 36 months of the series followed by the 12 test months, with four baseline forecasts overlaid: naive is a flat line, drift a gently rising line, seasonal naive repeats last year's shape too low, and seasonal naive plus drift tracks the actuals closely.">
+  <line x1="50" y1="220" x2="660" y2="220" class="axis"/><line x1="50" y1="40" x2="50" y2="220" class="axis"/>
+  <text x="44" y="44" text-anchor="end" class="lbl" font-size="10">500</text><text x="44" y="132" text-anchor="end" class="lbl" font-size="10">390</text><text x="44" y="223" text-anchor="end" class="lbl" font-size="10">280</text>
+  <rect x="506" y="40" width="150" height="180" fill="var(--s2)" fill-opacity=".07"/>
+  <line x1="506" y1="40" x2="506" y2="220" stroke="var(--s7)" stroke-width="1.5" stroke-dasharray="5 4"/>
+  <text x="503" y="35" text-anchor="end" class="lbl" fill="var(--s7)" font-weight="700" font-size="11">forecast origin (Dec 2023)</text>
+  <text x="580" y="35" text-anchor="middle" class="lbl" font-size="11">12-month holdout</text>
+  <polyline points="50,206 63,195 76,177 89,156 101,157 114,151 127,154 140,166 153,179 166,178 179,198 191,191 204,201 217,186 230,163 243,138 256,119 269,109 281,118 294,134 307,140 320,159 333,180 346,188 359,183 371,158 384,136 397,111 410,103 423,94 436,92 449,107 461,118 474,139 487,151 500,154" fill="none" stroke="var(--ink-2)" stroke-width="2"/>
+  <polyline points="512,155 525,132 537,116 550,95 562,75 575,66 587,65 600,79 612,98 625,113 637,136 650,144" fill="none" stroke="var(--ink)" stroke-width="2.5"/>
+  <polyline points="512,154 525,154 537,154 550,154 562,154 575,154 587,154 600,154 612,154 625,154 637,154 650,154" fill="none" stroke="var(--s4)" stroke-width="2" stroke-dasharray="4 3"/>
+  <polyline points="512,152 525,151 537,149 550,147 562,145 575,143 587,141 600,139 612,137 625,135 637,133 650,131" fill="none" stroke="var(--s3)" stroke-width="2" stroke-dasharray="7 3"/>
+  <polyline points="512,183 525,158 537,136 550,111 562,103 575,94 587,92 600,107 612,118 625,139 637,151 650,154" fill="none" stroke="var(--s1)" stroke-width="2"/>
+  <polyline points="512,160 525,135 537,113 550,88 562,80 575,71 587,69 600,84 612,95 625,116 637,128 650,131" fill="none" stroke="var(--s2)" stroke-width="2.5"/>
+  <text x="80" y="245" class="lbl">Jan 2021</text><text x="500" y="245" text-anchor="middle" class="lbl">Dec 2023</text><text x="650" y="245" text-anchor="end" class="lbl">Dec 2024</text>
+  <!-- legend -->
+  <g font-size="11">
+    <line x1="680" y1="60" x2="700" y2="60" stroke="var(--ink)" stroke-width="2.5"/><text x="706" y="64" class="lbl">actual</text>
+    <line x1="680" y1="82" x2="700" y2="82" stroke="var(--s4)" stroke-width="2" stroke-dasharray="4 3"/><text x="706" y="86" class="lbl">naive  59.1</text>
+    <line x1="680" y1="104" x2="700" y2="104" stroke="var(--s3)" stroke-width="2" stroke-dasharray="7 3"/><text x="706" y="108" class="lbl">drift  47.4</text>
+    <line x1="680" y1="126" x2="700" y2="126" stroke="var(--s1)" stroke-width="2"/><text x="706" y="130" class="lbl">seasonal naive  27.7</text>
+    <line x1="680" y1="148" x2="700" y2="148" stroke="var(--s2)" stroke-width="2.5"/><text x="706" y="152" class="lbl">s. naive + drift  6.5</text>
+    <text x="680" y="176" class="lbl" font-size="10">(numbers = MAE, units)</text>
+  </g>
+</svg>
+<figcaption><strong>Figure 14.5 — Four baselines on the 12-month holdout.</strong> Naive and drift ignore the season and miss the summer peak by 60 to 100 units. Seasonal naive has the right shape but sits a year of growth too low. Seasonal naive plus drift fixes both and scores an MAE of 6.5, which every "real" model below has to beat.</figcaption>
+</figure>
+
+<pre class="code" data-lang="python"><code><span class="cm"># The baselines every forecast must beat, scored on the final 12 months</span>
+<span class="kw">import</span> numpy <span class="kw">as</span> np, pandas <span class="kw">as</span> pd
+rng = np.random.default_rng(<span class="nu">42</span>); idx = pd.date_range(<span class="st">"2017-01-01"</span>, periods=<span class="nu">96</span>, freq=<span class="st">"MS"</span>); t = np.arange(<span class="nu">96</span>)
+e = rng.normal(<span class="nu">0</span>, <span class="nu">10</span>, size=<span class="nu">96</span>); noise = np.zeros(<span class="nu">96</span>)
+<span class="kw">for</span> i <span class="kw">in</span> <span class="fn">range</span>(<span class="nu">1</span>, <span class="nu">96</span>): noise[i] = <span class="nu">0.6</span> * noise[i - <span class="nu">1</span>] + e[i]
+y = pd.Series(<span class="nu">200</span> + <span class="nu">2.5</span>*t + <span class="nu">40</span>*np.sin(<span class="nu">2</span>*np.pi*(t - <span class="nu">2</span>)/<span class="nu">12</span>) + noise, index=idx, name=<span class="st">"units"</span>)
+
+train, test = y[:-<span class="nu">12</span>], y[-<span class="nu">12</span>:]                    <span class="cm"># chronological split, never shuffled</span>
+h = <span class="fn">len</span>(test)
+<span class="kw">def</span> <span class="fn">mae</span>(actual, forecast): <span class="kw">return</span> <span class="fn">float</span>(np.mean(np.abs(np.asarray(actual) - np.asarray(forecast))))
+slope = (train.iloc[-<span class="nu">1</span>] - train.iloc[<span class="nu">0</span>]) / (<span class="fn">len</span>(train) - <span class="nu">1</span>)
+baselines = {
+  <span class="st">"naive (last value)"</span>:        np.repeat(train.iloc[-<span class="nu">1</span>], h),
+  <span class="st">"moving average (12)"</span>:       np.repeat(train.iloc[-<span class="nu">12</span>:].mean(), h),
+  <span class="st">"drift"</span>:                     train.iloc[-<span class="nu">1</span>] + slope * np.arange(<span class="nu">1</span>, h + <span class="nu">1</span>),
+  <span class="st">"seasonal naive"</span>:            train.iloc[-<span class="nu">12</span>:].values,
+  <span class="st">"seasonal naive + drift"</span>:    train.iloc[-<span class="nu">12</span>:].values + <span class="nu">12</span> * slope,
+}
+<span class="kw">for</span> name, fc <span class="kw">in</span> baselines.items():
+    <span class="fn">print</span>(<span class="st">f"{name:24s} MAE = {mae(test, fc):5.1f}"</span>)
+<span class="out"># naive (last value)       MAE =  59.1</span>
+<span class="out"># moving average (12)      MAE =  38.4</span>
+<span class="out"># drift                    MAE =  47.4</span>
+<span class="out"># seasonal naive           MAE =  27.7</span>
+<span class="out"># seasonal naive + drift   MAE =   6.5</span></code></pre>
+
+<div class="callout pro"><div class="title">At work</div>
+<p>Put the seasonal-naive number on the first slide of every forecasting review. Stakeholders anchor on it instantly ("we'd be within 28 units just by copying last year"), and every improvement you report afterwards has a denominator. If your fancy model loses to seasonal naive on a fair backtest, which happens more often than anyone admits, ship seasonal naive and go find better features. That is not a failure; it is the cheapest possible win.</p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s5">5. Exponential smoothing</h2>
+
+<p>A moving average treats the last k points equally and everything older as worthless. That's crude. <strong>Exponential smoothing</strong> says: the most recent value matters most, the one before a bit less, and so on, with weights that decay geometrically. One parameter, <strong>α</strong> (alpha, between 0 and 1), controls how fast they decay.</p>
+
+<div class="callout eli9"><div class="title">Explain it like I'm 9</div>
+<p>You're guessing how long your walk to school takes. Each morning you update your guess: "new guess = mostly my old guess, plus a little bit of today's actual time." If α is big you trust today a lot and your guess jumps around; if α is tiny you barely budge and your guess lags behind when the road works start. Smoothing is choosing how much to trust today.</p>
+</div>
+
+<div class="callout math"><div class="title">The math: the smoothing family</div>
+<div class="formula">Simple: ℓ<sub>t</sub> = α y<sub>t</sub> + (1 − α) ℓ<sub>t−1</sub>, &nbsp; ŷ<sub>t+h</sub> = ℓ<sub>t</sub></div>
+<div class="formula">Holt (add trend): ℓ<sub>t</sub> = α y<sub>t</sub> + (1 − α)(ℓ<sub>t−1</sub> + b<sub>t−1</sub>), &nbsp; b<sub>t</sub> = β(ℓ<sub>t</sub> − ℓ<sub>t−1</sub>) + (1 − β) b<sub>t−1</sub>, &nbsp; ŷ<sub>t+h</sub> = ℓ<sub>t</sub> + h b<sub>t</sub></div>
+<div class="formula">Holt-Winters (add season): ℓ<sub>t</sub> = α(y<sub>t</sub> − s<sub>t−m</sub>) + (1 − α)(ℓ<sub>t−1</sub> + b<sub>t−1</sub>), &nbsp; s<sub>t</sub> = γ(y<sub>t</sub> − ℓ<sub>t</sub>) + (1 − γ) s<sub>t−m</sub>, &nbsp; ŷ<sub>t+h</sub> = ℓ<sub>t</sub> + h b<sub>t</sub> + s<sub>t+h−m</sub></div>
+<p><strong>ℓ<sub>t</sub></strong> is the smoothed <em>level</em> (where the series is now, with noise removed); <strong>b<sub>t</sub></strong> is the smoothed <em>slope</em> (how much it moves per step); <strong>s<sub>t</sub></strong> is the seasonal offset for time t, one per position in the cycle of length <strong>m</strong>. <strong>α, β, γ</strong> (all in [0,1]) set how quickly level, slope and season adapt to new data: near 0 means "trust history", near 1 means "trust the latest point". <code>statsmodels</code> picks them by minimising in-sample squared error. Unrolling the simple version shows why it's called exponential: ℓ<sub>t</sub> = α y<sub>t</sub> + α(1−α) y<sub>t−1</sub> + α(1−α)<sup>2</sup> y<sub>t−2</sub> + …, weights that shrink by (1−α) per step.</p>
+</div>
+
+<figure class="fig">
+<svg viewBox="0 0 800 280" role="img" aria-label="Left: bars showing weight on past observations for alpha 0.2 and alpha 0.6; larger alpha concentrates weight on recent values. Right: the Holt-Winters fit hugging the last three years of data and its twelve-month forecast reproducing the seasonal shape.">
+  <text x="150" y="24" text-anchor="middle" class="lbl-strong" font-size="13">Weight on past values, α(1−α)<tspan font-size="9" dy="-5">k</tspan></text>
+  <line x1="40" y1="200" x2="270" y2="200" class="axis"/><line x1="40" y1="40" x2="40" y2="200" class="axis"/>
+  <text x="155" y="222" text-anchor="middle" class="lbl">k = how many steps ago</text>
+  <text x="30" y="46" text-anchor="end" class="lbl" font-size="10">0.6</text><text x="30" y="204" text-anchor="end" class="lbl" font-size="10">0</text>
+  <!-- alpha .6: 0.6,0.24,0.096,0.038,0.015,0.006 ; scale 0.6 -> 160px -->
+  <g fill="var(--s2)"><rect x="46" y="40" width="12" height="160"/><rect x="72" y="136" width="12" height="64"/><rect x="98" y="174" width="12" height="26"/><rect x="124" y="190" width="12" height="10"/><rect x="150" y="196" width="12" height="4"/><rect x="176" y="198" width="12" height="2"/></g>
+  <!-- alpha .2: .2,.16,.128,.102,.082,.066,.052,.042 -->
+  <g fill="var(--s1)"><rect x="60" y="147" width="12" height="53"/><rect x="86" y="157" width="12" height="43"/><rect x="112" y="166" width="12" height="34"/><rect x="138" y="173" width="12" height="27"/><rect x="164" y="178" width="12" height="22"/><rect x="190" y="182" width="12" height="18"/><rect x="216" y="186" width="12" height="14"/><rect x="242" y="189" width="12" height="11"/></g>
+  <text x="52" y="212" text-anchor="middle" class="lbl" font-size="10">0</text><text x="104" y="212" text-anchor="middle" class="lbl" font-size="10">2</text><text x="156" y="212" text-anchor="middle" class="lbl" font-size="10">4</text><text x="208" y="212" text-anchor="middle" class="lbl" font-size="10">6</text>
+  <rect x="180" y="52" width="12" height="10" fill="var(--s2)"/><text x="197" y="61" class="lbl" font-size="11">α = 0.6: reacts fast, noisy</text>
+  <rect x="180" y="72" width="12" height="10" fill="var(--s1)"/><text x="197" y="81" class="lbl" font-size="11">α = 0.2: smooth, lags</text>
+  <!-- right: HW fit -->
+  <text x="560" y="24" text-anchor="middle" class="lbl-strong" font-size="13">Holt-Winters (additive) on the last 3 years + forecast</text>
+  <g transform="translate(300,0)">
+  <line x1="50" y1="220" x2="360" y2="220" class="axis"/><line x1="50" y1="40" x2="50" y2="220" class="axis"/>
+  <rect x="256" y="40" width="104" height="180" fill="var(--s2)" fill-opacity=".07"/>
+  <line x1="256" y1="40" x2="256" y2="220" stroke="var(--s7)" stroke-width="1.5" stroke-dasharray="5 4"/>
+  <polyline points="50,206 59,195 68,177 77,156 85,157 94,151 103,154 112,166 121,179 130,178 139,198 147,191 156,201 165,186 174,163 183,138 192,119 201,109 209,118 218,134 227,140 236,159 245,180 254,188" fill="none" stroke="var(--ink-2)" stroke-width="2"/>
+  <polyline points="50,212 59,194 68,174 77,155 85,145 94,149 103,150 112,167 121,180 130,195 139,189 147,197 156,190 165,185 174,165 183,141 192,128 201,115 209,110 218,130 227,146 236,158 245,166 254,178" fill="none" stroke="var(--s1)" stroke-width="2" stroke-dasharray="3 2"/>
+  <polyline points="262,155 271,132 280,116 289,95 298,75 307,66 316,65 325,79 334,98 343,113 352,136 360,144" fill="none" stroke="var(--ink)" stroke-width="2.5"/>
+  <polyline points="262,151 271,138 280,117 289,95 298,85 307,79 316,79 325,92 334,105 343,121 352,129 360,130" fill="none" stroke="var(--s2)" stroke-width="2.5"/>
+  <text x="60" y="245" class="lbl" font-size="11">2022</text><text x="256" y="245" text-anchor="middle" class="lbl" font-size="11">origin</text><text x="360" y="245" text-anchor="end" class="lbl" font-size="11">2024</text>
+  <line x1="60" y1="56" x2="80" y2="56" stroke="var(--s1)" stroke-width="2" stroke-dasharray="3 2"/><text x="86" y="60" class="lbl" font-size="11">fitted (one-step)</text>
+  <line x1="60" y1="74" x2="80" y2="74" stroke="var(--s2)" stroke-width="2.5"/><text x="86" y="78" class="lbl" font-size="11">forecast, MAE 10.0</text>
+  </g>
+  <text x="400" y="270" text-anchor="middle" class="lbl">Holt-Winters learns level, slope and 12 seasonal offsets, then extends all three.</text>
+</svg>
+<figcaption><strong>Figure 14.6 — Exponential weights and the Holt-Winters forecast.</strong> Left: α sets how quickly the past is forgotten. Right: with trend and seasonal components added, the method reproduces the summer peak a year ahead. It scored MAE 10.0 on our holdout, better than seasonal naive but not better than seasonal naive plus drift.</figcaption>
+</figure>
+
+<pre class="code" data-lang="python"><code><span class="cm"># Simple, Holt, and Holt-Winters exponential smoothing (statsmodels)</span>
+<span class="kw">import</span> numpy <span class="kw">as</span> np, pandas <span class="kw">as</span> pd
+<span class="kw">from</span> statsmodels.tsa.holtwinters <span class="kw">import</span> SimpleExpSmoothing, Holt, ExponentialSmoothing
+rng = np.random.default_rng(<span class="nu">42</span>); idx = pd.date_range(<span class="st">"2017-01-01"</span>, periods=<span class="nu">96</span>, freq=<span class="st">"MS"</span>); t = np.arange(<span class="nu">96</span>)
+e = rng.normal(<span class="nu">0</span>, <span class="nu">10</span>, size=<span class="nu">96</span>); noise = np.zeros(<span class="nu">96</span>)
+<span class="kw">for</span> i <span class="kw">in</span> <span class="fn">range</span>(<span class="nu">1</span>, <span class="nu">96</span>): noise[i] = <span class="nu">0.6</span> * noise[i - <span class="nu">1</span>] + e[i]
+y = pd.Series(<span class="nu">200</span> + <span class="nu">2.5</span>*t + <span class="nu">40</span>*np.sin(<span class="nu">2</span>*np.pi*(t - <span class="nu">2</span>)/<span class="nu">12</span>) + noise, index=idx, name=<span class="st">"units"</span>)
+train, test = y[:-<span class="nu">12</span>], y[-<span class="nu">12</span>:]
+<span class="kw">def</span> <span class="fn">mae</span>(a, f): <span class="kw">return</span> <span class="fn">float</span>(np.mean(np.abs(np.asarray(a) - np.asarray(f))))
+
+ses  = SimpleExpSmoothing(train, initialization_method=<span class="st">"estimated"</span>).fit()
+holt = Holt(train, initialization_method=<span class="st">"estimated"</span>).fit()
+hw   = ExponentialSmoothing(train, trend=<span class="st">"add"</span>, seasonal=<span class="st">"add"</span>, seasonal_periods=<span class="nu">12</span>,
+                            initialization_method=<span class="st">"estimated"</span>).fit()
+p = hw.params
+<span class="fn">print</span>(<span class="st">f"SES          alpha={ses.params['smoothing_level']:.2f}                     MAE={mae(test, ses.forecast(12)):5.1f}"</span>)
+<span class="fn">print</span>(<span class="st">f"Holt         alpha={holt.params['smoothing_level']:.2f} beta={holt.params['smoothing_trend']:.2f}           MAE={mae(test, holt.forecast(12)):5.1f}"</span>)
+<span class="fn">print</span>(<span class="st">f"Holt-Winters alpha={p['smoothing_level']:.2f} beta={p['smoothing_trend']:.2f} gamma={p['smoothing_seasonal']:.2f} MAE={mae(test, hw.forecast(12)):5.1f}"</span>)
+<span class="fn">print</span>(hw.forecast(<span class="nu">3</span>).round(<span class="nu">1</span>).to_string())
+<span class="out"># SES          alpha=1.00                     MAE= 59.1</span>
+<span class="out"># Holt         alpha=0.96 beta=0.93           MAE= 93.6</span>
+<span class="out"># Holt-Winters alpha=0.79 beta=0.00 gamma=0.00 MAE= 10.0</span>
+<span class="out"># 2024-01-01    364.0</span>
+<span class="out"># 2024-02-01    380.5</span>
+<span class="out"># 2024-03-01    406.0</span></code></pre>
+
+<p>Read those parameters like a detective. Simple smoothing chose α = 1: it collapsed into the naive forecast, because on a strongly seasonal series "the last value" is the best a level-only model can do. Holt is <em>worse</em> than naive: with β = 0.93 it treats the December-to-January seasonal drop as a trend and extrapolates it downhill for a year. Holt-Winters, the only one with a seasonal component, is the only one that works. <strong>A model that lacks a component the data has will find a wrong way to fake it.</strong> Options to note: <code>damped_trend=True</code> flattens the trend as h grows (safer for long horizons, and a reliable default in the M-competitions), and <code>seasonal="mul"</code> for growing seasonal swings.</p>
+
+<div class="widget" id="w-smooth">
+  <div class="w-title">Interactive: smoothing and the lag it buys you</div>
+  <div class="controls">
+    <label>α (exponential) <input type="range" id="ws-alpha" min="0.05" max="1" step="0.05" value="0.3" data-out="ws-alpha-out"> <output id="ws-alpha-out"></output></label>
+    <label>Window k (moving avg) <input type="range" id="ws-k" min="1" max="12" step="1" value="5" data-out="ws-k-out"> <output id="ws-k-out"></output></label>
+    <span>Avg lag: exp ≈ <span class="readout" id="ws-lag-e">–</span> steps, MA = <span class="readout" id="ws-lag-m">–</span> steps</span>
+  </div>
+  <svg viewBox="0 0 760 260" id="ws-svg" role="img" aria-label="Noisy series with a level shift, overlaid with the exponentially smoothed line and the moving-average line"></svg>
+  <div class="note">The grey series has a step change at month 40. Small α or big k gives a beautifully smooth line that takes ages to notice the step (look at how far behind it lags). Large α or k = 1 follows the step instantly but copies every wiggle of noise. That trade-off, <em>responsiveness versus noise</em>, is the whole art of smoothing, and the reason statsmodels fits α from data rather than letting you guess.</div>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s6">6. ARIMA and SARIMA</h2>
+
+<p><strong>ARIMA</strong> is the classical statistician's forecasting model, and it is worth understanding even though you may end up using boosting more often, because its vocabulary (AR, MA, differencing, orders) is how forecasting people talk. The name lists its three parts.</p>
+
+<div class="grid3">
+  <div class="card accent"><h4>AR(p): AutoRegressive</h4><p>Today is a weighted sum of the last p values plus noise. "Momentum." <em>y<sub>t</sub> = c + φ<sub>1</sub>y<sub>t−1</sub> + … + φ<sub>p</sub>y<sub>t−p</sub> + ε<sub>t</sub></em>. Picked from the PACF cut-off.</p></div>
+  <div class="card accent"><h4>I(d): Integrated</h4><p>Difference the series d times first so it's stationary, then model the differences and undo the differencing at forecast time. d is usually 0 or 1, rarely 2.</p></div>
+  <div class="card accent"><h4>MA(q): Moving Average</h4><p>Today is a weighted sum of the last q <em>forecast errors</em>. "Correcting for recent surprises." <em>y<sub>t</sub> = c + ε<sub>t</sub> + θ<sub>1</sub>ε<sub>t−1</sub> + … + θ<sub>q</sub>ε<sub>t−q</sub></em>. Picked from the ACF cut-off.</p></div>
+</div>
+
+<div class="callout eli9"><div class="title">Explain it like I'm 9</div>
+<p>Guessing tomorrow's temperature: AR says "it'll be like the last few days" (momentum). MA says "I was surprised by how warm it was yesterday, so I'll nudge my guess up a bit" (learning from recent mistakes). The I part says "the weather keeps warming all spring, so let me predict the <em>change</em> from today rather than the temperature itself." ARIMA does all three with knobs p, d, q.</p>
+</div>
+
+<div class="callout math"><div class="title">The math: SARIMA(p,d,q)(P,D,Q)<sub>m</sub></div>
+<div class="formula">φ<sub>p</sub>(B) Φ<sub>P</sub>(B<sup>m</sup>) (1 − B)<sup>d</sup> (1 − B<sup>m</sup>)<sup>D</sup> y<sub>t</sub> = θ<sub>q</sub>(B) Θ<sub>Q</sub>(B<sup>m</sup>) ε<sub>t</sub></div>
+<p><strong>B</strong> is the backshift operator: B y<sub>t</sub> = y<sub>t−1</sub>, so (1 − B) y<sub>t</sub> is one difference and (1 − B<sup>m</sup>) y<sub>t</sub> is a seasonal difference. <strong>φ<sub>p</sub>(B)</strong> is the AR polynomial of order p and <strong>θ<sub>q</sub>(B)</strong> the MA polynomial of order q, acting on adjacent steps. <strong>Φ<sub>P</sub>, Θ<sub>Q</sub></strong> are the same ideas acting at multiples of the season m (lags 12, 24, …). <strong>d, D</strong> count ordinary and seasonal differences. <strong>ε<sub>t</sub></strong> is white noise. The famous "airline model" is SARIMA(0,1,1)(0,1,1)<sub>12</sub>: difference once, seasonally difference once, then one MA term at each scale. It fits an astonishing number of monthly business series.</p>
+</div>
+
+<h3>Choosing the orders</h3>
+<p>The classical route is Box-Jenkins: difference until stationary (that gives d and D), look at ACF/PACF of what remains for p and q, fit, check that the residuals look like white noise, repeat. The modern route is <strong>auto-ARIMA</strong> (the <code>pmdarima</code> package, or a small grid in plain statsmodels): try many (p,d,q)(P,D,Q) combinations, keep the one with the lowest <strong>AIC</strong> (a fit score penalised for parameter count), then check the residuals. On our series a grid over p,q ∈ {0,1,2} and P,Q ∈ {0,1} picks (0,1,1)(0,1,1)<sub>12</sub>, the airline model, with AIC 552.7 versus 554.7 for the (1,1,1)(0,1,1)<sub>12</sub> we use below. The difference is negligible; both forecast almost identically.</p>
+
+<pre class="code" data-lang="python"><code><span class="cm"># ARIMA vs SARIMA, plus a 95% prediction interval from the seasonal model</span>
+<span class="kw">import</span> numpy <span class="kw">as</span> np, pandas <span class="kw">as</span> pd, warnings; warnings.filterwarnings(<span class="st">"ignore"</span>)
+<span class="kw">from</span> statsmodels.tsa.statespace.sarimax <span class="kw">import</span> SARIMAX
+rng = np.random.default_rng(<span class="nu">42</span>); idx = pd.date_range(<span class="st">"2017-01-01"</span>, periods=<span class="nu">96</span>, freq=<span class="st">"MS"</span>); t = np.arange(<span class="nu">96</span>)
+e = rng.normal(<span class="nu">0</span>, <span class="nu">10</span>, size=<span class="nu">96</span>); noise = np.zeros(<span class="nu">96</span>)
+<span class="kw">for</span> i <span class="kw">in</span> <span class="fn">range</span>(<span class="nu">1</span>, <span class="nu">96</span>): noise[i] = <span class="nu">0.6</span> * noise[i - <span class="nu">1</span>] + e[i]
+y = pd.Series(<span class="nu">200</span> + <span class="nu">2.5</span>*t + <span class="nu">40</span>*np.sin(<span class="nu">2</span>*np.pi*(t - <span class="nu">2</span>)/<span class="nu">12</span>) + noise, index=idx, name=<span class="st">"units"</span>)
+train, test = y[:-<span class="nu">12</span>], y[-<span class="nu">12</span>:]
+<span class="kw">def</span> <span class="fn">mae</span>(a, f): <span class="kw">return</span> <span class="fn">float</span>(np.mean(np.abs(np.asarray(a) - np.asarray(f))))
+
+arima  = SARIMAX(train, order=(<span class="nu">1</span>, <span class="nu">1</span>, <span class="nu">1</span>)).fit(disp=<span class="kw">False</span>)
+sarima = SARIMAX(train, order=(<span class="nu">1</span>, <span class="nu">1</span>, <span class="nu">1</span>), seasonal_order=(<span class="nu">0</span>, <span class="nu">1</span>, <span class="nu">1</span>, <span class="nu">12</span>)).fit(disp=<span class="kw">False</span>)
+<span class="fn">print</span>(<span class="st">f"ARIMA(1,1,1)             AIC={arima.aic:6.1f}  MAE={mae(test, arima.forecast(12)):5.1f}"</span>)
+<span class="fn">print</span>(<span class="st">f"SARIMA(1,1,1)(0,1,1)[12] AIC={sarima.aic:6.1f}  MAE={mae(test, sarima.forecast(12)):5.1f}"</span>)
+<span class="fn">print</span>(sarima.params.round(<span class="nu">3</span>).to_string())
+fc = sarima.get_forecast(<span class="nu">12</span>)
+band = fc.conf_int(alpha=<span class="nu">0.05</span>)                       <span class="cm"># 95% prediction interval</span>
+out = pd.concat([fc.predicted_mean.rename(<span class="st">"forecast"</span>), band], axis=<span class="nu">1</span>).round(<span class="nu">1</span>)
+<span class="fn">print</span>(out.iloc[[<span class="nu">0</span>, <span class="nu">5</span>, <span class="nu">11</span>]].to_string())
+<span class="fn">print</span>(<span class="st">"share of actuals inside the 95% band:"</span>, <span class="fn">float</span>(((test &gt;= band.iloc[:,<span class="nu">0</span>]) &amp; (test &lt;= band.iloc[:,<span class="nu">1</span>])).mean()))
+<span class="out"># ARIMA(1,1,1)             AIC= 676.9  MAE= 64.0</span>
+<span class="out"># SARIMA(1,1,1)(0,1,1)[12] AIC= 527.1  MAE=  6.6</span>
+<span class="out"># ar.L1        0.560</span>
+<span class="out"># ma.L1       -0.970</span>
+<span class="out"># ma.S.L12    -0.672</span>
+<span class="out"># sigma2       76.240</span>
+<span class="out">#             forecast  lower units  upper units</span>
+<span class="out"># 2024-01-01     364.4        347.2        381.6</span>
+<span class="out"># 2024-06-01     463.3        441.6        485.0</span>
+<span class="out"># 2024-12-01     393.5        371.5        415.5</span>
+<span class="out"># share of actuals inside the 95% band: 1.0</span></code></pre>
+
+<p>Non-seasonal ARIMA is a disaster here (MAE 64, worse than naive) because it has no way to know about June. Add the seasonal part and it lands at 6.6, tied with seasonal naive plus drift. Two expert readings of the parameters: <code>ar.L1 = 0.56</code> is the model finding the sticky AR(1) noise we built in, and <code>ma.L1 ≈ −0.97</code>, an MA coefficient near −1, is the classic signature of <em>over-differencing</em>: the trend in this series is a deterministic straight line, so first-differencing it was slightly too much and the MA term is undoing it. Harmless for the forecast, but it's why the interval barely widens across the horizon (≈ ±17 at h = 1, ±22 at h = 12); on a genuinely random-walk series the band would fan out much faster.</p>
+
+<h3>When ARIMA is the right tool</h3>
+<ul>
+  <li>One or a few series, tens to a few hundred points, with clear seasonal structure and no rich external drivers: ARIMA/SARIMA and Holt-Winters are excellent, fast, and come with statistically grounded prediction intervals.</li>
+  <li>You need to <em>explain</em> the model to a statistician or an auditor: "AR(1) with seasonal MA" is a sentence; a boosted ensemble is not.</li>
+  <li>Not the right tool when you have hundreds of series, lots of exogenous features (price, promotions, weather), or intermittent counts with many zeros. That's Section 7's territory. (SARIMAX accepts exogenous regressors via <code>exog=</code>, which covers the middle ground of "a few known drivers".)</li>
+</ul>
+
+<div class="callout warn"><div class="title">Common mistake</div>
+<p>Fitting ARIMA on the raw series and reporting the in-sample fit. ARIMA's one-step-ahead <em>fitted values</em> always look great because each one uses the true previous value. The number that matters is the multi-step forecast error on a holdout. Always <code>get_forecast(h)</code> from a fixed origin and score against data the fit never saw.</p>
+</div>
+
+</div></main>
+</div>
+<script src="../assets/chapters.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>
