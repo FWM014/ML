@@ -289,3 +289,129 @@
   <li><strong>Train/serve parity:</strong> the production feature code is the same code (ideally the same pickled pipeline) as the training feature code.</li>
 </ul>
 </div>
+
+<!-- ============================================================ -->
+<h2 id="s3">3. Algorithm master table</h2>
+
+<p>Seventeen algorithms, eleven columns. "Needs scaling" means the algorithm's answer changes if you multiply a feature by 1000 (distance- and gradient-based methods do; tree-based methods don't). "Native NaN" means you can pass missing values without imputing. "Sweet spot" is the data size where the method is usually the right first choice; every method <em>works</em> outside it. Hyperparameter ranges are the ones worth searching in practice, not the full legal range. Scroll sideways on a narrow screen.</p>
+
+<div class="tbl-wrap">
+<table class="tbl" style="font-size:.82rem">
+<thead><tr><th>Algorithm</th><th>Task</th><th>Needs scaling?</th><th>Native categoricals?</th><th>Native NaN?</th><th>Interpretability</th><th>Train speed</th><th>Predict speed</th><th>Sweet spot (rows)</th><th>Key hyperparameters (sensible ranges)</th><th>Ch</th></tr></thead>
+<tbody>
+<tr><td><strong>Linear regression</strong></td><td>Regression</td><td>No for fit; yes to compare coefficients</td><td>No (one-hot)</td><td>No</td><td>High (coefficients)</td><td>Very fast</td><td>Very fast</td><td>10² – 10⁷</td><td>none; consider <code>fit_intercept</code>, polynomial degree 1–3</td><td>5</td></tr>
+<tr><td><strong>Ridge / Lasso / ElasticNet</strong></td><td>Regression (and classification variants)</td><td><strong>Yes</strong> (penalty is scale-dependent)</td><td>No</td><td>No</td><td>High; Lasso selects features</td><td>Very fast</td><td>Very fast</td><td>10² – 10⁷; p ≫ n fine</td><td><code>alpha</code> 10⁻³ – 10³ (log grid); ElasticNet <code>l1_ratio</code> 0.1–0.9</td><td>5, 7</td></tr>
+<tr><td><strong>Logistic regression</strong></td><td>Classification</td><td><strong>Yes</strong></td><td>No</td><td>No</td><td>High (log-odds per unit)</td><td>Fast</td><td>Very fast</td><td>10² – 10⁷</td><td><code>C</code> 10⁻³ – 10² (log grid); <code>penalty</code> l2/l1; <code>class_weight='balanced'</code></td><td>6</td></tr>
+<tr><td><strong>kNN</strong></td><td>Both</td><td><strong>Yes</strong> (distances)</td><td>No</td><td>No</td><td>Medium (show the neighbours)</td><td>Instant (just stores)</td><td>Slow (grows with n)</td><td>10² – 10⁵, low dimension</td><td><code>n_neighbors</code> 3–51 (odd); <code>weights</code> uniform/distance; <code>p</code> 1 or 2</td><td>11</td></tr>
+<tr><td><strong>SVM (RBF)</strong></td><td>Both</td><td><strong>Yes</strong></td><td>No</td><td>No</td><td>Low (kernel); linear SVM medium</td><td>Slow (≈ n²)</td><td>Medium</td><td>10² – 10⁴</td><td><code>C</code> 10⁻² – 10³; <code>gamma</code> 10⁻⁴ – 10 or 'scale'; <code>kernel</code> rbf/linear</td><td>11</td></tr>
+<tr><td><strong>Naive Bayes</strong></td><td>Classification</td><td>No</td><td>Yes (Categorical/Multinomial NB)</td><td>No</td><td>Medium (per-feature likelihoods)</td><td>Very fast</td><td>Very fast</td><td>10² – 10⁷; text bag-of-words</td><td><code>alpha</code> (smoothing) 0.01–10; <code>var_smoothing</code> for Gaussian</td><td>11</td></tr>
+<tr><td><strong>Decision tree</strong></td><td>Both</td><td>No</td><td>No in sklearn (ordinal-encode)</td><td>Yes (sklearn ≥ 1.3)</td><td>Very high when shallow</td><td>Fast</td><td>Very fast</td><td>10² – 10⁶</td><td><code>max_depth</code> 2–12; <code>min_samples_leaf</code> 1–100; <code>ccp_alpha</code> 0–0.05</td><td>9</td></tr>
+<tr><td><strong>Random forest</strong></td><td>Both</td><td>No</td><td>No (ordinal/one-hot)</td><td>Yes (sklearn ≥ 1.4)</td><td>Medium (importances, SHAP)</td><td>Medium, parallel</td><td>Medium (many trees)</td><td>10³ – 10⁶</td><td><code>n_estimators</code> 200–1000; <code>max_features</code> sqrt/0.3–0.8; <code>min_samples_leaf</code> 1–20; <code>max_depth</code> None/8–30</td><td>10</td></tr>
+<tr><td><strong>Gradient boosting</strong> (XGBoost / LightGBM / CatBoost / HistGB)</td><td>Both</td><td>No</td><td>LightGBM, CatBoost, HistGB: yes; XGBoost: yes with <code>enable_categorical</code></td><td>Yes (all four)</td><td>Medium (SHAP is exact and fast for trees)</td><td>Fast (histogram-based)</td><td>Fast</td><td>10³ – 10⁸; the default winner on tables</td><td><code>learning_rate</code> 0.01–0.3; <code>n_estimators</code> 100–5000 with early stopping; <code>max_depth</code> 3–10 / <code>num_leaves</code> 15–255; <code>min_child_weight</code>/<code>min_child_samples</code> 1–100; <code>subsample</code>, <code>colsample_bytree</code> 0.5–1; <code>reg_lambda</code> 0–10</td><td>10, 13</td></tr>
+<tr><td><strong>MLP</strong> (feed-forward net)</td><td>Both</td><td><strong>Yes</strong> (critical)</td><td>No (embed or one-hot)</td><td>No</td><td>Low (use SHAP / permutation)</td><td>Medium–slow</td><td>Fast</td><td>10⁴ – 10⁸; rarely beats boosting on tables</td><td>layers 1–4 × 32–512 units; <code>lr</code> 10⁻⁴ – 10⁻²; dropout 0–0.5; weight decay 10⁻⁵ – 10⁻²; batch 32–512; epochs with early stopping</td><td>15, 16</td></tr>
+<tr><td><strong>CNN</strong></td><td>Vision (classify, detect, segment)</td><td>Yes (normalize pixels)</td><td>n/a</td><td>n/a</td><td>Low (saliency, Grad-CAM)</td><td>Slow (GPU)</td><td>Fast on GPU</td><td>10³ with transfer learning; 10⁵+ from scratch</td><td>backbone (ResNet/EfficientNet), <code>lr</code> 10⁻⁴ – 10⁻² with schedule, augmentation strength, freeze/unfreeze layers, weight decay</td><td>17</td></tr>
+<tr><td><strong>Transformer</strong></td><td>Sequences: text, time series, audio; LLMs</td><td>Yes (layer norm inside; normalize inputs)</td><td>Tokens are categorical by design</td><td>n/a (padding + masks)</td><td>Low (attention maps hint)</td><td>Very slow (GPU, days)</td><td>Medium (quadratic in length)</td><td>Fine-tune: 10³ – 10⁵; pretrain: 10⁹ tokens</td><td><code>d_model</code> 128–1024, heads 4–16, layers 2–24, <code>lr</code> 10⁻⁵ – 10⁻³ with warm-up, dropout 0.1, context length</td><td>18, 19</td></tr>
+<tr><td><strong>k-means</strong></td><td>Clustering</td><td><strong>Yes</strong></td><td>No</td><td>No</td><td>Medium (centroids)</td><td>Fast</td><td>Very fast</td><td>10³ – 10⁷, roundish clusters</td><td><code>n_clusters</code> 2–20 (elbow / silhouette); <code>n_init</code> 10; <code>init='k-means++'</code></td><td>12</td></tr>
+<tr><td><strong>DBSCAN</strong></td><td>Clustering + outliers</td><td><strong>Yes</strong></td><td>No</td><td>No</td><td>Medium</td><td>Medium (≈ n log n)</td><td>n/a (no predict)</td><td>10³ – 10⁶, arbitrary shapes</td><td><code>eps</code> from k-distance plot; <code>min_samples</code> 4–2·dim</td><td>12</td></tr>
+<tr><td><strong>PCA</strong></td><td>Dimensionality reduction</td><td><strong>Yes</strong> (standardize first)</td><td>No</td><td>No</td><td>Medium (loadings)</td><td>Fast</td><td>Very fast</td><td>any; features ≤ 10⁴</td><td><code>n_components</code> by explained variance (0.90–0.99) or 2 for plots; <code>whiten</code></td><td>12</td></tr>
+<tr><td><strong>Isolation Forest</strong></td><td>Anomaly detection</td><td>No</td><td>No</td><td>No</td><td>Low–medium (path length)</td><td>Fast</td><td>Fast</td><td>10³ – 10⁷</td><td><code>contamination</code> 0.001–0.1 (or set threshold on score); <code>n_estimators</code> 100–500; <code>max_samples</code> 256</td><td>22</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="callout pro"><div class="title">At work</div>
+<p>Two rules cover 90% of model choice on tabular data. <strong>Rule 1:</strong> start with a regularized linear model as a baseline and a gradient-boosted tree model as the contender; if boosting beats linear by a lot, the relationship is non-linear and you keep boosting. <strong>Rule 2:</strong> if you have fewer than a thousand rows, or you must explain each prediction to a regulator, the linear model (or a shallow tree) is probably the final answer. Everything else in this table is for specific situations: kNN and SVM for small, clean, low-dimensional problems; Naive Bayes for bag-of-words text; deep nets for images, text and sequences.</p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s4">4. Which model first? Which metric?</h2>
+
+<p>Chapters 10, 13 and 23 each had a version of this decision. Here is the compact form. Follow the arrows; the first leaf you reach is your <em>first</em> model, not your last — always keep a baseline in the comparison.</p>
+
+<figure class="fig">
+<svg viewBox="0 0 900 400" role="img" aria-label="Compact decision flowchart: what is the input? images or text lead to pretrained deep models; tables split on whether there is a label, then on data size and need for explanation, leading to logistic or linear regression, gradient boosting, or clustering and anomaly detection">
+  <defs><marker id="arr-f3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+  <!-- root -->
+  <rect x="350" y="14" width="200" height="40" rx="8" fill="var(--s7)" fill-opacity=".18" stroke="var(--s7)" stroke-width="2"/>
+  <text x="450" y="39" text-anchor="middle" class="lbl-strong" font-size="13">What is the input?</text>
+  <!-- image / text branch -->
+  <path d="M350,34 L200,34 L200,64" class="arrow" marker-end="url(#arr-f3)"/>
+  <text x="275" y="28" text-anchor="middle" class="lbl" font-size="11">image · audio · free text</text>
+  <rect x="90" y="66" width="220" height="44" class="box-accent"/>
+  <text x="200" y="84" text-anchor="middle" class="lbl-strong" font-size="12">Pretrained deep model</text>
+  <text x="200" y="100" text-anchor="middle" class="lbl" font-size="10">fine-tune CNN / Transformer · Ch 17–19</text>
+  <path d="M200,110 L200,130" class="arrow" marker-end="url(#arr-f3)"/>
+  <rect x="90" y="132" width="220" height="44" class="box"/>
+  <text x="200" y="150" text-anchor="middle" class="lbl-strong" font-size="12">Text with an LLM?</text>
+  <text x="200" y="166" text-anchor="middle" class="lbl" font-size="10">prompt → RAG → fine-tune, in that order · Ch 19</text>
+  <!-- sequence branch -->
+  <path d="M550,34 L700,34 L700,64" class="arrow" marker-end="url(#arr-f3)"/>
+  <text x="625" y="28" text-anchor="middle" class="lbl" font-size="11">time series</text>
+  <rect x="590" y="66" width="220" height="44" class="box-accent"/>
+  <text x="700" y="84" text-anchor="middle" class="lbl-strong" font-size="12">Seasonal naive baseline</text>
+  <text x="700" y="100" text-anchor="middle" class="lbl" font-size="10">then ARIMA/ETS or lag features + GBM · Ch 14</text>
+  <!-- table branch -->
+  <path d="M450,54 L450,84" class="arrow" marker-end="url(#arr-f3)"/>
+  <text x="462" y="74" class="lbl" font-size="11">table</text>
+  <rect x="350" y="86" width="200" height="40" rx="8" fill="var(--s7)" fill-opacity=".18" stroke="var(--s7)" stroke-width="2"/>
+  <text x="450" y="111" text-anchor="middle" class="lbl-strong" font-size="13">Is there a label?</text>
+  <!-- no label -->
+  <path d="M550,106 L700,106 L700,124" class="arrow" marker-end="url(#arr-f3)"/>
+  <text x="625" y="100" text-anchor="middle" class="lbl" font-size="11">no</text>
+  <rect x="590" y="126" width="220" height="56" class="box"/>
+  <text x="700" y="144" text-anchor="middle" class="lbl-strong" font-size="12">Unsupervised · Ch 12, 22</text>
+  <text x="700" y="159" text-anchor="middle" class="lbl" font-size="10">groups → k-means / DBSCAN · plots → PCA/UMAP</text>
+  <text x="700" y="173" text-anchor="middle" class="lbl" font-size="10">"weird rows" → Isolation Forest · or go get labels</text>
+  <!-- yes label -->
+  <path d="M450,126 L450,156" class="arrow" marker-end="url(#arr-f3)"/>
+  <text x="462" y="146" class="lbl" font-size="11">yes</text>
+  <rect x="330" y="158" width="240" height="40" rx="8" fill="var(--s7)" fill-opacity=".18" stroke="var(--s7)" stroke-width="2"/>
+  <text x="450" y="183" text-anchor="middle" class="lbl-strong" font-size="13">&lt; 1,000 rows, or must be fully explainable?</text>
+  <!-- yes → linear -->
+  <path d="M330,178 L200,178 L200,214" class="arrow" marker-end="url(#arr-f3)"/>
+  <text x="265" y="172" text-anchor="middle" class="lbl" font-size="11">yes</text>
+  <rect x="90" y="216" width="220" height="56" rx="6" fill="var(--s1)" fill-opacity=".18" stroke="var(--s1)" stroke-width="2"/>
+  <text x="200" y="236" text-anchor="middle" class="lbl-strong" font-size="12">Logistic / Ridge / Lasso</text>
+  <text x="200" y="251" text-anchor="middle" class="lbl" font-size="10">scale → regularize → read coefficients</text>
+  <text x="200" y="265" text-anchor="middle" class="lbl" font-size="10">shallow tree if rules are wanted · Ch 5, 6, 9</text>
+  <!-- no → GBM -->
+  <path d="M450,198 L450,228" class="arrow" marker-end="url(#arr-f3)"/>
+  <text x="462" y="218" class="lbl" font-size="11">no</text>
+  <rect x="330" y="230" width="240" height="56" rx="6" fill="var(--s3)" fill-opacity=".18" stroke="var(--s3)" stroke-width="2"/>
+  <text x="450" y="250" text-anchor="middle" class="lbl-strong" font-size="12">Gradient boosting (LightGBM / XGBoost)</text>
+  <text x="450" y="265" text-anchor="middle" class="lbl" font-size="10">with early stopping + a linear baseline beside it</text>
+  <text x="450" y="279" text-anchor="middle" class="lbl" font-size="10">explain with SHAP · Ch 10, 13, 20</text>
+  <!-- huge / mixed -->
+  <path d="M570,258 L700,258 L700,290" class="arrow" marker-end="url(#arr-f3)"/>
+  <text x="635" y="252" text-anchor="middle" class="lbl" font-size="10">10⁷+ rows or mixed media</text>
+  <rect x="590" y="292" width="220" height="44" class="box"/>
+  <text x="700" y="310" text-anchor="middle" class="lbl-strong" font-size="12">Consider an MLP / embeddings</text>
+  <text x="700" y="326" text-anchor="middle" class="lbl" font-size="10">only if it beats boosting on CV · Ch 15, 16</text>
+  <!-- always band -->
+  <rect x="90" y="352" width="720" height="34" rx="6" fill="var(--s2)" fill-opacity=".14" stroke="var(--s2)"/>
+  <text x="450" y="374" text-anchor="middle" class="lbl-strong" font-size="12">Always: DummyClassifier / DummyRegressor baseline first · same CV for every candidate · one held-out test set touched once</text>
+</svg>
+<figcaption><strong>Figure 24.3 — Which model first.</strong> Input type decides the column, the label decides supervised vs unsupervised, and data size plus explainability decide linear vs boosted trees. The orange bar is non-negotiable: the baseline and the validation scheme are chosen <em>before</em> the model.</figcaption>
+</figure>
+
+<p>Choosing the metric is a separate decision, and it is the one interviewers probe hardest. The rule from Chapter 6: <strong>the metric must reflect the cost of the two kinds of mistakes for the decision that will be made</strong>. The table gives the default per problem type, the formula, and the scikit-learn call.</p>
+
+<div class="tbl-wrap">
+<table class="tbl" style="font-size:.86rem">
+<thead><tr><th>Problem type</th><th>Default metric(s)</th><th>Formula / meaning</th><th>sklearn</th><th>Watch out</th><th>Ch</th></tr></thead>
+<tbody>
+<tr><td><strong>Regression</strong></td><td>MAE, RMSE, R²</td><td>MAE = mean|y − ŷ|; RMSE = √mean(y − ŷ)²; R² = 1 − SS<sub>res</sub>/SS<sub>tot</sub></td><td><code>mean_absolute_error</code>, <code>root_mean_squared_error</code>, <code>r2_score</code></td><td>RMSE punishes big misses; use MAPE only when y ≫ 0; report in business units</td><td>5</td></tr>
+<tr><td><strong>Binary, balanced</strong></td><td>Accuracy + ROC-AUC + log-loss</td><td>Acc = (TP+TN)/N; AUC = P(score<sub>pos</sub> &gt; score<sub>neg</sub>); log-loss = −mean[y log p + (1−y) log(1−p)]</td><td><code>accuracy_score</code>, <code>roc_auc_score</code>, <code>log_loss</code></td><td>AUC is threshold-free; log-loss rewards calibrated probabilities</td><td>6</td></tr>
+<tr><td><strong>Binary, imbalanced</strong></td><td>PR-AUC (average precision), F1 / F<sub>β</sub> at a chosen threshold, recall@precision</td><td>Precision = TP/(TP+FP); Recall = TP/(TP+FN); F1 = 2PR/(P+R); AP = area under PR curve</td><td><code>average_precision_score</code>, <code>f1_score</code>, <code>fbeta_score</code>, <code>precision_recall_curve</code>, <code>matthews_corrcoef</code></td><td>Accuracy is meaningless at 1% positives; ROC-AUC looks fine while precision is terrible; pick the threshold on validation data</td><td>6, 13</td></tr>
+<tr><td><strong>Multiclass</strong></td><td>Macro-F1 (equal class weight) or weighted-F1; accuracy if balanced; confusion matrix always</td><td>Macro-F1 = mean of per-class F1; weighted = weighted by support</td><td><code>f1_score(average='macro')</code>, <code>classification_report</code>, <code>confusion_matrix</code>, <code>roc_auc_score(multi_class='ovr')</code></td><td>Micro-F1 equals accuracy for single-label problems; look at the confusion matrix for confusable pairs</td><td>6</td></tr>
+<tr><td><strong>Ranking / recommendation</strong></td><td>NDCG@k, precision@k, MAP, hit rate</td><td>NDCG@k = DCG@k / ideal DCG@k, DCG = Σ rel<sub>i</sub> / log₂(i+1)</td><td><code>ndcg_score</code>, <code>top_k_accuracy_score</code>; custom for hit rate</td><td>Offline ranking metrics ≠ online CTR; evaluate with an A/B test</td><td>22</td></tr>
+<tr><td><strong>Forecasting</strong></td><td>MAE / RMSE per horizon, MASE, sMAPE</td><td>MASE = MAE / MAE of seasonal-naive on train; sMAPE = mean 2|y−ŷ|/(|y|+|ŷ|)</td><td><code>mean_absolute_error</code> on a <code>TimeSeriesSplit</code>; MASE by hand</td><td>Never random-split time; compare against seasonal naive; error grows with horizon</td><td>14</td></tr>
+<tr><td><strong>Clustering</strong></td><td>Silhouette, Davies–Bouldin (no labels); ARI / NMI (if labels exist)</td><td>Silhouette s = (b − a)/max(a, b): a = mean intra-cluster distance, b = mean distance to nearest other cluster</td><td><code>silhouette_score</code>, <code>davies_bouldin_score</code>, <code>adjusted_rand_score</code></td><td>Internal metrics reward round, well-separated blobs; the real test is whether the segments are actionable</td><td>12</td></tr>
+<tr><td><strong>Probabilities matter</strong> (pricing, triage)</td><td>Brier score, calibration curve</td><td>Brier = mean(p − y)²</td><td><code>brier_score_loss</code>, <code>calibration_curve</code>, <code>CalibratedClassifierCV</code></td><td>Boosted trees and SVMs are often over-confident; calibrate on a separate fold</td><td>13</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="callout eli9"><div class="title">Explain it like I'm 9</div>
+<p>A smoke detector that never beeps is "99.9% accurate" because there is almost never a fire. That is why accuracy is a bad report card for rare things. Instead we ask two questions: when it beeps, was there really a fire (precision)? And when there was a fire, did it beep (recall)? The metric table is just a list of which report card to use for which kind of test.</p>
+</div>
