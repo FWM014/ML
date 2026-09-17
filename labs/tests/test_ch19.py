@@ -13,7 +13,7 @@ def test_task1_tokenize_and_vocab():
     assert lab.tokenize("Error 500 after v4.2 update") == ["error", "500", "after", "v4", "2", "update"]
     assert lab.build_vocab(["a b b", "b c"]) == {"b": 0, "a": 1, "c": 2}
     v = lab.build_vocab(["x y y z z z", "y w"], min_count=2)
-    assert v == {"z": 0, "y": 1}
+    assert v == {"y": 0, "z": 1}  # ties in count -> alphabetical
     texts, _ = lab.make_ticket_corpus()
     v = lab.build_vocab(texts)
     assert v["the"] == 0 and len(v) == len({t for d in texts for t in lab.tokenize(d)})
@@ -35,8 +35,9 @@ def test_task2_bpe_reproduces_the_chapter_merge_sequence():
 
 def test_task2_bpe_merges_only_adjacent_symbols():
     merges, words = lab.bpe_train(["es", "east", "ease"], n_merges=1)
-    assert merges == [("e", "s")]
-    assert dict(words) == {"es </w>": 1, "e a s t </w>": 1, "e a s e </w>": 1}
+    # ("e","a") occurs twice (east, ease); ("e","s") only once -> the most frequent adjacent pair wins
+    assert merges == [("e", "a")]
+    assert dict(words) == {"e s </w>": 1, "ea s t </w>": 1, "ea s e </w>": 1}
 
 
 # ---------------------------------------------------------------- Task 3

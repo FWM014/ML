@@ -15,6 +15,14 @@ Open `index.html` in any browser. No build step, no server, no internet required
 | III · Deep Learning | Advanced | 15 Neural nets from scratch · 16 Training with PyTorch · 17 CNNs · 18 Attention & Transformers · 19 NLP & LLMs |
 | IV · Expert & Production | Expert | 20 Interpretability & SHAP · 21 MLOps · 22 Recsys, anomalies, causality, RL · 23 End-to-end playbook · 24 Cheat sheets, glossary, interviews |
 
+## Labs (VS Code)
+
+Real problems to solve, one per chapter, with pytest tests that go green as you solve them:
+open the folder in VS Code, install `requirements.txt`, then work through `labs/chNN_*.py`
+(see `labs/README.md`). Verified labs exist for chapters 01–09, 11, 15–23 (19 of 24).
+Labs for chapters 10, 12, 13, 14 and 24 are not yet written; `python3 tools/check_labs.py`
+verifies every lab that has a test file.
+
 ## Run the code
 
 ```bash
@@ -31,6 +39,10 @@ assets/style.css      design system (light + dark)
 assets/app.js         sidebar, pager, progress, quizzes, copy buttons
 assets/chapters.js    the chapter manifest (single source of truth)
 tools/check_code.py   runs every code block in a chapter
-tools/shot.js         Playwright screenshot + JS-error check
+tools/shot.js         Playwright screenshot + JS-error check (3rd arg: light | dark)
+tools/audit.py        structural audit of every chapter against AUTHORING.md
+tools/check_labs.py   verifies each lab: starter fails, solution passes
+labs/                 per-chapter problem sets: starter, tests, solutions
+.vscode/              workspace settings, recommended extensions, run configs
 AUTHORING.md          the contract each chapter follows (add new chapters with it)
 ```
