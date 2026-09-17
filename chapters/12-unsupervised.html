@@ -806,7 +806,7 @@ pca2 = <span class="fn">PCA</span>(n_components=<span class="nu">2</span>).<span
   function gauss() { var u = rnd() || 1e-9, v = rnd(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v); }
   var th0 = 25 * Math.PI / 180, pts = [];
   function clamp(v) { return Math.max(-2.3, Math.min(2.3, v)); }
-  for (var i = 0; i < 90; i++) { var a = clamp(gauss()) * 68, b = clamp(gauss()) * 20; pts.push([a * Math.cos(th0) - b * Math.sin(th0), a * Math.sin(th0) + b * Math.cos(th0)]); }
+  for (var i = 0; i < 90; i++) { var a = clamp(gauss()) * 78, b = clamp(gauss()) * 16; pts.push([a * Math.cos(th0) - b * Math.sin(th0), a * Math.sin(th0) + b * Math.cos(th0)]); }
   var mx = 0, my = 0; pts.forEach(function (p) { mx += p[0]; my += p[1]; }); mx /= pts.length; my /= pts.length; pts = pts.map(function (p) { return [p[0] - mx, p[1] - my]; });
   var sxx = 0, syy = 0, sxy = 0; pts.forEach(function (p) { sxx += p[0] * p[0]; syy += p[1] * p[1]; sxy += p[0] * p[1]; });
   var n = pts.length; sxx /= n; syy /= n; sxy /= n; var total = sxx + syy;

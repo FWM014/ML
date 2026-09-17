@@ -534,9 +534,594 @@ out = pd.concat([fc.predicted_mean.rename(<span class="st">"forecast"</span>), b
 <p>Fitting ARIMA on the raw series and reporting the in-sample fit. ARIMA's one-step-ahead <em>fitted values</em> always look great because each one uses the true previous value. The number that matters is the multi-step forecast error on a holdout. Always <code>get_forecast(h)</code> from a fixed origin and score against data the fit never saw.</p>
 </div>
 
+<!-- ============================================================ -->
+<h2 id="s7">7. The ML approach: lag features + boosting</h2>
+
+<p>Here is the idea that turned forecasting into a machine-learning problem and won most recent forecasting competitions (M5 was won by LightGBM ensembles): <strong>rewrite the series as a supervised table.</strong> Each row is one time step. The target is y<sub>t</sub>. The features are things you knew <em>before</em> t: previous values (lags), summaries of previous values (rolling statistics), the calendar (month, day of week, holidays), and external drivers (price, promotions, weather forecasts). Then any regressor from Chapters 5 to 10 can be trained on it. Gradient boosting (Chapter 10) is the usual winner because it handles nonlinearity, interactions and mixed feature types without fuss.</p>
+
+<figure class="fig">
+<svg viewBox="0 0 800 330" role="img" aria-label="A single column of monthly values on the left is unrolled into a supervised table on the right whose columns are lag 1, lag 2, lag 12, a rolling mean, the month, and the target; arrows show how each lag column is the series shifted down.">
+  <defs><marker id="arr-f7" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+  <text x="90" y="24" text-anchor="middle" class="lbl-strong" font-size="13">The series</text>
+  <g class="lbl" font-size="11">
+    <rect x="30" y="36" width="120" height="24" class="fill-surface2" stroke="var(--border)"/><text x="45" y="52">month</text><text x="120" y="52">y</text>
+    <rect x="30" y="60" width="120" height="24" fill="none" stroke="var(--border)"/><text x="45" y="76">2023-09</text><text x="120" y="76">368</text>
+    <rect x="30" y="84" width="120" height="24" fill="none" stroke="var(--border)"/><text x="45" y="100">2023-10</text><text x="120" y="100">343</text>
+    <rect x="30" y="108" width="120" height="24" fill="none" stroke="var(--border)"/><text x="45" y="124">2023-11</text><text x="120" y="124">326</text>
+    <rect x="30" y="132" width="120" height="24" fill="none" stroke="var(--border)"/><text x="45" y="148">2023-12</text><text x="120" y="148">320</text>
+    <rect x="30" y="156" width="120" height="24" fill="var(--accent-soft)" stroke="var(--accent)"/><text x="45" y="172" font-weight="700">2024-01</text><text x="120" y="172" font-weight="700">329</text>
+    <rect x="30" y="180" width="120" height="24" fill="none" stroke="var(--border)"/><text x="45" y="196">2024-02</text><text x="120" y="196">352</text>
+    <text x="90" y="220" text-anchor="middle">⋮</text>
+  </g>
+  <path d="M155,168 L215,168" class="arrow" marker-end="url(#arr-f7)"/>
+  <text x="185" y="160" text-anchor="middle" class="lbl" font-size="10">one row</text>
+  <!-- table -->
+  <text x="510" y="24" text-anchor="middle" class="lbl-strong" font-size="13">The supervised table (one row per time step)</text>
+  <g class="lbl" font-size="11">
+    <rect x="225" y="36" width="70" height="24" class="fill-surface2" stroke="var(--border)"/><text x="260" y="52" text-anchor="middle" font-weight="700">t</text>
+    <rect x="295" y="36" width="70" height="24" fill="var(--accent-soft)" stroke="var(--border)"/><text x="330" y="52" text-anchor="middle" font-weight="700">lag_1</text>
+    <rect x="365" y="36" width="70" height="24" fill="var(--accent-soft)" stroke="var(--border)"/><text x="400" y="52" text-anchor="middle" font-weight="700">lag_2</text>
+    <rect x="435" y="36" width="70" height="24" fill="var(--accent-soft)" stroke="var(--border)"/><text x="470" y="52" text-anchor="middle" font-weight="700">lag_12</text>
+    <rect x="505" y="36" width="90" height="24" fill="var(--accent-soft)" stroke="var(--border)"/><text x="550" y="52" text-anchor="middle" font-weight="700">roll_mean_3</text>
+    <rect x="595" y="36" width="60" height="24" fill="var(--accent-soft)" stroke="var(--border)"/><text x="625" y="52" text-anchor="middle" font-weight="700">month</text>
+    <rect x="655" y="36" width="60" height="24" fill="var(--accent-soft)" stroke="var(--border)"/><text x="685" y="52" text-anchor="middle" font-weight="700">promo</text>
+    <rect x="715" y="36" width="65" height="24" fill="var(--s2)" fill-opacity=".25" stroke="var(--border)"/><text x="747" y="52" text-anchor="middle" font-weight="700">y (target)</text>
+    <!-- rows -->
+    <g><rect x="225" y="60" width="555" height="24" fill="none" stroke="var(--border)"/><text x="260" y="76" text-anchor="middle">2023-11</text><text x="330" y="76" text-anchor="middle">343</text><text x="400" y="76" text-anchor="middle">368</text><text x="470" y="76" text-anchor="middle">301</text><text x="550" y="76" text-anchor="middle">368.3</text><text x="625" y="76" text-anchor="middle">11</text><text x="685" y="76" text-anchor="middle">0</text><text x="747" y="76" text-anchor="middle">326</text></g>
+    <g><rect x="225" y="84" width="555" height="24" fill="none" stroke="var(--border)"/><text x="260" y="100" text-anchor="middle">2023-12</text><text x="330" y="100" text-anchor="middle">326</text><text x="400" y="100" text-anchor="middle">343</text><text x="470" y="100" text-anchor="middle">296</text><text x="550" y="100" text-anchor="middle">345.7</text><text x="625" y="100" text-anchor="middle">12</text><text x="685" y="100" text-anchor="middle">1</text><text x="747" y="100" text-anchor="middle">320</text></g>
+    <g><rect x="225" y="108" width="555" height="24" fill="var(--accent-soft)" stroke="var(--accent)"/><text x="260" y="124" text-anchor="middle" font-weight="700">2024-01</text><text x="330" y="124" text-anchor="middle" font-weight="700">320</text><text x="400" y="124" text-anchor="middle" font-weight="700">326</text><text x="470" y="124" text-anchor="middle" font-weight="700">303</text><text x="550" y="124" text-anchor="middle" font-weight="700">329.7</text><text x="625" y="124" text-anchor="middle" font-weight="700">1</text><text x="685" y="124" text-anchor="middle" font-weight="700">0</text><text x="747" y="124" text-anchor="middle" font-weight="700">329</text></g>
+    <g><rect x="225" y="132" width="555" height="24" fill="none" stroke="var(--border)"/><text x="260" y="148" text-anchor="middle">2024-02</text><text x="330" y="148" text-anchor="middle">329</text><text x="400" y="148" text-anchor="middle">320</text><text x="470" y="148" text-anchor="middle">327</text><text x="550" y="148" text-anchor="middle">325.0</text><text x="625" y="148" text-anchor="middle">2</text><text x="685" y="148" text-anchor="middle">0</text><text x="747" y="148" text-anchor="middle">352</text></g>
+  </g>
+  <!-- annotations -->
+  <text x="330" y="185" text-anchor="middle" class="lbl" font-size="11" fill="var(--s1)">= y shifted</text><text x="330" y="199" text-anchor="middle" class="lbl" font-size="11" fill="var(--s1)">down 1 row</text>
+  <text x="470" y="185" text-anchor="middle" class="lbl" font-size="11" fill="var(--s1)">= y shifted</text><text x="470" y="199" text-anchor="middle" class="lbl" font-size="11" fill="var(--s1)">down 12 rows</text>
+  <text x="550" y="185" text-anchor="middle" class="lbl" font-size="11" fill="var(--s1)">mean of lags</text><text x="550" y="199" text-anchor="middle" class="lbl" font-size="11" fill="var(--s1)">1, 2, 3 only</text>
+  <text x="655" y="185" text-anchor="middle" class="lbl" font-size="11" fill="var(--s3)">calendar and</text><text x="655" y="199" text-anchor="middle" class="lbl" font-size="11" fill="var(--s3)">known drivers</text>
+  <rect x="225" y="225" width="555" height="1" fill="var(--border)"/>
+  <text x="502" y="250" text-anchor="middle" class="lbl-strong" font-size="12">Rule: every feature in the 2024-01 row must be knowable on 2023-12-31.</text>
+  <text x="502" y="270" text-anchor="middle" class="lbl" font-size="11">Lags: yes. Rolling mean of lags: yes. Month: yes. Promo: yes if planned in advance. The row's own y: never.</text>
+  <text x="502" y="300" text-anchor="middle" class="lbl" font-size="11">In pandas: df["lag_k"] = df["y"].shift(k);  df["roll_3"] = df["y"].shift(1).rolling(3).mean()</text>
+</svg>
+<figcaption><strong>Figure 14.7 — The lag matrix.</strong> A series becomes a regression table by shifting it against itself. Once it is a table, every trick from Chapters 8 and 10 applies. The one rule that never bends: each row's features come only from rows above it.</figcaption>
+</figure>
+
+<h3>The feature menu</h3>
+<div class="tbl-wrap">
+<table class="tbl">
+<thead><tr><th>Feature family</th><th>Examples</th><th>What it captures</th><th>Leak risk</th></tr></thead>
+<tbody>
+<tr><td><strong>Lags</strong></td><td><code>lag_1, lag_2, lag_7, lag_12, lag_52</code></td><td>Momentum and seasonality. Choose from the ACF.</td><td>Low, if you <code>shift(k)</code> with k ≥ 1.</td></tr>
+<tr><td><strong>Rolling stats</strong></td><td>mean/std/min/max over the last 3, 7, 28 steps; expanding mean</td><td>Local level and volatility.</td><td><strong>High.</strong> Always <code>shift(1)</code> before <code>rolling()</code>; never <code>center=True</code>.</td></tr>
+<tr><td><strong>Calendar</strong></td><td>month, week of year, day of week, is_month_end, days to payday</td><td>Seasonality the model can learn directly; interacts with lags.</td><td>None.</td></tr>
+<tr><td><strong>Holidays &amp; events</strong></td><td>public holiday flag, days until/since Black Friday, school break</td><td>The spikes that calendar features miss.</td><td>None if the calendar is known in advance.</td></tr>
+<tr><td><strong>Exogenous drivers</strong></td><td>price, promo flag, ad spend, temperature, competitor price</td><td>Causes, not just patterns.</td><td><strong>High.</strong> At forecast time you need their <em>future</em> values; use planned/forecast values, not actuals.</td></tr>
+<tr><td><strong>Target transforms</strong></td><td>y − lag_12, log(y), y / rolling_mean_12</td><td>Lets a tree model forecast beyond the range it has seen.</td><td>Low, but remember to invert.</td></tr>
+</tbody>
+</table>
+</div>
+
+<pre class="code" data-lang="python"><code><span class="cm"># Lag-feature table + gradient boosting, backtested with TimeSeriesSplit (expanding window)</span>
+<span class="kw">import</span> numpy <span class="kw">as</span> np, pandas <span class="kw">as</span> pd
+<span class="kw">from</span> sklearn.ensemble <span class="kw">import</span> HistGradientBoostingRegressor
+<span class="kw">from</span> sklearn.model_selection <span class="kw">import</span> TimeSeriesSplit
+rng = np.random.default_rng(<span class="nu">42</span>); idx = pd.date_range(<span class="st">"2017-01-01"</span>, periods=<span class="nu">96</span>, freq=<span class="st">"MS"</span>); t = np.arange(<span class="nu">96</span>)
+e = rng.normal(<span class="nu">0</span>, <span class="nu">10</span>, size=<span class="nu">96</span>); noise = np.zeros(<span class="nu">96</span>)
+<span class="kw">for</span> i <span class="kw">in</span> <span class="fn">range</span>(<span class="nu">1</span>, <span class="nu">96</span>): noise[i] = <span class="nu">0.6</span> * noise[i - <span class="nu">1</span>] + e[i]
+y = pd.Series(<span class="nu">200</span> + <span class="nu">2.5</span>*t + <span class="nu">40</span>*np.sin(<span class="nu">2</span>*np.pi*(t - <span class="nu">2</span>)/<span class="nu">12</span>) + noise, index=idx, name=<span class="st">"units"</span>)
+<span class="kw">def</span> <span class="fn">mae</span>(a, f): <span class="kw">return</span> <span class="fn">float</span>(np.mean(np.abs(np.asarray(a) - np.asarray(f))))
+
+<span class="kw">def</span> <span class="fn">make_features</span>(s):
+    df = pd.DataFrame({<span class="st">"y"</span>: s})
+    <span class="kw">for</span> lag <span class="kw">in</span> (<span class="nu">1</span>, <span class="nu">2</span>, <span class="nu">3</span>, <span class="nu">12</span>):
+        df[<span class="st">f"lag_{lag}"</span>] = df[<span class="st">"y"</span>].shift(lag)              <span class="cm"># only the PAST</span>
+    df[<span class="st">"roll_mean_3"</span>]  = df[<span class="st">"y"</span>].shift(<span class="nu">1</span>).rolling(<span class="nu">3</span>).mean()  <span class="cm"># shift(1) first: no peeking</span>
+    df[<span class="st">"roll_mean_12"</span>] = df[<span class="st">"y"</span>].shift(<span class="nu">1</span>).rolling(<span class="nu">12</span>).mean()
+    df[<span class="st">"month"</span>] = df.index.month
+    df[<span class="st">"y_minus_lag12"</span>] = df[<span class="st">"y"</span>] - df[<span class="st">"lag_12"</span>]           <span class="cm"># de-trended target</span>
+    <span class="kw">return</span> df.dropna()
+feat = make_features(y)
+cols = [<span class="st">"lag_1"</span>, <span class="st">"lag_2"</span>, <span class="st">"lag_3"</span>, <span class="st">"lag_12"</span>, <span class="st">"roll_mean_3"</span>, <span class="st">"roll_mean_12"</span>, <span class="st">"month"</span>]
+<span class="fn">print</span>(feat[cols + [<span class="st">"y"</span>]].head(<span class="nu">2</span>).round(<span class="nu">1</span>).to_string())
+tscv = TimeSeriesSplit(n_splits=<span class="nu">5</span>, test_size=<span class="nu">12</span>)         <span class="cm"># expanding window, 12-month test folds</span>
+<span class="kw">for</span> target <span class="kw">in</span> (<span class="st">"y"</span>, <span class="st">"y_minus_lag12"</span>):
+    scores = []
+    <span class="kw">for</span> tr, te <span class="kw">in</span> tscv.split(feat):
+        gbm = HistGradientBoostingRegressor(max_iter=<span class="nu">300</span>, learning_rate=<span class="nu">0.05</span>, max_depth=<span class="nu">3</span>, random_state=<span class="nu">0</span>)
+        gbm.fit(feat.iloc[tr][cols], feat.iloc[tr][target])
+        pred = gbm.predict(feat.iloc[te][cols])
+        <span class="kw">if</span> target == <span class="st">"y_minus_lag12"</span>:
+            pred = pred + feat.iloc[te][<span class="st">"lag_12"</span>].values     <span class="cm"># add the anchor back</span>
+        scores.append(mae(feat.iloc[te][<span class="st">"y"</span>], pred))
+    <span class="fn">print</span>(<span class="st">f"target={target:14s} fold MAEs={[round(s,1) for s in scores]}  mean={np.mean(scores):.1f}"</span>)
+<span class="out">#             lag_1  lag_2  lag_3  lag_12  roll_mean_3  roll_mean_12  month      y</span>
+<span class="out"># 2018-01-01  196.2  191.8  190.3   165.4        192.7         208.5      1  201.2</span>
+<span class="out"># 2018-02-01  201.2  196.2  191.8   172.1        196.4         211.5      2  227.3</span>
+<span class="out"># target=y              fold MAEs=[43.8, 56.5, 36.2, 35.1, 32.3]  mean=40.8</span>
+<span class="out"># target=y_minus_lag12  fold MAEs=[9.8, 11.8, 14.4, 8.0, 5.7]  mean=9.9</span></code></pre>
+
+<p>Look at that first line: boosting on the raw target scores <strong>40.8</strong>, worse than seasonal naive. This is the single most common failure of ML forecasting on a growing series, and you need to understand it cold. <strong>Trees cannot extrapolate.</strong> A tree's prediction is always an average of training targets in some leaf. If every training value is below 430 and next June's true value is 470, the model can at best say "about 430". Linear models and ARIMA extend a trend; trees flatten at the edge of what they have seen. The cure is to make the <em>target</em> stationary: predict the change from the same month last year (<code>y − lag_12</code>), let the trees model that, then add <code>lag_12</code> back. Mean MAE drops to 9.9, and on the last fold, our holdout, to 5.7, the best of anything so far. Alternatives that do the same job: predict <code>y − lag_1</code>, predict <code>y / rolling_mean_12</code>, or fit a linear trend first and boost the residuals.</p>
+
+<div class="callout key"><div class="title">Key idea</div>
+<p><strong>Give the tree a target that lives in a stable range.</strong> Growth, inflation, and expanding user bases all push tomorrow's values outside yesterday's range. Differences, ratios and detrended residuals live in a range the model has seen. This one transform separates the forecasting projects that work from the ones that quietly under-forecast every peak.</p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s8">8. Multi-step forecasts and honest backtesting</h2>
+
+<h3>Forecasting more than one step</h3>
+<p>A lag-feature model naturally predicts <em>one step ahead</em>: to predict February you need January's actual value as <code>lag_1</code>. Procurement wants twelve months. Three strategies exist and you must consciously pick one.</p>
+
+<figure class="fig">
+<svg viewBox="0 0 800 330" role="img" aria-label="Three strategies for a 3-step forecast: recursive feeds each prediction back in as the next lag; direct trains one separate model per horizon; multi-output trains one model that emits all three steps at once.">
+  <defs><marker id="arr-f8" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+  <!-- Recursive -->
+  <text x="135" y="24" text-anchor="middle" class="lbl-strong" font-size="13">Recursive</text>
+  <rect x="40" y="40" width="190" height="34" class="box"/><text x="135" y="61" text-anchor="middle" class="lbl">lags of actuals → model → ŷ<tspan font-size="9" dy="3">T+1</tspan></text>
+  <path d="M135,74 L135,96" class="arrow" marker-end="url(#arr-f8)"/>
+  <rect x="40" y="98" width="190" height="34" class="box"/><text x="135" y="119" text-anchor="middle" class="lbl">lags incl. ŷ<tspan font-size="9" dy="3">T+1</tspan><tspan dy="-3"> → model → ŷ</tspan><tspan font-size="9" dy="3">T+2</tspan></text>
+  <path d="M135,132 L135,154" class="arrow" marker-end="url(#arr-f8)"/>
+  <rect x="40" y="156" width="190" height="34" class="box"/><text x="135" y="177" text-anchor="middle" class="lbl">lags incl. ŷ<tspan font-size="9" dy="3">T+1</tspan><tspan dy="-3">, ŷ</tspan><tspan font-size="9" dy="3">T+2</tspan><tspan dy="-3"> → ŷ</tspan><tspan font-size="9" dy="3">T+3</tspan></text>
+  <text x="135" y="220" text-anchor="middle" class="lbl" font-size="11">One model. Any horizon.</text>
+  <text x="135" y="236" text-anchor="middle" class="lbl" font-size="11">Errors compound: a miss at</text>
+  <text x="135" y="252" text-anchor="middle" class="lbl" font-size="11">T+1 pollutes every later lag.</text>
+  <text x="135" y="272" text-anchor="middle" class="lbl-strong" font-size="11" fill="var(--s1)">Default for short horizons</text>
+  <!-- Direct -->
+  <text x="400" y="24" text-anchor="middle" class="lbl-strong" font-size="13">Direct</text>
+  <rect x="305" y="40" width="190" height="34" class="box"/><text x="400" y="61" text-anchor="middle" class="lbl">lags of actuals → model<tspan font-size="9" dy="3">h=1</tspan><tspan dy="-3"> → ŷ</tspan><tspan font-size="9" dy="3">T+1</tspan></text>
+  <rect x="305" y="98" width="190" height="34" class="box"/><text x="400" y="119" text-anchor="middle" class="lbl">lags of actuals → model<tspan font-size="9" dy="3">h=2</tspan><tspan dy="-3"> → ŷ</tspan><tspan font-size="9" dy="3">T+2</tspan></text>
+  <rect x="305" y="156" width="190" height="34" class="box"/><text x="400" y="177" text-anchor="middle" class="lbl">lags of actuals → model<tspan font-size="9" dy="3">h=3</tspan><tspan dy="-3"> → ŷ</tspan><tspan font-size="9" dy="3">T+3</tspan></text>
+  <text x="400" y="220" text-anchor="middle" class="lbl" font-size="11">H separate models, each trained</text>
+  <text x="400" y="236" text-anchor="middle" class="lbl" font-size="11">on target shifted by h. No error</text>
+  <text x="400" y="252" text-anchor="middle" class="lbl" font-size="11">compounding; H× the training cost.</text>
+  <text x="400" y="272" text-anchor="middle" class="lbl-strong" font-size="11" fill="var(--s2)">Best accuracy at long horizons</text>
+  <!-- Multi-output -->
+  <text x="665" y="24" text-anchor="middle" class="lbl-strong" font-size="13">Multi-output</text>
+  <rect x="570" y="80" width="190" height="70" class="box-accent"/>
+  <text x="665" y="105" text-anchor="middle" class="lbl">lags of actuals → one model</text>
+  <text x="665" y="125" text-anchor="middle" class="lbl">→ [ŷ<tspan font-size="9" dy="3">T+1</tspan><tspan dy="-3">, ŷ</tspan><tspan font-size="9" dy="3">T+2</tspan><tspan dy="-3">, ŷ</tspan><tspan font-size="9" dy="3">T+3</tspan><tspan dy="-3">]</tspan></text>
+  <text x="665" y="220" text-anchor="middle" class="lbl" font-size="11">One model emits the whole path.</text>
+  <text x="665" y="236" text-anchor="middle" class="lbl" font-size="11">Natural for neural nets and</text>
+  <text x="665" y="252" text-anchor="middle" class="lbl" font-size="11">MultiOutputRegressor wrappers.</text>
+  <text x="665" y="272" text-anchor="middle" class="lbl-strong" font-size="11" fill="var(--s3)">Keeps the shape of the path coherent</text>
+  <line x1="270" y1="35" x2="270" y2="290" class="grid" stroke-dasharray="4 4"/><line x1="535" y1="35" x2="535" y2="290" class="grid" stroke-dasharray="4 4"/>
+  <text x="400" y="315" text-anchor="middle" class="lbl">Rule of thumb: recursive for h ≤ 3 seasons of lags; direct when horizon errors matter unequally (e.g. quarter-end).</text>
+</svg>
+<figcaption><strong>Figure 14.8 — Three ways to forecast 3 steps.</strong> Recursive re-uses one model and feeds predictions back as lags; direct trains one model per horizon; multi-output predicts the whole path at once. The comparison table in Section 9 uses the recursive strategy for the boosting model.</figcaption>
+</figure>
+
+<h3>Backtesting: the only evaluation that counts</h3>
+<p>A single train/test split gives you one number from one forecast origin. Was December 2023 a lucky origin? You can't tell. <strong>Backtesting</strong> (also called <em>rolling-origin evaluation</em> or <em>time-series cross-validation</em>) repeats the experiment from several origins and averages, exactly mirroring how the model will be used: refit, forecast h steps, move forward, repeat.</p>
+
+<figure class="fig">
+<svg viewBox="0 0 800 330" role="img" aria-label="Top: expanding-window folds where the training block grows and a fixed-size test block moves right. Bottom: sliding-window folds where the training block keeps a constant length. A gap between train and test is shown in one fold.">
+  <text x="20" y="24" class="lbl-strong" font-size="13">Expanding window (TimeSeriesSplit default): training set grows</text>
+  <g>
+    <text x="20" y="54" class="lbl" font-size="11">fold 1</text><rect x="70" y="42" width="180" height="16" fill="var(--s1)"/><rect x="252" y="42" width="60" height="16" fill="var(--s2)"/>
+    <text x="20" y="80" class="lbl" font-size="11">fold 2</text><rect x="70" y="68" width="242" height="16" fill="var(--s1)"/><rect x="314" y="68" width="60" height="16" fill="var(--s2)"/>
+    <text x="20" y="106" class="lbl" font-size="11">fold 3</text><rect x="70" y="94" width="304" height="16" fill="var(--s1)"/><rect x="376" y="94" width="60" height="16" fill="var(--s2)"/>
+    <text x="20" y="132" class="lbl" font-size="11">fold 4</text><rect x="70" y="120" width="366" height="16" fill="var(--s1)"/><rect x="438" y="120" width="60" height="16" fill="var(--s2)"/>
+    <text x="20" y="158" class="lbl" font-size="11">fold 5</text><rect x="70" y="146" width="428" height="16" fill="var(--s1)"/><rect x="500" y="146" width="60" height="16" fill="var(--s2)"/>
+  </g>
+  <text x="600" y="54" class="lbl" font-size="11">Uses all history: good when the</text>
+  <text x="600" y="70" class="lbl" font-size="11">process is stable. Later folds have</text>
+  <text x="600" y="86" class="lbl" font-size="11">more data, so their scores tend to</text>
+  <text x="600" y="102" class="lbl" font-size="11">be better than early ones.</text>
+  <line x1="70" y1="172" x2="560" y2="172" class="axis"/><text x="70" y="188" class="lbl" font-size="10">2017</text><text x="560" y="188" text-anchor="end" class="lbl" font-size="10">2024</text>
+
+  <text x="20" y="216" class="lbl-strong" font-size="13">Sliding window (max_train_size=36): training set keeps a fixed length</text>
+  <g>
+    <text x="20" y="246" class="lbl" font-size="11">fold 1</text><rect x="70" y="234" width="180" height="16" fill="var(--s1)"/><rect x="252" y="234" width="60" height="16" fill="var(--s2)"/>
+    <text x="20" y="272" class="lbl" font-size="11">fold 2</text><rect x="132" y="260" width="180" height="16" fill="var(--s1)"/><rect x="314" y="260" width="60" height="16" fill="var(--s2)"/>
+    <text x="20" y="298" class="lbl" font-size="11">fold 3</text><rect x="194" y="286" width="180" height="16" fill="var(--s1)"/><rect x="392" y="286" width="60" height="16" fill="var(--s2)"/>
+    <rect x="374" y="286" width="18" height="16" fill="var(--s7)" fill-opacity=".35"/><text x="383" y="318" text-anchor="middle" class="lbl" font-size="10" fill="var(--s7)">gap</text>
+  </g>
+  <text x="600" y="246" class="lbl" font-size="11">Forgets old regimes: better when</text>
+  <text x="600" y="262" class="lbl" font-size="11">the process drifts. The gap (violet)</text>
+  <text x="600" y="278" class="lbl" font-size="11">mimics a reporting delay: you fore-</text>
+  <text x="600" y="294" class="lbl" font-size="11">cast March on data through January.</text>
+  <rect x="600" y="306" width="12" height="10" fill="var(--s1)"/><text x="617" y="315" class="lbl" font-size="10">train</text>
+  <rect x="655" y="306" width="12" height="10" fill="var(--s2)"/><text x="672" y="315" class="lbl" font-size="10">test (h = 12)</text>
+</svg>
+<figcaption><strong>Figure 14.9 — Expanding versus sliding backtests.</strong> <code>TimeSeriesSplit(n_splits, test_size, max_train_size, gap)</code> produces both. Set <code>test_size</code> to your real forecast horizon and <code>gap</code> to your real data latency; then the backtest score is a preview of production, not an optimistic guess.</figcaption>
+</figure>
+
+<p>Three parameters matter and each maps to something operational:</p>
+<ul>
+  <li><strong>Horizon (test_size).</strong> Make it the horizon the business needs. A 1-step backtest tells you nothing about 12-step accuracy; error typically grows with h, sometimes sharply.</li>
+  <li><strong>Gap.</strong> If sales data arrives with a 2-week lag and you forecast on the 1st of the month, the most recent lag you actually have is older than <code>lag_1</code>. Set <code>gap=</code> to that delay (in steps) or your features will use data that won't exist at forecast time.</li>
+  <li><strong>Window.</strong> Expanding uses everything; sliding (<code>max_train_size</code>) uses the last N steps only. If the business changed (new pricing, new channel, pandemic), sliding often wins. Try both; the backtest will tell you.</li>
+</ul>
+
+<div class="callout warn"><div class="title">Common mistake</div>
+<p>Tuning hyperparameters with <code>GridSearchCV</code> and its default <code>KFold</code>. It shuffles. Always pass <code>cv=TimeSeriesSplit(...)</code> to any sklearn search on time-series data, and remember that even then the fold scores are correlated (each fold shares most of its training data with the next), so don't read the standard deviation across folds as if they were independent.</p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s9">9. Metrics and prediction intervals</h2>
+
+<h3>Which error to report</h3>
+<div class="callout math"><div class="title">The math: forecast metrics</div>
+<div class="formula">MAE = (1/h) ∑ |y<sub>t</sub> − ŷ<sub>t</sub>| &nbsp;&nbsp;&nbsp;&nbsp; RMSE = √[(1/h) ∑ (y<sub>t</sub> − ŷ<sub>t</sub>)<sup>2</sup>]</div>
+<div class="formula">MAPE = (100/h) ∑ |y<sub>t</sub> − ŷ<sub>t</sub>| / |y<sub>t</sub>| &nbsp;&nbsp;&nbsp;&nbsp; sMAPE = (100/h) ∑ 2|y<sub>t</sub> − ŷ<sub>t</sub>| / (|y<sub>t</sub>| + |ŷ<sub>t</sub>|)</div>
+<div class="formula">MASE = MAE / [ (1/(n−m)) ∑<sub>t=m+1</sub><sup>n</sup> |y<sub>t</sub> − y<sub>t−m</sub>| ]</div>
+<p>Sums run over the h forecast steps; <strong>y<sub>t</sub></strong> is the actual, <strong>ŷ<sub>t</sub></strong> the forecast. <strong>MAE</strong> is the average miss in the series' own units. <strong>RMSE</strong> squares before averaging, so it punishes big misses more and is pulled up by outliers. <strong>MAPE</strong> divides each miss by the actual: a percentage, easy to communicate, but undefined when y<sub>t</sub> = 0, explodes when y<sub>t</sub> is tiny, and penalises over-forecasts more than under-forecasts (an error of 10 on an actual of 50 is 20%; the same error on an actual of 30 is 33%). <strong>sMAPE</strong> divides by the average of actual and forecast, which bounds it at 200% and treats over/under more symmetrically, but it is still unstable near zero. <strong>MASE</strong> divides MAE by the in-sample MAE of the seasonal naive forecast (m = 12 for monthly, use m = 1 for the plain naive): <em>MASE &lt; 1 means you beat the naive benchmark</em>, and it is scale-free, so you can average it across products with very different volumes.</p>
+</div>
+
+<div class="tbl-wrap">
+<table class="tbl">
+<thead><tr><th>Metric</th><th>Use it when…</th><th>Avoid it when…</th></tr></thead>
+<tbody>
+<tr><td><strong>MAE</strong></td><td>You want the plain answer "how many units are we typically off by". Optimising it targets the <em>median</em>.</td><td>Series have wildly different scales and you need one number across them.</td></tr>
+<tr><td><strong>RMSE</strong></td><td>Big misses are disproportionately costly (stock-outs, capacity). Optimising it targets the <em>mean</em>.</td><td>Data has spikes you can't predict; a few outliers will dominate.</td></tr>
+<tr><td><strong>MAPE</strong></td><td>Executives want a percentage and every actual is comfortably above zero (revenue, traffic).</td><td>Any actual can be zero or near zero: intermittent demand, new products, daily counts.</td></tr>
+<tr><td><strong>sMAPE</strong></td><td>Comparing to published benchmarks that use it (M3, M4 competitions).</td><td>Zeros are still common; also hard to explain to non-specialists.</td></tr>
+<tr><td><strong>MASE</strong></td><td>Comparing across many series of different scales; reporting "× better than naive". The safest default for global models.</td><td>Your audience needs units or percentages; translate it for them.</td></tr>
+<tr><td><strong>Pinball / quantile loss</strong></td><td>You ship prediction intervals and want to score them (Section 9, below).</td><td>You only produce point forecasts.</td></tr>
+</tbody>
+</table>
+</div>
+
+<pre class="code" data-lang="python"><code><span class="cm"># Every method on the same 12-month holdout, every metric. The comparison table.</span>
+<span class="kw">import</span> numpy <span class="kw">as</span> np, pandas <span class="kw">as</span> pd, warnings; warnings.filterwarnings(<span class="st">"ignore"</span>)
+<span class="kw">from</span> statsmodels.tsa.holtwinters <span class="kw">import</span> ExponentialSmoothing
+<span class="kw">from</span> statsmodels.tsa.statespace.sarimax <span class="kw">import</span> SARIMAX
+<span class="kw">from</span> sklearn.ensemble <span class="kw">import</span> HistGradientBoostingRegressor
+rng = np.random.default_rng(<span class="nu">42</span>); idx = pd.date_range(<span class="st">"2017-01-01"</span>, periods=<span class="nu">96</span>, freq=<span class="st">"MS"</span>); t = np.arange(<span class="nu">96</span>)
+e = rng.normal(<span class="nu">0</span>, <span class="nu">10</span>, size=<span class="nu">96</span>); noise = np.zeros(<span class="nu">96</span>)
+<span class="kw">for</span> i <span class="kw">in</span> <span class="fn">range</span>(<span class="nu">1</span>, <span class="nu">96</span>): noise[i] = <span class="nu">0.6</span> * noise[i - <span class="nu">1</span>] + e[i]
+y = pd.Series(<span class="nu">200</span> + <span class="nu">2.5</span>*t + <span class="nu">40</span>*np.sin(<span class="nu">2</span>*np.pi*(t - <span class="nu">2</span>)/<span class="nu">12</span>) + noise, index=idx, name=<span class="st">"units"</span>)
+train, test = y[:-<span class="nu">12</span>], y[-<span class="nu">12</span>:]
+
+<span class="kw">def</span> <span class="fn">mae</span>(a, f):   a, f = np.asarray(a), np.asarray(f); <span class="kw">return</span> np.mean(np.abs(a - f))
+<span class="kw">def</span> <span class="fn">rmse</span>(a, f):  a, f = np.asarray(a), np.asarray(f); <span class="kw">return</span> np.sqrt(np.mean((a - f) ** <span class="nu">2</span>))
+<span class="kw">def</span> <span class="fn">mape</span>(a, f):  a, f = np.asarray(a), np.asarray(f); <span class="kw">return</span> <span class="nu">100</span> * np.mean(np.abs((a - f) / a))
+<span class="kw">def</span> <span class="fn">smape</span>(a, f): a, f = np.asarray(a), np.asarray(f); <span class="kw">return</span> <span class="nu">100</span> * np.mean(<span class="nu">2</span> * np.abs(f - a) / (np.abs(a) + np.abs(f)))
+<span class="kw">def</span> <span class="fn">mase</span>(a, f, train, m=<span class="nu">12</span>):
+    scale = np.mean(np.abs(train.values[m:] - train.values[:-m]))   <span class="cm"># in-sample seasonal-naive MAE</span>
+    <span class="kw">return</span> mae(a, f) / scale
+
+fc = {}
+slope = (train.iloc[-<span class="nu">1</span>] - train.iloc[<span class="nu">0</span>]) / (<span class="fn">len</span>(train) - <span class="nu">1</span>)
+fc[<span class="st">"seasonal naive"</span>]         = train.iloc[-<span class="nu">12</span>:].values
+fc[<span class="st">"seasonal naive + drift"</span>] = train.iloc[-<span class="nu">12</span>:].values + <span class="nu">12</span> * slope
+fc[<span class="st">"Holt-Winters"</span>] = ExponentialSmoothing(train, trend=<span class="st">"add"</span>, seasonal=<span class="st">"add"</span>, seasonal_periods=<span class="nu">12</span>,
+                                          initialization_method=<span class="st">"estimated"</span>).fit().forecast(<span class="nu">12</span>).values
+fc[<span class="st">"SARIMA"</span>] = SARIMAX(train, order=(<span class="nu">1</span>,<span class="nu">1</span>,<span class="nu">1</span>), seasonal_order=(<span class="nu">0</span>,<span class="nu">1</span>,<span class="nu">1</span>,<span class="nu">12</span>)).fit(disp=<span class="kw">False</span>).forecast(<span class="nu">12</span>).values
+<span class="cm"># GBM on de-trended target, recursive 12-step forecast</span>
+df = pd.DataFrame({<span class="st">"y"</span>: train})
+<span class="kw">for</span> k <span class="kw">in</span> (<span class="nu">1</span>, <span class="nu">2</span>, <span class="nu">3</span>, <span class="nu">12</span>): df[<span class="st">f"lag_{k}"</span>] = df[<span class="st">"y"</span>].shift(k)
+df[<span class="st">"roll_mean_3"</span>] = df[<span class="st">"y"</span>].shift(<span class="nu">1</span>).rolling(<span class="nu">3</span>).mean(); df[<span class="st">"roll_mean_12"</span>] = df[<span class="st">"y"</span>].shift(<span class="nu">1</span>).rolling(<span class="nu">12</span>).mean()
+df[<span class="st">"month"</span>] = df.index.month; df = df.dropna()
+cols = [<span class="st">"lag_1"</span>,<span class="st">"lag_2"</span>,<span class="st">"lag_3"</span>,<span class="st">"lag_12"</span>,<span class="st">"roll_mean_3"</span>,<span class="st">"roll_mean_12"</span>,<span class="st">"month"</span>]
+gbm = HistGradientBoostingRegressor(max_iter=<span class="nu">300</span>, learning_rate=<span class="nu">0.05</span>, max_depth=<span class="nu">3</span>, random_state=<span class="nu">0</span>)
+gbm.fit(df[cols], df[<span class="st">"y"</span>] - df[<span class="st">"lag_12"</span>])
+hist = train.copy()
+<span class="kw">for</span> d <span class="kw">in</span> test.index:                                    <span class="cm"># recursive: feed each forecast back in</span>
+    row = {<span class="st">f"lag_{k}"</span>: hist.iloc[-k] <span class="kw">for</span> k <span class="kw">in</span> (<span class="nu">1</span>, <span class="nu">2</span>, <span class="nu">3</span>, <span class="nu">12</span>)}
+    row.update(roll_mean_3=hist.iloc[-<span class="nu">3</span>:].mean(), roll_mean_12=hist.iloc[-<span class="nu">12</span>:].mean(), month=d.month)
+    hist.loc[d] = gbm.predict(pd.DataFrame([row])[cols])[<span class="nu">0</span>] + row[<span class="st">"lag_12"</span>]
+fc[<span class="st">"GBM (lags, recursive)"</span>] = hist[test.index].values
+
+<span class="fn">print</span>(<span class="st">f"{'method':24s} {'MAE':&gt;6s} {'RMSE':&gt;6s} {'MAPE':&gt;6s} {'sMAPE':&gt;6s} {'MASE':&gt;6s}"</span>)
+<span class="kw">for</span> name, f <span class="kw">in</span> fc.items():
+    <span class="fn">print</span>(<span class="st">f"{name:24s} {mae(test,f):6.1f} {rmse(test,f):6.1f} {mape(test,f):5.1f}% {smape(test,f):5.1f}% {mase(test,f,train):6.2f}"</span>)
+<span class="out"># method                      MAE   RMSE   MAPE  sMAPE   MASE</span>
+<span class="out"># seasonal naive             27.7   28.7   6.6%   6.8%   0.91</span>
+<span class="out"># seasonal naive + drift      6.5    7.3   1.6%   1.6%   0.21</span>
+<span class="out"># Holt-Winters               10.0   11.5   2.4%   2.4%   0.33</span>
+<span class="out"># SARIMA                      6.6    8.6   1.6%   1.6%   0.22</span>
+<span class="out"># GBM (lags, recursive)       5.7    7.8   1.4%   1.4%   0.19</span></code></pre>
+
+<p>Three lessons from the table. First, the ranking is consistent across metrics here, but it will not always be; when MAE and RMSE disagree, one method is making a few large misses. Second, the enhanced baseline is within a whisker of the best model. On a clean series like this one, that's expected: there is only so much signal, and the noise floor (residual std ≈ 7) caps everyone. The boosting model earns its keep on messier real data with promotions, price changes and multiple series, where its features can carry information the classical models cannot see. Third, <strong>this table is from one origin</strong>. Before you believe the 5.7 versus 6.5 ordering, run the five-fold backtest of Section 8 for every method. (The fold-by-fold GBM numbers were 9.8, 11.8, 14.4, 8.0, 5.7: the last fold was its easiest.)</p>
+
+<h3>Why point forecasts aren't enough</h3>
+<p>Procurement does not need "463 units in June". They need "somewhere between 440 and 485, and we'll size safety stock to the top of that range". A forecast without a range is a guess wearing a suit. <strong>Prediction intervals</strong> express how wrong you expect to be, and they must widen with the horizon, because uncertainty accumulates.</p>
+
+<figure class="fig">
+<svg viewBox="0 0 800 280" role="img" aria-label="A fan chart: the last three years of actuals, then a twelve-month forecast line with an 80 percent band and a wider 95 percent band around it; the actual test values sit inside the bands.">
+  <line x1="50" y1="220" x2="660" y2="220" class="axis"/><line x1="50" y1="40" x2="50" y2="220" class="axis"/>
+  <text x="44" y="44" text-anchor="end" class="lbl" font-size="10">500</text><text x="44" y="132" text-anchor="end" class="lbl" font-size="10">390</text><text x="44" y="223" text-anchor="end" class="lbl" font-size="10">280</text>
+  <line x1="506" y1="40" x2="506" y2="220" stroke="var(--s7)" stroke-width="1.5" stroke-dasharray="5 4"/>
+  <text x="503" y="35" text-anchor="end" class="lbl" fill="var(--s7)" font-weight="700" font-size="11">forecast origin</text>
+  <polygon points="512,137 525,117 537,95 550,71 562,60 575,52 587,54 600,67 612,79 625,95 637,107 650,109 650,145 637,143 625,131 612,115 600,103 587,89 575,88 562,95 550,106 537,129 525,150 512,165" fill="var(--s1)" fill-opacity=".15"/>
+  <polygon points="512,142 525,123 537,101 550,77 562,66 575,58 587,60 600,73 612,85 625,101 637,113 650,115 650,139 637,137 625,125 612,108 600,97 587,83 575,82 562,89 550,100 537,123 525,144 512,160" fill="var(--s1)" fill-opacity=".28"/>
+  <polyline points="50,206 63,195 76,177 89,156 101,157 114,151 127,154 140,166 153,179 166,178 179,198 191,191 204,201 217,186 230,163 243,138 256,119 269,109 281,118 294,134 307,140 320,159 333,180 346,188 359,183 371,158 384,136 397,111 410,103 423,94 436,92 449,107 461,118 474,139 487,151 500,154" fill="none" stroke="var(--ink-2)" stroke-width="2"/>
+  <polyline points="512,151 525,134 537,112 550,89 562,77 575,70 587,71 600,85 612,97 625,113 637,125 650,127" fill="none" stroke="var(--s1)" stroke-width="2.5"/>
+  <g fill="var(--ink)"><circle cx="512" cy="155" r="3.5"/><circle cx="525" cy="132" r="3.5"/><circle cx="537" cy="116" r="3.5"/><circle cx="550" cy="95" r="3.5"/><circle cx="562" cy="75" r="3.5"/><circle cx="575" cy="66" r="3.5"/><circle cx="587" cy="65" r="3.5"/><circle cx="600" cy="79" r="3.5"/><circle cx="612" cy="98" r="3.5"/><circle cx="625" cy="113" r="3.5"/><circle cx="637" cy="136" r="3.5"/><circle cx="650" cy="144" r="3.5"/></g>
+  <text x="80" y="245" class="lbl">Jan 2021</text><text x="500" y="245" text-anchor="middle" class="lbl">Dec 2023</text><text x="650" y="245" text-anchor="end" class="lbl">Dec 2024</text>
+  <g font-size="11">
+    <line x1="680" y1="60" x2="700" y2="60" stroke="var(--ink-2)" stroke-width="2"/><text x="706" y="64" class="lbl">history</text>
+    <line x1="680" y1="82" x2="700" y2="82" stroke="var(--s1)" stroke-width="2.5"/><text x="706" y="86" class="lbl">SARIMA mean</text>
+    <rect x="680" y="98" width="20" height="10" fill="var(--s1)" fill-opacity=".28"/><text x="706" y="108" class="lbl">80% interval</text>
+    <rect x="680" y="120" width="20" height="10" fill="var(--s1)" fill-opacity=".15"/><text x="706" y="130" class="lbl">95% interval</text>
+    <circle cx="690" cy="147" r="3.5" fill="var(--ink)"/><text x="706" y="151" class="lbl">actual (holdout)</text>
+  </g>
+  <text x="400" y="270" text-anchor="middle" class="lbl">Plan stock to the upper band, budget to the mean, flag a review if actuals leave the 95% band.</text>
+</svg>
+<figcaption><strong>Figure 14.10 — The fan chart.</strong> The SARIMA point forecast with its 80% and 95% prediction intervals. All twelve holdout actuals fall inside the 95% band, which is what a well-calibrated interval should do about 95% of the time. The band's job is to turn "the forecast was wrong" into "the forecast was wrong by more than we said it could be", which is a much rarer and more useful event.</figcaption>
+</figure>
+
+<p>Where intervals come from, by method:</p>
+<ul>
+  <li><strong>Statistical models</strong> (ARIMA, ETS): analytic, from the fitted noise variance; <code>get_forecast(h).conf_int()</code> or <code>simulate()</code>. Free, but only as good as the model's assumptions (Gaussian, constant variance).</li>
+  <li><strong>Backtest residuals</strong>: collect the h-step errors from your rolling-origin backtest and use their empirical quantiles per horizon. Model-agnostic, honest, and it widens naturally with h. This is what I recommend for boosting models.</li>
+  <li><strong>Quantile regression</strong>: <code>HistGradientBoostingRegressor(loss="quantile", quantile=0.9)</code> trains a model that predicts the 90th percentile directly; fit one for 0.1 too and you have an 80% band. Scored with the pinball loss.</li>
+  <li><strong>Conformal prediction</strong>: a modern wrapper that calibrates any model's intervals on a held-out block to guarantee coverage. Worth knowing the name; Chapter 21 touches on it.</li>
+</ul>
+
+<div class="callout pro"><div class="title">At work</div>
+<p>Always report <em>coverage</em> alongside accuracy: "the 80% band contained 78% of actuals over the last 24 months". A band that captures 100% is too wide (someone is over-ordering); one that captures 50% is theatre. And translate the band into the decision: stock to the upper quantile that matches the cost ratio of stock-outs versus overstock (the newsvendor rule), don't stock to the mean.</p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s10">10. Leakage traps, global models, deep learning, anomalies</h2>
+
+<h3>Leakage traps specific to time</h3>
+<p>Chapter 8 covered leakage in general. Time series adds its own species, and they are sneaky because the code looks reasonable.</p>
+<div class="grid2">
+  <div class="card bad"><h4>rolling(…, center=True)</h4><p>A centred window averages the 3 values <em>after</em> t with the 3 before. It's a great smoother for plotting and a catastrophic feature: it contains the future. Use trailing windows on the shifted series: <code>y.shift(1).rolling(k)</code>.</p></div>
+  <div class="card bad"><h4>Features derived from the target</h4><p>"Average sales this month" as a feature for daily sales, "yearly total" as a feature for monthly. Any aggregate that includes the row's own y, or later rows, is leakage. Aggregate only over strictly earlier rows.</p></div>
+  <div class="card bad"><h4>Scaling on the whole series</h4><p><code>StandardScaler().fit(y)</code> before splitting uses the test period's mean and variance. On a trending series the future mean is higher, and that alone tells the model "values will rise". Fit scalers on the training window inside each fold, as always.</p></div>
+  <div class="card bad"><h4>Exogenous actuals</h4><p>Training with actual temperature or actual ad spend, then forecasting with… actual values you won't have. Train with the <em>forecast</em> or <em>planned</em> version of every driver, or lag the driver enough that it's known.</p></div>
+  <div class="card bad"><h4>Data revisions</h4><p>Finance and public data get revised. The value you see for March today is not the value you'd have had in April. If revisions are large, backtest on the vintages that were actually available (a "point-in-time" dataset).</p></div>
+  <div class="card bad"><h4>Dropping NaN rows after lagging, then shuffling</h4><p>Even with lag features built correctly, a <code>train_test_split</code> without <code>shuffle=False</code> puts adjacent rows on both sides. Rows 40 and 41 share 11 of 12 lag values.</p></div>
+</div>
+
+<h3>Global models: one model, many series</h3>
+<p>Real forecasting problems are rarely one series. They're 2,000 SKUs × 50 stores, or every customer's monthly usage. Fitting 100,000 SARIMAs is slow, and most of those series are short and noisy on their own. The modern answer is a <strong>global model</strong>: stack all series into one long table (Figure 14.7 with an extra column for series ID), add the ID and its attributes (category, store size, region) as features, and train <em>one</em> boosting model. The model learns "how a series with these lags and this month typically moves" from all series at once, and short series borrow strength from long ones. This is the M5-winning recipe. Practical notes: scale each series' target (divide by its own mean, or predict y − lag_12 as before) so a blockbuster and a niche product live in the same range; use the series ID as a categorical feature so the model can still learn per-series quirks; and evaluate with MASE so that big and small series count equally.</p>
+
+<p><strong>Hierarchical forecasting</strong> is the related problem of consistency: your SKU forecasts should sum to the category forecast, which should sum to the company total. Forecasting each level independently gives numbers that don't add up, which finance will notice. The standard fixes are bottom-up (forecast the leaves, sum), top-down (forecast the total, split by historical shares), or <em>reconciliation</em> (forecast every level, then adjust all of them by least squares so they cohere; the <code>hierarchicalforecast</code> library does this). Reconciled forecasts are usually <em>more</em> accurate at every level, not just consistent.</p>
+
+<h3>Deep learning for time series: an honest section</h3>
+<p>LSTMs (Chapter 18) were the first neural models to gain traction for sequences; <strong>N-BEATS</strong> and <strong>N-HiTS</strong> are pure-MLP architectures that won on M4-style benchmarks; the <strong>Temporal Fusion Transformer (TFT)</strong> mixes attention with gating and handles static, known-future and observed covariates elegantly; and since 2023 <strong>foundation models</strong> for time series (TimesFM, Chronos, Moirai, TimeGPT) offer zero-shot forecasting: point them at a series they've never seen and they produce a reasonable forecast with no training at all.</p>
+<p>When is this worth it? The evidence, including the M5 results and several careful 2023–2024 benchmark papers, says: deep models win when you have <strong>many related series with long histories</strong> (thousands of series, hundreds of points each), <strong>rich covariates</strong>, and the engineering budget to tune them. On a single monthly series with 96 points, they lose to Holt-Winters. Boosting on lag features is the sweet spot for most companies: nearly deep-learning accuracy on large panels, a fraction of the complexity, and it runs on a laptop. Foundation models are genuinely useful as a <em>fast baseline</em> for a new panel (zero-shot, no feature engineering) and for cold-start series with no history, but you should still backtest them against seasonal naive before trusting them, and most of them cannot use your exogenous features.</p>
+
+<h3>Anomaly detection on time series</h3>
+<p>Once you have a forecast with an interval, you have an anomaly detector: any actual that lands outside the 99% band is an anomaly. This "forecast-then-flag" approach is how most production monitoring works (traffic drops, sensor drift, fraud spikes). Its quality is the quality of your forecast: a model that doesn't know about Black Friday will flag Black Friday every year. Alternatives: robust decomposition (STL) followed by a threshold on the residual; isolation forests over windows of lag features (Chapter 22); and, for change-point detection (the level shifted permanently, rather than one point being odd), dedicated algorithms such as PELT or Bayesian online change-point detection. Set thresholds by the cost of a missed anomaly versus a false alarm, never by "3 sigma" reflex.</p>
+
+<!-- ============================================================ -->
+<h2 id="s11">11. Which one do I use at work?</h2>
+
+<div class="tbl-wrap">
+<table class="tbl">
+<thead><tr><th>Situation</th><th>Reach for</th><th>Why</th></tr></thead>
+<tbody>
+<tr><td>One series, &lt; 3 years of monthly data, clear season</td><td>Seasonal naive + drift; Holt-Winters (damped)</td><td>Not enough data for anything else to shine. Intervals for free.</td></tr>
+<tr><td>One series, several years, obvious ARIMA structure, needs a defensible statistical model</td><td>SARIMA (auto-ARIMA), or SARIMAX with a few known drivers</td><td>Interpretable, well-understood, analytic intervals.</td></tr>
+<tr><td>Dozens to thousands of related series, promotions/prices/holidays matter</td><td>Global GBM on lag + calendar + driver features, detrended target, recursive or direct</td><td>The M5 recipe. Handles covariates and cross-series learning.</td></tr>
+<tr><td>Thousands of long series, rich covariates, a team and a GPU</td><td>TFT / N-HiTS; foundation model as a baseline</td><td>Only regime where deep models reliably pay off.</td></tr>
+<tr><td>Intermittent demand (mostly zeros)</td><td>Croston / TSB methods; GBM with Tweedie or Poisson loss</td><td>MAPE is meaningless; model the zero process explicitly.</td></tr>
+<tr><td>Need forecasts that sum correctly across a hierarchy</td><td>Any base model + reconciliation</td><td>Coherence and usually accuracy.</td></tr>
+<tr><td>Need to detect unusual values, not predict</td><td>Forecast + interval; STL residuals; change-point detection</td><td>A good forecast is a good anomaly detector.</td></tr>
+</tbody>
+</table>
+</div>
+
+<h3>The forecasting project checklist</h3>
+<ol class="steps">
+  <li><strong>Pin the decision.</strong> Who consumes the forecast, at what granularity (SKU-week? region-month?), how far ahead, how often is it refreshed, and what does an error cost in each direction? This decides horizon, metric and whether you need intervals. For demand: stock-out cost versus holding cost. For capacity: cost of idle servers versus outage. For finance: the board wants a range and a story, not a point.</li>
+  <li><strong>Assemble a point-in-time dataset.</strong> Reconstruct what was knowable at each forecast origin: data latency, revisions, planned promotions. This is where most of the effort goes.</li>
+  <li><strong>Plot everything.</strong> Decompose. Check the ACF. Look at outliers and level shifts (the pandemic months?). Decide additive vs multiplicative. Decide whether to model the whole history or only the recent regime.</li>
+  <li><strong>Compute the baselines</strong> with a rolling-origin backtest at the real horizon and gap. Write the seasonal-naive MASE on the wall.</li>
+  <li><strong>Fit the classical models</strong> (Holt-Winters, SARIMA). Often good enough; always a useful second opinion.</li>
+  <li><strong>Build the lag table</strong> with a detrended target and calendar/driver features. Boost. Check feature importance for leaks (a suspiciously perfect feature <em>is</em> a leak).</li>
+  <li><strong>Backtest all candidates identically</strong>, compare per horizon, and check interval coverage. Prefer the simplest model within noise of the best.</li>
+  <li><strong>Ship with monitoring.</strong> Log every forecast and its interval; compare with actuals as they arrive; alert when coverage or MASE drifts (Chapter 21). Retrain on a schedule matched to how fast the process changes.</li>
+</ol>
+
+<div class="callout pro"><div class="title">At work</div>
+<p>The forecast will be judged by people who remember the one month it was badly wrong. Pre-empt that: publish the backtest, publish the intervals, and publish the comparison with "what we'd have gotten by copying last year". A team that can say "our 12-month MASE is 0.2 against 0.9 for the old method, and 82% of actuals fell inside our 80% band" has an answer for every difficult meeting.</p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="quiz">Quiz</h2>
+<div class="quiz">
+  <h3>Check your understanding</h3>
+
+  <div class="q">
+    <p class="question">1. A colleague reports 98% R² on a demand-forecasting model evaluated with a shuffled 80/20 split. The most likely explanation is…</p>
+    <ul class="opts">
+      <li><button>The model is excellent and should be deployed</button></li>
+      <li><button data-correct>Test months are surrounded by training months, so the model interpolated between known neighbours</button></li>
+      <li><button>R² is the wrong metric; MAPE would show the same thing</button></li>
+      <li><button>The series must have no seasonality</button></li>
+    </ul>
+    <div class="explain">Shuffling gives each test month training neighbours on both sides (Figure 14.1). A chronological split with a rolling origin is the only honest evaluation.</div>
+  </div>
+
+  <div class="q">
+    <p class="question">2. The ACF of a series decays very slowly and has a bump at lag 7 on daily data. What should you do?</p>
+    <ul class="opts">
+      <li><button>Fit an AR(7) model on the raw series</button></li>
+      <li><button data-correct>Difference the series (trend), then handle a weekly season (lag-7 feature or D=1, s=7)</button></li>
+      <li><button>Increase the moving-average window to 7</button></li>
+      <li><button>Conclude the series is stationary</button></li>
+    </ul>
+    <div class="explain">Slow decay = trend, so difference it. A bump at the seasonal lag = weekly seasonality, so add a seasonal difference or a lag-7 feature (or the day-of-week calendar feature in a GBM).</div>
+  </div>
+
+  <div class="q">
+    <p class="question">3. Your gradient-boosting forecaster fits the training years beautifully but under-forecasts every summer peak in the backtest by about 10%, and the business is growing 10% a year. The fix is…</p>
+    <ul class="opts">
+      <li><button>More trees and a deeper max_depth</button></li>
+      <li><button>Add a rolling mean with center=True to capture the peak</button></li>
+      <li><button data-correct>Predict a detrended target such as y − lag_12 or y / rolling_mean_12, then invert</button></li>
+      <li><button>Switch the metric from MAE to MAPE</button></li>
+    </ul>
+    <div class="explain">Trees cannot predict outside the range of training targets. A stationary target (a difference or ratio) lives in a range the model has seen. Option B is leakage.</div>
+  </div>
+
+  <div class="q">
+    <p class="question">4. You forecast daily orders for 800 products, a third of which have many zero-order days. Which metric should you report across products?</p>
+    <ul class="opts">
+      <li><button>MAPE, because executives understand percentages</button></li>
+      <li><button>RMSE summed over all products</button></li>
+      <li><button data-correct>MASE, which is scale-free and defined when actuals are zero</button></li>
+      <li><button>Accuracy of predicting zero vs non-zero</button></li>
+    </ul>
+    <div class="explain">MAPE divides by the actual and is undefined at zero. RMSE is dominated by the high-volume products. MASE scales each product's error by its own naive error, so products are comparable and zeros are fine.</div>
+  </div>
+
+  <div class="q">
+    <p class="question">5. Sales data arrives with a 3-week reporting delay, and you forecast on the 1st of each month for the next 6 months. The correct TimeSeriesSplit is…</p>
+    <ul class="opts">
+      <li><button data-correct>test_size=6, gap=1 (in months), so the most recent lag used is a month older than the origin</button></li>
+      <li><button>test_size=1, gap=0, because you refresh monthly</button></li>
+      <li><button>n_splits=5 with shuffle=True</button></li>
+      <li><button>KFold with 6 folds</button></li>
+    </ul>
+    <div class="explain">Horizon = 6 (what the business needs), gap ≈ the data latency so the backtest never uses a lag you won't have in production. Shuffling and KFold are wrong for time series.</div>
+  </div>
+
+  <div class="q">
+    <p class="question">6. Your Holt model (trend, no season) forecasts a strongly seasonal monthly series and does worse than the naive forecast. Why?</p>
+    <ul class="opts">
+      <li><button>α was set too low</button></li>
+      <li><button data-correct>Without a seasonal component, it mistakes the latest seasonal move for a trend and extrapolates it</button></li>
+      <li><button>Holt cannot handle more than 24 observations</button></li>
+      <li><button>The naive forecast is always best on seasonal data</button></li>
+    </ul>
+    <div class="explain">A model lacking a component the data has will fake it with the components it does have. The December-to-January drop becomes a "trend" and gets extended for 12 months. Use Holt-Winters or seasonal naive.</div>
+  </div>
+</div>
+
+<h2 id="exercises">Exercises</h2>
+
+<div class="exercise"><div class="title">Exercise 14.1 — Break the GBM, then fix it</div>
+<p>In the lag-feature block of Section 7, change <code>df["roll_mean_3"] = df["y"].shift(1).rolling(3).mean()</code> to <code>df["y"].rolling(3, center=True).mean()</code> and re-run the backtest on the raw target. Then restore it. What happens to the fold MAEs, and why is the "improvement" fake? Then try a third target: <code>y_minus_lag1 = y − lag_1</code> (add <code>lag_1</code> back at prediction time). Does it beat <code>y − lag_12</code>?</p>
+<details class="answer"><summary>Show answer</summary>
+<p>With <code>center=True</code> the rolling mean for row t includes y<sub>t</sub> and y<sub>t+1</sub>: the feature contains the answer, and fold MAEs collapse to a few units even on the raw target. That would never be available at forecast time, so the score is meaningless. Restoring <code>shift(1)</code> brings the honest numbers back. The <code>y − lag_1</code> target also removes the trend and typically backtests in the same neighbourhood as <code>y − lag_12</code> (around 10 mean MAE); it relies more on the momentum features and less on the seasonal anchor, so it tends to be a little worse at the turning points (the June peak) and a little better right after a level shift. Try both on your own data; the backtest decides.</p>
+</details>
+</div>
+
+<div class="exercise"><div class="title">Exercise 14.2 — Backtest everything, per horizon</div>
+<p>Extend the comparison table so that every method (both baselines, Holt-Winters, SARIMA, GBM) is evaluated with the same five expanding-window folds, and report MAE <em>per horizon step</em> (h = 1 … 12) averaged over folds. Plot MAE against h for each method. Which methods degrade fastest with horizon? Add <code>damped_trend=True</code> to Holt-Winters and see whether it helps at h = 12.</p>
+<details class="answer"><summary>Show answer</summary>
+<p>Wrap each method in a function <code>forecast(train, h)</code>, loop over <code>TimeSeriesSplit(n_splits=5, test_size=12).split(y)</code>, collect a 5 × 12 matrix of absolute errors per method, and average over axis 0. On this series the recursive GBM's error grows with h because prediction errors are fed back as lags; SARIMA and seasonal naive + drift grow slowly because they use only actual history; Holt-Winters is roughly flat but higher. Damping shrinks the trend contribution at long horizons; on a series with a genuinely linear trend it slightly hurts at h = 12, on real series it usually helps. The point of the exercise: a single-origin table (Section 9) can reorder when you average over origins and horizons.</p>
+</details>
+</div>
+
+<div class="exercise"><div class="title">Exercise 14.3 — Do it at work: the forecast you already have</div>
+<p>Find a number your team forecasts today (a budget line, a headcount plan, a capacity estimate, a sales target). Get at least 24 historical periods of actuals and the forecasts that were made at the time. (a) Compute the MAE and MASE of the existing process against seasonal naive. (b) Build seasonal naive + drift and Holt-Winters with a rolling-origin backtest at the real horizon. (c) Write one page: current process error, baseline error, best simple model error, and a fan chart for the next planning cycle.</p>
+<details class="answer"><summary>Show answer</summary>
+<p>There is no single right answer, but there is a common outcome: the existing human forecast has a MASE around 1 (no better than copying last year) with a systematic optimism bias, and Holt-Winters or seasonal naive + drift lands at 0.5–0.8 with honest intervals. The one-page write-up, with the seasonal-naive number as the anchor, is the deliverable that gets a forecasting project funded. Keep the point-in-time discipline: only use actuals that were available at each historical forecast date.</p>
+</details>
+</div>
+
+<div class="summary">
+  <h3>Chapter summary</h3>
+  <ul class="checklist">
+    <li>Time series are ordered and autocorrelated: never shuffle, always split chronologically, and backtest from multiple origins with <code>TimeSeriesSplit</code> at the real horizon and gap.</li>
+    <li>Decompose first (trend, season, cycle, noise); the noise share is the floor on forecast accuracy. Difference or log-transform to reach stationarity; ADF is a sanity check, the plot and ACF are the diagnosis.</li>
+    <li>The ACF/PACF tell you which lags carry information: they choose your lag features and your ARIMA orders.</li>
+    <li>Baselines are the unit of progress: naive, seasonal naive, drift, moving average, and the surprisingly strong seasonal naive + drift. Report MASE against them.</li>
+    <li>Holt-Winters handles level, trend and season with three smoothing weights; SARIMA(p,d,q)(P,D,Q)<sub>m</sub> models momentum, differencing and error-correction at two scales. Both give intervals for free. A model missing a component the data has will fake it badly.</li>
+    <li>The ML route: lag matrix (shift, then roll; never centre), calendar, holidays, known-in-advance drivers, then gradient boosting on a <strong>detrended target</strong>, because trees cannot extrapolate.</li>
+    <li>Multi-step: recursive (one model, compounding error), direct (one model per horizon), or multi-output. Choose consciously.</li>
+    <li>Metrics: MAE for units, RMSE when big misses hurt, MAPE only when actuals are far from zero, sMAPE for benchmarks, MASE across series. Ship prediction intervals and report their coverage.</li>
+    <li>Many series → one global GBM with the series ID as a feature; hierarchies → reconcile. Deep learning earns its cost only on large panels with rich covariates; foundation models are a quick zero-shot baseline.</li>
+    <li>A good forecast with an interval is also an anomaly detector. Monitor coverage and MASE after deployment.</li>
+  </ul>
+</div>
+
+<div class="mark-done"></div>
+<nav class="pager"></nav>
+
 </div></main>
 </div>
 <script src="../assets/chapters.js"></script>
 <script src="../assets/app.js"></script>
+<script>
+(function () {
+  /* ---------- Widget 1: series builder ---------- */
+  var sSlope = document.getElementById("wb-slope"), sAmp = document.getElementById("wb-amp"), sNoise = document.getElementById("wb-noise");
+  var svg = document.getElementById("wb-svg"), share = document.getElementById("wb-share");
+  if (!svg) return;
+  var N = 96, base = [];
+  var seed = 7;
+  function rnd() { seed = (seed * 1103515245 + 12345) % 2147483648; return seed / 2147483648; }
+  for (var i = 0; i < N; i++) { var u1 = rnd() || 1e-9, u2 = rnd(); base.push(Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2)); }
+  function poly(vals, x0, x1, y0, y1, vmin, vmax, color, w) {
+    var pts = [], n = vals.length;
+    for (var i = 0; i < n; i++) {
+      var x = x0 + (x1 - x0) * i / (n - 1), yy = y1 - (vals[i] - vmin) / (vmax - vmin || 1) * (y1 - y0);
+      pts.push(x.toFixed(1) + "," + yy.toFixed(1));
+    }
+    return '<polyline points="' + pts.join(" ") + '" fill="none" stroke="' + color + '" stroke-width="' + w + '"/>';
+  }
+  function panel(label, x0, y0, w, h, vals, color, vmin, vmax) {
+    var s = '<rect x="' + x0 + '" y="' + y0 + '" width="' + w + '" height="' + h + '" fill="var(--surface-2)" rx="6"/>';
+    s += '<text x="' + (x0 + 8) + '" y="' + (y0 + 16) + '" font-size="12" font-weight="700" fill="' + color + '">' + label + '</text>';
+    s += poly(vals, x0 + 10, x0 + w - 10, y0 + 24, y0 + h - 10, vmin, vmax, color, 2);
+    return s;
+  }
+  function render() {
+    var slope = +sSlope.value, amp = +sAmp.value, sd = +sNoise.value;
+    var trend = [], seas = [], noise = [], total = [];
+    for (var i = 0; i < N; i++) {
+      trend.push(200 + slope * i);
+      seas.push(amp * Math.sin(2 * Math.PI * (i - 2) / 12));
+      noise.push(sd * base[i]);
+      total.push(trend[i] + seas[i] + noise[i]);
+    }
+    function variance(a) { var m = 0, i; for (i = 0; i < a.length; i++) m += a[i]; m /= a.length; var v = 0; for (i = 0; i < a.length; i++) v += (a[i] - m) * (a[i] - m); return v / a.length; }
+    var vt = variance(total), vn = variance(noise);
+    share.textContent = vt > 0 ? Math.round(100 * Math.min(1, vn / vt)) + "%" : "–";
+    var tmin = Math.min.apply(null, total), tmax = Math.max.apply(null, total);
+    var s = '<text x="380" y="18" text-anchor="middle" font-size="13" font-weight="700">Series = trend + season + noise</text>';
+    s += panel("total (what you observe)", 10, 26, 740, 120, total, "var(--s1)", tmin, tmax);
+    var cmax = Math.max(amp, sd * 3, 5);
+    s += panel("trend", 10, 156, 240, 160, trend, "var(--s2)", 200, 200 + Math.max(slope, 0.5) * (N - 1));
+    s += panel("season ±" + amp, 260, 156, 240, 160, seas, "var(--s3)", -cmax, cmax);
+    s += panel("noise σ = " + sd, 510, 156, 240, 160, noise, "var(--ink-3)", -cmax, cmax);
+    s += '<text x="380" y="328" text-anchor="middle" font-size="11" opacity=".75">96 months · the three lower panels share one vertical scale so you can compare their sizes</text>';
+    svg.innerHTML = s;
+  }
+  [sSlope, sAmp, sNoise].forEach(function (el) { el.addEventListener("input", render); });
+  render();
+})();
+(function () {
+  /* ---------- Widget 2: smoothing lag ---------- */
+  var sA = document.getElementById("ws-alpha"), sK = document.getElementById("ws-k"), svg = document.getElementById("ws-svg");
+  var lagE = document.getElementById("ws-lag-e"), lagM = document.getElementById("ws-lag-m");
+  if (!svg) return;
+  var N = 80, data = [], seed = 99;
+  function rnd() { seed = (seed * 1103515245 + 12345) % 2147483648; return seed / 2147483648; }
+  for (var i = 0; i < N; i++) {
+    var u1 = rnd() || 1e-9, u2 = rnd(), g = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
+    data.push((i < 40 ? 100 : 140) + 8 * g);
+  }
+  var x0 = 50, x1 = 730, y0 = 30, y1 = 210, vmin = 70, vmax = 170;
+  function X(i) { return x0 + (x1 - x0) * i / (N - 1); }
+  function Y(v) { return y1 - (v - vmin) / (vmax - vmin) * (y1 - y0); }
+  function line(vals, color, w, dash) {
+    var pts = [];
+    for (var i = 0; i < vals.length; i++) if (vals[i] !== null) pts.push(X(i).toFixed(1) + "," + Y(vals[i]).toFixed(1));
+    return '<polyline points="' + pts.join(" ") + '" fill="none" stroke="' + color + '" stroke-width="' + w + '"' + (dash ? ' stroke-dasharray="' + dash + '"' : '') + '/>';
+  }
+  function render() {
+    var a = +sA.value, k = +sK.value, i;
+    var ses = [data[0]]; for (i = 1; i < N; i++) ses.push(a * data[i] + (1 - a) * ses[i - 1]);
+    var ma = []; for (i = 0; i < N; i++) { if (i < k - 1) { ma.push(null); } else { var s = 0; for (var j = i - k + 1; j <= i; j++) s += data[j]; ma.push(s / k); } }
+    lagE.textContent = ((1 - a) / a).toFixed(1); lagM.textContent = ((k - 1) / 2).toFixed(1);
+    var out = '<line x1="' + x0 + '" y1="' + y1 + '" x2="' + x1 + '" y2="' + y1 + '" stroke="currentColor" stroke-opacity=".5"/>';
+    out += '<line x1="' + x0 + '" y1="' + y0 + '" x2="' + x0 + '" y2="' + y1 + '" stroke="currentColor" stroke-opacity=".5"/>';
+    out += '<text x="' + (x0 - 6) + '" y="' + (Y(100) + 4) + '" text-anchor="end" font-size="11">100</text><text x="' + (x0 - 6) + '" y="' + (Y(140) + 4) + '" text-anchor="end" font-size="11">140</text>';
+    out += '<line x1="' + X(40) + '" y1="' + y0 + '" x2="' + X(40) + '" y2="' + y1 + '" stroke="var(--s7)" stroke-dasharray="4 3"/>';
+    out += '<text x="' + (X(40) + 4) + '" y="' + (y0 + 12) + '" font-size="11" fill="var(--s7)">level shift at month 40</text>';
+    out += '<line x1="' + x0 + '" y1="' + Y(100) + '" x2="' + X(40) + '" y2="' + Y(100) + '" stroke="currentColor" stroke-opacity=".25" stroke-dasharray="2 3"/>';
+    out += '<line x1="' + X(40) + '" y1="' + Y(140) + '" x2="' + x1 + '" y2="' + Y(140) + '" stroke="currentColor" stroke-opacity=".25" stroke-dasharray="2 3"/>';
+    for (i = 0; i < N; i++) out += '<circle cx="' + X(i).toFixed(1) + '" cy="' + Y(data[i]).toFixed(1) + '" r="2.2" fill="var(--ink-3)"/>';
+    out += line(ses, "var(--s1)", 2.5);
+    out += line(ma, "var(--s2)", 2.5, "6 3");
+    out += '<text x="' + (x0 + 300) + '" y="' + (y1 + 22) + '" text-anchor="middle" font-size="12">month</text>';
+    out += '<line x1="' + (x0 + 10) + '" y1="' + (y1 + 40) + '" x2="' + (x0 + 30) + '" y2="' + (y1 + 40) + '" stroke="var(--s1)" stroke-width="2.5"/><text x="' + (x0 + 36) + '" y="' + (y1 + 44) + '" font-size="11">exponential smoothing, α = ' + a.toFixed(2) + '</text>';
+    out += '<line x1="' + (x0 + 300) + '" y1="' + (y1 + 40) + '" x2="' + (x0 + 320) + '" y2="' + (y1 + 40) + '" stroke="var(--s2)" stroke-width="2.5" stroke-dasharray="6 3"/><text x="' + (x0 + 326) + '" y="' + (y1 + 44) + '" font-size="11">moving average, k = ' + k + '</text>';
+    svg.innerHTML = out;
+  }
+  sA.addEventListener("input", render); sK.addEventListener("input", render);
+  render();
+})();
+</script>
 </body>
 </html>
