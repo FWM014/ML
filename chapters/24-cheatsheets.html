@@ -413,6 +413,10 @@
 </table>
 </div>
 
+<div class="callout key"><div class="title">Key idea</div>
+<p>Two decisions, made in this order and written down before any model is trained: <strong>the validation scheme</strong> (random, stratified, grouped or time-ordered folds, plus one untouched test set) and <strong>the metric</strong> (the one that prices the two kinds of mistakes for the decision at hand). Every candidate model, including the Dummy baseline, is then scored the same way. Change either decision mid-project and every earlier number becomes incomparable.</p>
+</div>
+
 <div class="callout eli9"><div class="title">Explain it like I'm 9</div>
 <p>A smoke detector that never beeps is "99.9% accurate" because there is almost never a fire. That is why accuracy is a bad report card for rare things. Instead we ask two questions: when it beeps, was there really a fire (precision)? And when there was a fire, did it beep (recall)? The metric table is just a list of which report card to use for which kind of test.</p>
 </div>
