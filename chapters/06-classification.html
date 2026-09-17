@@ -212,7 +212,7 @@
   <circle cx="638" cy="158.8" r="5" fill="var(--s2)"/><text x="600" y="150" text-anchor="end" class="lbl" fill="var(--s2)">p = 0.9, truth 0: cost 2.3</text>
   <circle cx="390" cy="229.6" r="5" fill="var(--ink)"/><text x="390" y="203" text-anchor="middle" class="lbl">p = 0.5: cost 0.69 either way</text>
 </svg>
-<figcaption><strong>Figure 6.4 — Log-loss punishes confident wrong answers.</strong> Saying p = 0.9 when the truth is 1 costs 0.1; saying p = 0.9 when the truth is 0 costs 2.3, twenty-three times more; saying p = 0.999 when the truth is 0 costs 6.9. Hedging at 0.5 costs a moderate 0.69 no matter what. The model learns to be confident only when it has earned it.</figcaption>
+<figcaption><strong>Figure 6.4 — Log-loss punishes confident wrong answers.</strong> Saying p = 0.9 when the truth is 1 costs 0.1; saying p = 0.9 when the truth is 0 costs 2.3, more than twenty times more; saying p = 0.999 when the truth is 0 costs 6.9. Hedging at 0.5 costs a moderate 0.69 no matter what. The model learns to be confident only when it has earned it.</figcaption>
 </figure>
 
 <div class="callout math"><div class="title">The math (optional)</div>
@@ -221,6 +221,45 @@
 </div>
 
 <p><strong>Fitting</strong> is gradient descent exactly as in Chapter 5, with one lucky detail: the gradient of log-loss with respect to the weights is ∑<sub>i</sub> (p<sub>i</sub> − y<sub>i</sub>) x<sub>i</sub> — "prediction minus truth, times the input" — the same form as for linear regression. There is no closed-form solution, but log-loss is <em>convex</em> (one bowl, one minimum), so gradient descent and the smarter optimizers scikit-learn uses by default (<code>lbfgs</code>) always find the best weights. In practice you never write this loop; you call <code>fit</code>.</p>
+
+<details class="deepdive"><summary>Deep dive: the gradient of log-loss, line by line <span class="time">6 min</span></summary>
+<div class="callout eli9"><div class="title">Explain it like I'm 9</div>
+<p>To teach the model, you need to know which way to nudge each weight. For a linear model the recipe was "how wrong was I, times what I was looking at". Logistic regression adds a squash on top, and you might expect the squash to make the recipe messier. It does not: the messy parts cancel out exactly, and the recipe is <em>still</em> "how wrong, times what I was looking at". That cancellation is the reason the sigmoid and the log-loss are a matched pair.</p>
+</div>
+<p><strong>Precisely.</strong> For one example with features <em>x</em>, label <em>y</em> ∈ {0, 1}, score <em>z</em> = <em>w</em>·<em>x</em> + <em>b</em> and probability <em>p</em> = σ(<em>z</em>), the loss is ℓ = −[<em>y</em> log <em>p</em> + (1 − <em>y</em>) log(1 − <em>p</em>)]. Apply the chain rule (Chapter 3) through the three links ℓ → <em>p</em> → <em>z</em> → <em>w</em>:</p>
+<div class="callout math"><div class="title">The math (optional)</div>
+<p><strong>Step 1, loss with respect to p:</strong> ∂ℓ/∂p = −y/p + (1 − y)/(1 − p) = (p − y) / [p(1 − p)].</p>
+<p><strong>Step 2, sigmoid with respect to its input:</strong> ∂p/∂z = σ(z)(1 − σ(z)) = p(1 − p).</p>
+<p><strong>Step 3, multiply:</strong> ∂ℓ/∂z = (p − y) / [p(1 − p)] · p(1 − p) = <strong>p − y</strong>. The denominator of step 1 is exactly the derivative in step 2, so they cancel and the "error signal" at the score is simply prediction minus truth.</p>
+<p><strong>Step 4, score with respect to the weights:</strong> ∂z/∂w = x and ∂z/∂b = 1, so ∂ℓ/∂w = (p − y) x and ∂ℓ/∂b = p − y. Averaging over N examples:</p>
+<div class="formula">∂L/∂<span class="var">w</span> = (1/N) ∑<sub>i</sub> (p<sub>i</sub> − y<sub>i</sub>) <span class="var">x</span><sub>i</sub>      ∂L/∂b = (1/N) ∑<sub>i</sub> (p<sub>i</sub> − y<sub>i</sub>)</div>
+<p>Compare Chapter 5: ∂L/∂w = (2/N) ∑ (ŷ<sub>i</sub> − y<sub>i</sub>) x<sub>i</sub>. Same shape, different prediction, and a factor of 2 that the learning rate absorbs.</p>
+</div>
+<pre class="code" data-lang="python"><code><span class="cm"># The gradient of log-loss for logistic regression is (p - y) x: check the derivation numerically</span>
+<span class="kw">import</span> numpy <span class="kw">as</span> np
+sigmoid = <span class="kw">lambda</span> z: <span class="nu">1</span> / (<span class="nu">1</span> + np.exp(-z))
+
+X = np.array([[<span class="nu">1.0</span>, <span class="nu">2.0</span>], [<span class="nu">0.5</span>, -<span class="nu">1.0</span>], [<span class="nu">2.0</span>, <span class="nu">0.5</span>]]); y = np.array([<span class="nu">1</span>, <span class="nu">0</span>, <span class="nu">1</span>])   <span class="cm"># 3 rows, 2 features</span>
+w, b = np.array([<span class="nu">0.3</span>, -<span class="nu">0.2</span>]), <span class="nu">0.1</span>
+
+<span class="kw">def</span> <span class="fn">loss</span>(w, b):
+    p = sigmoid(X @ w + b)
+    <span class="kw">return</span> -np.mean(y * np.log(p) + (<span class="nu">1</span> - y) * np.log(<span class="nu">1</span> - p))
+
+p = sigmoid(X @ w + b)
+grad_w = X.T @ (p - y) / <span class="fn">len</span>(y)                    <span class="cm"># (1/N) Σ (p_i − y_i) x_i</span>
+grad_b = np.mean(p - y)
+<span class="fn">print</span>(<span class="st">"p ="</span>, p.round(<span class="nu">4</span>), <span class="st">" p - y ="</span>, (p - y).round(<span class="nu">4</span>))
+<span class="fn">print</span>(<span class="st">"analytic  dL/dw ="</span>, grad_w.round(<span class="nu">6</span>), <span class="st">" dL/db ="</span>, <span class="fn">round</span>(grad_b, <span class="nu">6</span>))
+
+h = <span class="nu">1e-6</span>                                           <span class="cm"># central finite differences</span>
+num_w = np.array([(loss(w + h * e, b) - loss(w - h * e, b)) / (<span class="nu">2</span> * h) <span class="kw">for</span> e <span class="kw">in</span> np.eye(<span class="nu">2</span>)])
+num_b = (loss(w, b + h) - loss(w, b - h)) / (<span class="nu">2</span> * h)
+<span class="fn">print</span>(<span class="st">"numerical dL/dw ="</span>, num_w.round(<span class="nu">6</span>), <span class="st">" dL/db ="</span>, <span class="fn">round</span>(num_b, <span class="nu">6</span>))
+<span class="out"># p = [0.5    0.6106 0.6457]  p - y = [-0.5     0.6106 -0.3543]</span>
+<span class="out"># analytic  dL/dw = [-0.301123 -0.595937]  dL/db = -0.081235</span>
+<span class="out"># numerical dL/dw = [-0.301123 -0.595937]  dL/db = -0.081235</span></code></pre><p>Why this matters beyond elegance. First, it is why log-loss is convex for a linear score: the error signal <em>p</em> − <em>y</em> is monotone in <em>z</em>, so the loss has a single bowl and <code>lbfgs</code> always finds its bottom. Second, it is why you must <em>not</em> pair a sigmoid with squared error: ∂/∂z of (p − y)² is 2(p − y)·p(1 − p), and the factor p(1 − p) goes to zero exactly when the model is confidently wrong (p near 0 or 1), so learning stalls where it is needed most. Third, the same cancellation happens for softmax with the multiclass log-loss (Section 9), where the error signal at the scores is the probability vector minus the one-hot label; every neural-network classifier (Chapter 15) ends with this pair for exactly this reason.</p>
+</details>
 
 <div class="callout warn"><div class="title">Common mistake</div>
 <p>Feeding unscaled features to logistic regression. The default solver converges slowly (you will see <code>ConvergenceWarning</code>) and the built-in regularization (Chapter 7) penalizes big-unit features unfairly. Always wrap it in a <code>Pipeline</code> with <code>StandardScaler</code>, as below. Also note the default <code>C=1.0</code> <em>is</em> a regularization strength — logistic regression in sklearn is never "plain".</p>
@@ -621,6 +660,45 @@ best = np.argmax(np.where(ok, prec[:-<span class="nu">1</span>], -<span class="n
 <p>The threshold-tuning loop above is the single most valuable ten lines in this chapter. Tune the threshold on a <em>validation</em> set, never on the test set (Chapter 7 explains why), and store the chosen threshold next to the model as part of the artifact. Models get retrained; a threshold tuned for last quarter's score distribution silently drifts. Re-tune it every time you retrain.</p>
 </div>
 
+<details class="deepdive"><summary>Deep dive: AUC is a ranking probability — the rank formula <span class="time">7 min</span></summary>
+<div class="callout eli9"><div class="title">Explain it like I'm 9</div>
+<p>Line up every fraud next to every legit transaction, one pair at a time, and ask: did the model give the fraud the higher score? Count the yeses, divide by the number of pairs. That fraction is the AUC. No threshold, no "how many did we flag", just "does the model put the bad ones above the good ones?"</p>
+</div>
+<p><strong>Precisely.</strong> The area under the ROC staircase equals the fraction of (positive, negative) pairs in which the positive is ranked above the negative, ties counting one half. That is the Mann–Whitney U statistic divided by the number of pairs, and it can be computed from ranks alone:</p>
+<div class="callout math"><div class="title">The math (optional)</div>
+<div class="formula">AUC = [ R<sub>+</sub> − n<sub>+</sub>(n<sub>+</sub> + 1)/2 ] / (n<sub>+</sub> · n<sub>−</sub>)</div>
+<p><strong>n<sub>+</sub></strong> and <strong>n<sub>−</sub></strong> are the numbers of positives and negatives; <strong>R<sub>+</sub></strong> is the sum of the ranks of the positives when all scores are ranked from 1 (lowest) to n (highest), ties receiving their average rank. Why it works: a positive with rank <em>r</em> has <em>r</em> − 1 examples below it, of which some are positives. Summing <em>r</em> − 1 over the positives counts every (positive, anything-below) pair; the positives below other positives are counted exactly n<sub>+</sub>(n<sub>+</sub> − 1)/2 times in total, and subtracting those (the n<sub>+</sub>(n<sub>+</sub>+1)/2 term absorbs the −1s as well) leaves only the (positive above negative) pairs. Dividing by n<sub>+</sub>n<sub>−</sub> turns the count into a probability. Why the staircase has the same area: each up-step (a positive) at height <em>k</em>/n<sub>−</sub> of the way across contributes a horizontal strip whose width is the number of negatives still to the right, which is exactly the number of negatives that positive outranks.</p>
+</div>
+<pre class="code" data-lang="python"><code><span class="cm"># AUC from ranks: the Mann-Whitney formula gives exactly the area under the ROC staircase of Figure 6.7</span>
+<span class="kw">import</span> numpy <span class="kw">as</span> np
+<span class="kw">from</span> scipy.stats <span class="kw">import</span> rankdata
+<span class="kw">from</span> sklearn.metrics <span class="kw">import</span> roc_auc_score
+
+scores = np.array([<span class="nu">0.95</span>, <span class="nu">0.91</span>, <span class="nu">0.80</span>, <span class="nu">0.72</span>, <span class="nu">0.60</span>, <span class="nu">0.55</span>, <span class="nu">0.41</span>, <span class="nu">0.30</span>, <span class="nu">0.18</span>, <span class="nu">0.07</span>])
+y      = np.array([<span class="nu">1</span>,    <span class="nu">1</span>,    <span class="nu">0</span>,    <span class="nu">1</span>,    <span class="nu">0</span>,    <span class="nu">0</span>,    <span class="nu">1</span>,    <span class="nu">0</span>,    <span class="nu">0</span>,    <span class="nu">0</span>])
+n_pos, n_neg = y.sum(), (<span class="nu">1</span> - y).sum()
+
+<span class="cm"># 1) brute force: count (positive, negative) pairs in which the positive scores higher (a tie counts 1/2)</span>
+pairs = <span class="fn">sum</span>(<span class="nu">1.0</span> <span class="kw">if</span> sp &gt; sn <span class="kw">else</span> <span class="nu">0.5</span> <span class="kw">if</span> sp == sn <span class="kw">else</span> <span class="nu">0.0</span> <span class="kw">for</span> sp <span class="kw">in</span> scores[y == <span class="nu">1</span>] <span class="kw">for</span> sn <span class="kw">in</span> scores[y == <span class="nu">0</span>])
+<span class="fn">print</span>(<span class="st">f"correctly ordered pairs = {pairs:.0f} of {n_pos * n_neg}  -&gt;  AUC = {pairs / (n_pos * n_neg):.4f}"</span>)
+
+<span class="cm"># 2) the rank formula: same number without the double loop (rank 1 = lowest score)</span>
+ranks = rankdata(scores)
+R = ranks[y == <span class="nu">1</span>].sum()
+auc_rank = (R - n_pos * (n_pos + <span class="nu">1</span>) / <span class="nu">2</span>) / (n_pos * n_neg)
+<span class="fn">print</span>(<span class="st">f"ranks of the positives: {ranks[y == 1].astype(int).tolist()}, sum R = {R:.0f}"</span>)
+<span class="fn">print</span>(<span class="st">f"AUC = (R - n+(n+ + 1)/2) / (n+ n-) = ({R:.0f} - {n_pos * (n_pos + 1) / 2:.0f}) / {n_pos * n_neg} = {auc_rank:.4f}"</span>)
+<span class="fn">print</span>(<span class="st">"sklearn roc_auc_score:"</span>, <span class="fn">round</span>(roc_auc_score(y, scores), <span class="nu">4</span>))
+
+<span class="cm"># 3) any monotone re-scaling of the scores leaves the ranks, and therefore the AUC, unchanged</span>
+<span class="fn">print</span>(<span class="st">"AUC after squashing every score toward 0.5:"</span>, <span class="fn">round</span>(roc_auc_score(y, <span class="nu">0.5</span> + <span class="nu">0.1</span> * (scores - <span class="nu">0.5</span>)), <span class="nu">4</span>))
+<span class="out"># correctly ordered pairs = 20 of 24  -&gt;  AUC = 0.8333</span>
+<span class="out"># ranks of the positives: [10, 9, 7, 4], sum R = 30</span>
+<span class="out"># AUC = (R - n+(n+ + 1)/2) / (n+ n-) = (30 - 10) / 24 = 0.8333</span>
+<span class="out"># sklearn roc_auc_score: 0.8333</span>
+<span class="out"># AUC after squashing every score toward 0.5: 0.8333</span></code></pre><p>Three consequences that matter at work. <strong>(1) Ties and monotone transforms.</strong> Any strictly increasing transformation of the scores leaves the ranks unchanged, so AUC cannot see calibration (the last line above), and a model whose probabilities are all squashed into [0.45, 0.55] can still have AUC 0.99. Use log-loss or Brier (Section 10) when the numbers themselves matter. <strong>(2) An interpretable unit.</strong> "AUC 0.83" means "pick a random fraud and a random legit transaction; the model orders them correctly 83% of the time", which a stakeholder can picture, unlike "area under a curve". <strong>(3) Cheap confidence intervals.</strong> Because AUC is a mean over pairs, it has a standard error you can estimate by bootstrapping the test rows (Chapter 3); with few positives that interval is wide, and with 24 pairs, as here, it is enormous. Report it.</p>
+</details>
+
 <!-- ============================================================ -->
 <h2 id="s8">8. Choosing the metric and the threshold</h2>
 
@@ -740,6 +818,56 @@ costs = [cost_at(t)[<span class="nu">0</span>] <span class="kw">for</span> t <sp
 <p>You will not know C<sub>FN</sub> exactly. Ask the business for a range ("a missed fraud costs us between $100 and $400") and check whether the chosen threshold moves much across that range. Usually the cost curve is flat near its minimum and the decision is robust. If it is not, you have discovered that the <em>cost estimate</em>, not the model, is the thing to improve — a far cheaper fix.</p>
 </div>
 
+<details class="deepdive"><summary>Deep dive: choosing a threshold from a cost matrix, derived <span class="time">8 min</span></summary>
+<div class="callout eli9"><div class="title">Explain it like I'm 9</div>
+<p>You are deciding whether to take an umbrella. Carrying it for nothing costs a little annoyance; getting soaked costs a lot. So you take the umbrella even when the chance of rain is small, as long as chance-of-rain × soaking-cost is bigger than chance-of-dry × annoyance. The "chance" at which those two are equal is your threshold, and it depends only on the two costs.</p>
+</div>
+<p><strong>Precisely.</strong> For one transaction the model says "fraud with probability <em>p</em>". Flagging it costs C<sub>FP</sub> if it is legit (probability 1 − <em>p</em>); passing it costs C<sub>FN</sub> if it is fraud (probability <em>p</em>). Flag when the expected cost of flagging is lower:</p>
+<div class="callout math"><div class="title">The math (optional)</div>
+<div class="formula">(1 − p) · C<sub>FP</sub> &lt; p · C<sub>FN</sub>  ⇔  p &gt; C<sub>FP</sub> / (C<sub>FP</sub> + C<sub>FN</sub>) = t*</div>
+<div class="formula">general 2×2 costs:  t* = (C<sub>FP</sub> − C<sub>TN</sub>) / [ (C<sub>FP</sub> − C<sub>TN</sub>) + (C<sub>FN</sub> − C<sub>TP</sub>) ]</div>
+<p><strong>C<sub>FP</sub></strong>, <strong>C<sub>FN</sub></strong>, <strong>C<sub>TP</sub></strong>, <strong>C<sub>TN</sub></strong> are the costs of the four cells (a correct decision can also cost something: a true positive still needs the $5 review). Rearranging the first inequality gives the first line; doing the same with all four costs gives the second, which reduces to the first when correct decisions are free. With $5 and $200: t* = 5/205 ≈ 0.024. The rule minimizes expected cost <em>per transaction</em>, so it also minimizes the total, and it holds for every transaction regardless of how many there are. Note what is <strong>not</strong> in the formula: the base rate. It has already been absorbed into <em>p</em>, provided <em>p</em> is a genuine probability.</p>
+</div>
+<p>That proviso is the whole story. The derivation treats <em>p</em> as the true probability of fraud for this row. If the model's probabilities are miscalibrated, t* is the optimum for the world the model <em>believes</em> in, not the real one, and the empirical sweep of Section 8 will disagree with it. The disagreement is not a flaw in either method; it is a measurement of the miscalibration:</p>
+<pre class="code" data-lang="python"><code><span class="cm"># Bayes threshold vs empirical sweep: the gap between them measures how miscalibrated the probabilities are</span>
+<span class="kw">import</span> numpy <span class="kw">as</span> np
+<span class="kw">from</span> sklearn.datasets <span class="kw">import</span> make_classification
+<span class="kw">from</span> sklearn.model_selection <span class="kw">import</span> train_test_split
+<span class="kw">from</span> sklearn.linear_model <span class="kw">import</span> LogisticRegression
+<span class="kw">from</span> sklearn.metrics <span class="kw">import</span> confusion_matrix
+
+X, y = make_classification(n_samples=<span class="nu">20000</span>, n_features=<span class="nu">12</span>, n_informative=<span class="nu">4</span>, n_redundant=<span class="nu">2</span>,
+                           weights=[<span class="nu">0.95</span>, <span class="nu">0.05</span>], class_sep=<span class="nu">1.5</span>, flip_y=<span class="nu">0.005</span>, random_state=<span class="nu">7</span>)
+X_tr, X_te, y_tr, y_te = train_test_split(X, y, test_size=<span class="nu">0.5</span>, stratify=y, random_state=<span class="nu">7</span>)
+p = LogisticRegression(max_iter=<span class="nu">1000</span>).fit(X_tr, y_tr).predict_proba(X_te)[:, <span class="nu">1</span>]
+C_FP, C_FN = <span class="nu">5</span>, <span class="nu">200</span>
+t_star = C_FP / (C_FP + C_FN)
+
+grid = np.arange(<span class="nu">0.01</span>, <span class="nu">0.60</span>, <span class="nu">0.01</span>)
+<span class="kw">def</span> <span class="fn">actual_cost</span>(t):                                    <span class="cm"># what the confusion matrix really costs</span>
+    tn, fp, fn, tp = confusion_matrix(y_te, (p &gt;= t).astype(<span class="fn">int</span>)).ravel()
+    <span class="kw">return</span> C_FP * fp + C_FN * fn
+<span class="kw">def</span> <span class="fn">believed_cost</span>(t):                                  <span class="cm"># what the model's OWN probabilities say it costs</span>
+    flagged = p &gt;= t
+    <span class="kw">return</span> C_FP * (<span class="nu">1</span> - p[flagged]).sum() + C_FN * p[~flagged].sum()
+actual = np.array([actual_cost(t) <span class="kw">for</span> t <span class="kw">in</span> grid]); believed = np.array([believed_cost(t) <span class="kw">for</span> t <span class="kw">in</span> grid])
+<span class="fn">print</span>(<span class="st">f"Bayes rule t* = {t_star:.3f}"</span>)
+<span class="fn">print</span>(<span class="st">f"believed cost is minimal at t = {grid[believed.argmin()]:.2f}  (always ≈ t*: that is the derivation)"</span>)
+<span class="fn">print</span>(<span class="st">f"actual   cost is minimal at t = {grid[actual.argmin()]:.2f}  (${actual.min():,.0f}; at t* it is ${actual_cost(t_star):,.0f})"</span>)
+
+<span class="cm"># the reason: in the low-probability range the model is over-confident about fraud</span>
+lo, hi = <span class="nu">0.02</span>, <span class="nu">0.08</span>
+band = (p &gt;= lo) &amp; (p &lt; hi)
+<span class="fn">print</span>(<span class="st">f"rows with p in [{lo}, {hi}): model says {p[band].mean():.3f} on average, actual fraud rate {y_te[band].mean():.3f}"</span>)
+<span class="out"># Bayes rule t* = 0.024</span>
+<span class="out"># believed cost is minimal at t = 0.03  (always ≈ t*: that is the derivation)</span>
+<span class="out"># actual   cost is minimal at t = 0.08  ($7,260; at t* it is $9,290)</span>
+<span class="out"># rows with p in [0.02, 0.08): model says 0.039 on average, actual fraud rate 0.009</span></code></pre><p>The model's own probabilities are minimized almost exactly at t* (0.03 on a 0.01 grid), as the algebra says they must be. The <em>real</em> costs bottom out at 0.08, and the last line shows why: among rows the model scores at 2–8% fraud, the real fraud rate is under 1%. The model is over-confident in that range, so it flags too many legit rows at t*, and the truth wants a higher cut. Two fixes, in order of preference: calibrate the probabilities (Platt scaling or isotonic regression via <code>CalibratedClassifierCV</code>, Chapter 13) and then apply t* directly, which also makes the threshold portable to new cost estimates without re-sweeping; or keep the empirical sweep on a validation set and accept that the threshold is tied to this model's quirks and must be re-tuned after every retraining.</p>
+<div class="callout pro"><div class="title">At work</div>
+<p>Write the cost matrix down with the stakeholder <em>before</em> looking at any model output, including the costs of correct decisions (a true positive that triggers a manual review is not free). Then compute t* and the empirical optimum. If they agree, your probabilities are trustworthy enough to be used as numbers elsewhere (pricing, prioritization). If they disagree by more than a little, the calibration plot is your next slide, not the ROC curve.</p>
+</div>
+</details>
+
 <!-- ============================================================ -->
 <h2 id="s9">9. Multiclass: softmax and averaging</h2>
 
@@ -807,7 +935,7 @@ costs = [cost_at(t)[<span class="nu">0</span>] <span class="kw">for</span> t <sp
 <table class="tbl">
 <thead><tr><th>Average</th><th>How it is computed</th><th>Worked value</th><th>What it rewards</th></tr></thead>
 <tbody>
-<tr><td><strong>Macro</strong></td><td>Plain mean of the per-class scores</td><td class="num">(0.864 + 0.889 + 0.973) / 3 = <strong>0.909</strong></td><td>Every class counts equally, however rare. Use when the small classes matter (rare defect types, minority segments).</td></tr>
+<tr><td><strong>Macro</strong></td><td>Plain mean of the per-class scores</td><td class="num">(0.864 + 0.889 + 0.973) / 3 = <strong>0.909</strong> (0.908 from the unrounded per-class values, as the code prints)</td><td>Every class counts equally, however rare. Use when the small classes matter (rare defect types, minority segments).</td></tr>
 <tr><td><strong>Micro</strong></td><td>Pool all TP, FP, FN across classes, then compute the metric once</td><td class="num">65 correct / 72 = <strong>0.903</strong></td><td>Every <em>example</em> counts equally, so big classes dominate. For single-label problems micro-F<sub>1</sub> = micro-precision = micro-recall = accuracy.</td></tr>
 <tr><td><strong>Weighted</strong></td><td>Mean of per-class scores weighted by class support</td><td class="num">(24·0.864 + 29·0.889 + 19·0.973) / 72 = <strong>0.903</strong></td><td>A compromise that follows the class sizes; it is what <code>classification_report</code> prints last, and it can hide a collapsed rare class.</td></tr>
 </tbody>
@@ -915,6 +1043,8 @@ base = np.full_like(p, y_tr.mean())
 <div class="callout pro"><div class="title">At work</div>
 <p>My standard evaluation block for any binary classifier, in this order: (1) base rate and majority baseline; (2) ROC-AUC and average precision on the validation set; (3) the PR curve, eyeballed; (4) precision, recall and counts at the <em>chosen</em> threshold, plus expected cost if costs are known; (5) log-loss or Brier vs the base-rate baseline, plus a reliability diagram if the probabilities will be used as numbers. Then, and only then, the test set — once. Copy this list into your project template.</p>
 </div>
+
+<div class="callout lab"><div class="title">Lab</div><p>Open <code>labs/ch06_classification_metrics.py</code> in VS Code and make the tests in <code>labs/tests/test_ch06.py</code> pass. You will build precision, recall, F<sub>β</sub> and the confusion matrix from raw counts, compute AUC from a ranked list by hand, and choose a decision threshold from a cost matrix on a validation split.</p></div>
 
 <!-- ============================================================ -->
 <h2 id="quiz">Quiz</h2>
