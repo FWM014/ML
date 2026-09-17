@@ -205,9 +205,9 @@
   <rect x="300" y="160" width="200" height="40" class="box-accent"/><text x="400" y="178" text-anchor="middle" class="lbl-strong">How many rows?</text><text x="400" y="193" text-anchor="middle" class="lbl" font-size="11">and must every prediction be explained?</text>
   <!-- three tabular outcomes -->
   <line x1="300" y1="180" x2="262" y2="180" class="arrow"/><line x1="262" y1="180" x2="262" y2="224" class="arrow" marker-end="url(#arr-f23-2)"/>
-  <text x="268" y="209" class="lbl" font-size="10">&lt; 1k rows, or</text><text x="268" y="220" class="lbl" font-size="10">must explain</text>
+  <text x="270" y="209" class="lbl" font-size="10">&lt; 1k rows, or</text><text x="270" y="220" class="lbl" font-size="10">must explain</text>
   <line x1="400" y1="200" x2="400" y2="224" class="arrow" marker-end="url(#arr-f23-2)"/>
-  <text x="400" y="214" text-anchor="middle" class="lbl" font-size="10">1k–10M</text>
+  <text x="406" y="214" class="lbl" font-size="10">1k–10M rows</text>
   <line x1="500" y1="180" x2="538" y2="180" class="arrow"/><line x1="538" y1="180" x2="538" y2="224" class="arrow" marker-end="url(#arr-f23-2)"/>
   <text x="532" y="209" text-anchor="end" class="lbl" font-size="10">&gt; 1M rows,</text><text x="532" y="220" text-anchor="end" class="lbl" font-size="10">raw signals</text>
   <rect x="236" y="226" width="150" height="80" rx="6" fill="var(--s1)" fill-opacity=".14" stroke="var(--s1)" stroke-width="1.5"/>
@@ -646,11 +646,11 @@ best_t = grid[prof.<span class="fn">argmax</span>()]
   <g class="grid"><line x1="60" y1="148" x2="560" y2="148"/><line x1="60" y1="66" x2="560" y2="66"/></g>
   <!-- plateau band -->
   <rect x="180.0" y="58.2" width="96.0" height="171.8" fill="var(--s3)" fill-opacity=".10"/>
-  <text x="228.0" y="48" text-anchor="middle" class="lbl" fill="var(--s3)" font-size="11" font-weight="700">plateau: 0.25 – 0.45</text>
+  <text x="228.0" y="205" text-anchor="middle" class="lbl" fill="var(--s3)" font-size="11" font-weight="700">plateau: 0.25 – 0.45</text>
   <polyline points="84.0,146.2 108.0,94.0 132.0,75.5 156.0,64.6 180.0,61.5 204.0,59.0 228.0,59.8 252.0,59.8 276.0,61.0 300.0,66.4 324.0,70.0 348.0,72.6 372.0,78.1 396.0,85.0 420.0,95.8 444.0,107.4 468.0,119.2 492.0,140.0" fill="none" stroke="var(--s1)" stroke-width="2.5"/>
   <g fill="var(--s1)"><circle cx="84.0" cy="146.2" r="3"/><circle cx="108.0" cy="94.0" r="3"/><circle cx="132.0" cy="75.5" r="3"/><circle cx="156.0" cy="64.6" r="3"/><circle cx="180.0" cy="61.5" r="3"/><circle cx="204.0" cy="59.0" r="3"/><circle cx="228.0" cy="59.8" r="3"/><circle cx="252.0" cy="59.8" r="3"/><circle cx="276.0" cy="61.0" r="3"/><circle cx="300.0" cy="66.4" r="3"/><circle cx="324.0" cy="70.0" r="3"/><circle cx="348.0" cy="72.6" r="3"/><circle cx="372.0" cy="78.1" r="3"/><circle cx="396.0" cy="85.0" r="3"/><circle cx="420.0" cy="95.8" r="3"/><circle cx="444.0" cy="107.4" r="3"/><circle cx="468.0" cy="119.2" r="3"/><circle cx="492.0" cy="140.0" r="3"/></g>
   <circle cx="204.0" cy="59.0" r="6" fill="var(--s7)"/>
-  <text x="214.0" y="47.0" class="lbl-strong" fill="var(--s7)" font-size="11">θ* = 0.30, $20,900</text>
+  <text x="218.0" y="51.0" class="lbl-strong" fill="var(--s7)" font-size="11">θ* = 0.30, $20,900</text>
   <text x="108.0" y="116.0" class="lbl" font-size="10">too many contacts:</text><text x="108.0" y="128.0" class="lbl" font-size="10">offer cost eats the gain</text>
   <text x="444.0" y="133.4" text-anchor="middle" class="lbl" font-size="10">too few contacts:</text><text x="444.0" y="145.4" text-anchor="middle" class="lbl" font-size="10">churners slip through</text>
   <!-- reference panel -->
@@ -882,14 +882,14 @@ prob = loaded.<span class="fn">predict_proba</span>(new_customer)[<span class="n
   <rect x="300" y="70" width="210" height="170" rx="8" class="box-accent"/>
   <text x="405" y="92" text-anchor="middle" class="lbl-strong">Business assumptions</text>
   <text x="312" y="114" class="lbl" font-size="11">offer cost = $20 per contact</text>
-  <text x="312" y="132" class="lbl" font-size="11">saved customer = $150 (12-mo margin)</text>
-  <text x="312" y="150" class="lbl" font-size="11">save rate = 40% of contacted churners</text>
+  <text x="312" y="132" class="lbl" font-size="11">saved customer = $150 (12-mo)</text>
+  <text x="312" y="150" class="lbl" font-size="11">save rate = 40% of contacted</text>
   <line x1="312" y1="160" x2="498" y2="160" class="grid"/>
-  <text x="312" y="180" class="lbl" font-size="11">revenue = 0.4 × 169 × $150 = $10,140</text>
-  <text x="312" y="198" class="lbl" font-size="11">cost = (169 + 66) × $20 = $4,700</text>
+  <text x="312" y="180" class="lbl" font-size="11">revenue = 0.4·169·$150 = $10,140</text>
+  <text x="312" y="198" class="lbl" font-size="11">cost = (169+66)·$20 = $4,700</text>
   <text x="312" y="222" class="lbl-strong" font-size="12" fill="var(--s1)">profit ≈ $5,400 per 1,000 scored</text>
   <!-- bar chart: baseline y=150, 1px = $60; "everyone" clipped -->
-  <text x="670" y="60" text-anchor="middle" class="lbl-strong">Monthly profit, 1,000 customers</text>
+  <text x="670" y="40" text-anchor="middle" class="lbl-strong">Monthly profit, 1,000 customers</text>
   <line x1="560" y1="150" x2="780" y2="150" class="axis"/>
   <text x="586" y="145" text-anchor="middle" class="lbl" font-size="10">$0</text>
   <text x="586" y="166" text-anchor="middle" class="lbl" font-size="10">none</text>

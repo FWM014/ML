@@ -156,7 +156,7 @@ rows = [<span class="nu">13</span>, <span class="nu">81</span>, <span class="nu"
   <line x1="180" y1="60" x2="180" y2="235" stroke="var(--critical)" stroke-width="2" stroke-dasharray="6 4"/>
   <text x="235" y="125" class="lbl" fill="var(--critical)" font-size="11">✗ each line</text>
   <text x="235" y="139" class="lbl" fill="var(--critical)" font-size="11">gets 2 of 4</text>
-  <text x="180" y="290" text-anchor="middle" class="lbl">Best any single line can do: 75% (3 of 4). Logistic regression scores 50%.</text>
+  <text x="200" y="290" text-anchor="middle" class="lbl" font-size="11">Best single line: 75% (3 of 4). Logistic regression: 50%.</text>
   <!-- arrow -->
   <line x1="320" y1="150" x2="400" y2="150" class="arrow" stroke-width="2.5" marker-end="url(#arr-n2)"/>
   <text x="360" y="135" text-anchor="middle" class="lbl-strong" fill="var(--s7)" font-size="11">hidden layer</text>
@@ -450,23 +450,23 @@ P  = np.exp(Z2 - Z2.max(axis=<span class="nu">1</span>, keepdims=<span class="kw
   </g>
   <g class="lbl-strong" font-size="11">
     <text x="683" y="172" text-anchor="middle" fill="var(--s2)">∂L/∂L = 1</text>
-    <text x="554" y="172" text-anchor="middle" fill="var(--s2)">∂L/∂ŷ = −1/ŷ = −2.864</text>
+    <text x="554" y="192" text-anchor="middle" fill="var(--s2)">∂L/∂ŷ = −1/ŷ = −2.864</text>
     <text x="444" y="172" text-anchor="middle" fill="var(--s2)">∂L/∂z<tspan font-size="8" dy="3">2</tspan><tspan dy="-3"> = ŷ − y = −0.6508</tspan></text>
-    <text x="324" y="172" text-anchor="middle" fill="var(--s2)">∂L/∂a<tspan font-size="8" dy="3">1</tspan><tspan dy="-3"> = δ</tspan><tspan font-size="8" dy="3">2</tspan><tspan dy="-3">·w</tspan><tspan font-size="8" dy="3">2</tspan><tspan dy="-3"> = 0.6508</tspan></text>
+    <text x="324" y="192" text-anchor="middle" fill="var(--s2)">∂L/∂a<tspan font-size="8" dy="3">1</tspan><tspan dy="-3"> = δ</tspan><tspan font-size="8" dy="3">2</tspan><tspan dy="-3">·w</tspan><tspan font-size="8" dy="3">2</tspan><tspan dy="-3"> = 0.6508</tspan></text>
     <text x="214" y="172" text-anchor="middle" fill="var(--s2)">∂L/∂z<tspan font-size="8" dy="3">1</tspan><tspan dy="-3"> = 0.6508·σ′ = 0.1529</tspan></text>
   </g>
   <!-- parameter gradients -->
   <g class="lbl" font-size="11">
-    <text x="444" y="196" text-anchor="middle" fill="var(--s2)">(σ′ folded into ŷ − y)</text>
-    <line x1="385" y1="155" x2="385" y2="215" stroke="var(--s2)" stroke-width="1.5" stroke-dasharray="3 2"/>
-    <text x="385" y="232" text-anchor="middle" class="lbl-strong" fill="var(--s2)">∂L/∂w<tspan font-size="8" dy="3">2</tspan><tspan dy="-3"> = δ</tspan><tspan font-size="8" dy="3">2</tspan><tspan dy="-3">·a</tspan><tspan font-size="8" dy="3">1</tspan><tspan dy="-3"> = −0.4051</tspan></text>
-    <text x="385" y="248" text-anchor="middle" class="lbl-strong" fill="var(--s2)">∂L/∂b<tspan font-size="8" dy="3">2</tspan><tspan dy="-3"> = δ</tspan><tspan font-size="8" dy="3">2</tspan><tspan dy="-3"> = −0.6508</tspan></text>
-    <line x1="155" y1="155" x2="155" y2="215" stroke="var(--s2)" stroke-width="1.5" stroke-dasharray="3 2"/>
-    <text x="155" y="232" text-anchor="middle" class="lbl-strong" fill="var(--s2)">∂L/∂w<tspan font-size="8" dy="3">1</tspan><tspan dy="-3"> = δ</tspan><tspan font-size="8" dy="3">1</tspan><tspan dy="-3">·x = 0.1529</tspan></text>
-    <text x="155" y="248" text-anchor="middle" class="lbl-strong" fill="var(--s2)">∂L/∂b<tspan font-size="8" dy="3">1</tspan><tspan dy="-3"> = δ</tspan><tspan font-size="8" dy="3">1</tspan><tspan dy="-3"> = 0.1529</tspan></text>
+    <text x="444" y="210" text-anchor="middle" fill="var(--s2)" font-size="10">(σ′ folded into ŷ − y)</text>
+    <line x1="385" y1="200" x2="385" y2="222" stroke="var(--s2)" stroke-width="1.5" stroke-dasharray="3 2"/>
+    <text x="385" y="238" text-anchor="middle" class="lbl-strong" fill="var(--s2)">∂L/∂w<tspan font-size="8" dy="3">2</tspan><tspan dy="-3"> = δ</tspan><tspan font-size="8" dy="3">2</tspan><tspan dy="-3">·a</tspan><tspan font-size="8" dy="3">1</tspan><tspan dy="-3"> = −0.4051</tspan></text>
+    <text x="385" y="254" text-anchor="middle" class="lbl-strong" fill="var(--s2)">∂L/∂b<tspan font-size="8" dy="3">2</tspan><tspan dy="-3"> = δ</tspan><tspan font-size="8" dy="3">2</tspan><tspan dy="-3"> = −0.6508</tspan></text>
+    <line x1="155" y1="180" x2="155" y2="222" stroke="var(--s2)" stroke-width="1.5" stroke-dasharray="3 2"/>
+    <text x="155" y="238" text-anchor="middle" class="lbl-strong" fill="var(--s2)">∂L/∂w<tspan font-size="8" dy="3">1</tspan><tspan dy="-3"> = δ</tspan><tspan font-size="8" dy="3">1</tspan><tspan dy="-3">·x = 0.1529</tspan></text>
+    <text x="155" y="254" text-anchor="middle" class="lbl-strong" fill="var(--s2)">∂L/∂b<tspan font-size="8" dy="3">1</tspan><tspan dy="-3"> = δ</tspan><tspan font-size="8" dy="3">1</tspan><tspan dy="-3"> = 0.1529</tspan></text>
   </g>
-  <text x="400" y="290" text-anchor="middle" class="lbl">Each backward step = (gradient arriving from the right) × (this node's local derivative). Values get reused, never recomputed.</text>
-  <text x="400" y="312" text-anchor="middle" class="lbl">Update: w<tspan font-size="8" dy="3">2</tspan><tspan dy="-3"> ← −1 − 0.5·(−0.4051) = −0.7975;  w</tspan><tspan font-size="8" dy="3">1</tspan><tspan dy="-3"> ← 0.5 − 0.5·0.1529 = 0.4235.  ŷ rises from 0.349 to 0.465.</tspan></text>
+  <text x="400" y="292" text-anchor="middle" class="lbl">Each backward step = (gradient arriving from the right) × (this node's local derivative). Values get reused, never recomputed.</text>
+  <text x="400" y="314" text-anchor="middle" class="lbl">Update: w<tspan font-size="8" dy="3">2</tspan><tspan dy="-3"> ← −1 − 0.5·(−0.4051) = −0.7975;  w</tspan><tspan font-size="8" dy="3">1</tspan><tspan dy="-3"> ← 0.5 − 0.5·0.1529 = 0.4235.  ŷ rises from 0.349 to 0.465.</tspan></text>
 </svg>
 <figcaption><strong>Figure 15.5 — The computational graph, forward and backward.</strong> Blue values are computed left to right. Orange gradients are computed right to left, each one the product of the gradient arriving from the right and the node's local derivative. Weight gradients hang off the nodes that use them. The numbers match the worked example below to four decimals.</figcaption>
 </figure>
@@ -565,7 +565,7 @@ p_te = sigmoid(np.maximum(<span class="nu">0</span>, X_te @ W1 + b1) @ W2 + b2)
 <span class="out"># test accuracy: 0.9</span></code></pre>
 
 <figure class="fig">
-<svg viewBox="0 0 800 260" role="img" aria-label="Left: training loss falling from 0.24 to 0.10 and accuracy rising to 96% over 1000 epochs. Right: the two-moons data with a curved decision boundary separating the crescents.">
+<svg viewBox="0 0 800 280" role="img" aria-label="Left: training loss falling from 0.24 to 0.10 and accuracy rising to 96% over 1000 epochs. Right: the two-moons data with a curved decision boundary separating the crescents.">
   <text x="210" y="24" text-anchor="middle" class="lbl-strong" font-size="13">Training curves (printed every 100 epochs)</text>
   <line x1="60" y1="200" x2="360" y2="200" class="axis"/><line x1="60" y1="40" x2="60" y2="200" class="axis"/>
   <text x="210" y="225" text-anchor="middle" class="lbl">epoch</text>
@@ -576,7 +576,8 @@ p_te = sigmoid(np.maximum(<span class="nu">0</span>, X_te @ W1 + b1) @ W2 + b2)
   <text x="368" y="85" class="lbl" font-size="10" fill="var(--s2)">96%</text><text x="368" y="155" class="lbl" font-size="10" fill="var(--s2)">90%</text>
   <line x1="240" y1="52" x2="260" y2="52" stroke="var(--s1)" stroke-width="2.5"/><text x="266" y="56" class="lbl" font-size="11">loss (BCE)</text>
   <line x1="240" y1="68" x2="260" y2="68" stroke="var(--s2)" stroke-width="2.5" stroke-dasharray="6 3"/><text x="266" y="72" class="lbl" font-size="11">train accuracy</text>
-  <text x="210" y="245" text-anchor="middle" class="lbl" font-size="11">Loss keeps falling after accuracy plateaus: the network is growing more confident, not more correct.</text>
+  <text x="210" y="248" text-anchor="middle" class="lbl" font-size="11">Loss keeps falling after accuracy plateaus:</text>
+  <text x="210" y="264" text-anchor="middle" class="lbl" font-size="11">the net grows more confident, not more correct.</text>
   <!-- right: moons -->
   <text x="580" y="24" text-anchor="middle" class="lbl-strong" font-size="13">What it learned: a curved boundary</text>
   <rect x="420" y="40" width="320" height="190" fill="var(--surface-2)" rx="6"/>
@@ -584,7 +585,8 @@ p_te = sigmoid(np.maximum(<span class="nu">0</span>, X_te @ W1 + b1) @ W2 + b2)
   <path d="M420,150 C470,165 520,170 560,130 C600,90 640,60 740,70" fill="none" stroke="var(--s7)" stroke-width="2.5" stroke-dasharray="7 4"/>
   <g fill="var(--s1)"><circle cx="592" cy="118" r="4"/><circle cx="597" cy="109" r="4"/><circle cx="478" cy="130" r="4"/><circle cx="592" cy="99" r="4"/><circle cx="567" cy="113" r="4"/><circle cx="454" cy="78" r="4"/><circle cx="471" cy="105" r="4"/><circle cx="600" cy="86" r="4"/><circle cx="455" cy="108" r="4"/><circle cx="445" cy="150" r="4"/><circle cx="491" cy="81" r="4"/><circle cx="548" cy="94" r="4"/><circle cx="627" cy="161" r="4"/><circle cx="573" cy="95" r="4"/><circle cx="547" cy="85" r="4"/><circle cx="493" cy="129" r="4"/><circle cx="549" cy="60" r="4"/><circle cx="479" cy="100" r="4"/><circle cx="499" cy="112" r="4"/><circle cx="456" cy="165" r="4"/><circle cx="588" cy="74" r="4"/><circle cx="626" cy="116" r="4"/><circle cx="465" cy="140" r="4"/><circle cx="433" cy="114" r="4"/><circle cx="608" cy="114" r="4"/><circle cx="619" cy="146" r="4"/><circle cx="613" cy="169" r="4"/><circle cx="545" cy="87" r="4"/><circle cx="559" cy="81" r="4"/><circle cx="494" cy="91" r="4"/><circle cx="600" cy="94" r="4"/><circle cx="441" cy="148" r="4"/><circle cx="548" cy="68" r="4"/><circle cx="481" cy="138" r="4"/><circle cx="604" cy="109" r="4"/><circle cx="543" cy="92" r="4"/><circle cx="538" cy="65" r="4"/><circle cx="622" cy="170" r="4"/><circle cx="623" cy="129" r="4"/><circle cx="517" cy="92" r="4"/></g>
   <g fill="var(--s2)"><circle cx="620" cy="176" r="4"/><circle cx="603" cy="172" r="4"/><circle cx="720" cy="126" r="4"/><circle cx="561" cy="155" r="4"/><circle cx="678" cy="160" r="4"/><circle cx="621" cy="201" r="4"/><circle cx="646" cy="185" r="4"/><circle cx="572" cy="167" r="4"/><circle cx="589" cy="181" r="4"/><circle cx="602" cy="192" r="4"/><circle cx="553" cy="180" r="4"/><circle cx="658" cy="203" r="4"/><circle cx="560" cy="151" r="4"/><circle cx="636" cy="166" r="4"/><circle cx="685" cy="135" r="4"/><circle cx="678" cy="154" r="4"/><circle cx="709" cy="125" r="4"/><circle cx="620" cy="219" r="4"/><circle cx="595" cy="217" r="4"/><circle cx="535" cy="146" r="4"/><circle cx="692" cy="153" r="4"/><circle cx="702" cy="146" r="4"/><circle cx="670" cy="200" r="4"/><circle cx="692" cy="182" r="4"/><circle cx="682" cy="151" r="4"/><circle cx="566" cy="160" r="4"/><circle cx="528" cy="137" r="4"/><circle cx="683" cy="120" r="4"/><circle cx="560" cy="137" r="4"/><circle cx="562" cy="161" r="4"/><circle cx="536" cy="104" r="4"/><circle cx="621" cy="201" r="4"/><circle cx="553" cy="178" r="4"/><circle cx="627" cy="191" r="4"/><circle cx="670" cy="161" r="4"/><circle cx="532" cy="120" r="4"/><circle cx="716" cy="127" r="4"/><circle cx="554" cy="149" r="4"/><circle cx="693" cy="140" r="4"/><circle cx="593" cy="172" r="4"/></g>
-  <text x="580" y="245" text-anchor="middle" class="lbl" font-size="11">16 ReLU neurons = 16 straight folds, glued into one curve. Logistic regression gets 85% here; the MLP 90%.</text>
+  <text x="580" y="248" text-anchor="middle" class="lbl" font-size="11">16 ReLU neurons = 16 straight folds glued into one curve.</text>
+  <text x="580" y="264" text-anchor="middle" class="lbl" font-size="11">Logistic regression: 85% here. The MLP: 90%.</text>
 </svg>
 <figcaption><strong>Figure 15.6 — Training the numpy network on two moons.</strong> Left: loss and accuracy over 1000 full-batch steps. Right: the kind of boundary a ReLU network draws, piecewise linear with one bend per hidden neuron, which is enough to separate the crescents that defeat a single line.</figcaption>
 </figure>
@@ -601,7 +603,7 @@ p_te = sigmoid(np.maximum(<span class="nu">0</span>, X_te @ W1 + b1) @ W2 + b2)
 <p>Equation (3) of backprop multiplies the error signal by W<sup>⊤</sup> and by g′ at every layer. Stack L layers and the gradient reaching layer 1 is a product of L such factors. Products of many numbers behave violently: if the typical factor is below 1 the product goes to zero (<strong>vanishing gradients</strong>: early layers receive no learning signal and stay random); if it is above 1 the product explodes (<strong>exploding gradients</strong>: updates of size 10<sup>7</sup>, loss becomes NaN). This is the central obstacle that made "deep" learning hard for twenty years, and the reason three specific ideas (ReLU, careful initialisation, normalisation layers) matter so much.</p>
 
 <figure class="fig">
-<svg viewBox="0 0 800 300" role="img" aria-label="Bar chart of gradient magnitude per layer, log scale, for a 10-layer network: sigmoid activations show gradients shrinking by a factor of about 200,000 from layer 10 to layer 1; ReLU with He initialisation stays flat around 4; ReLU with unit-variance initialisation sits at ten million.">
+<svg viewBox="0 0 800 330" role="img" aria-label="Bar chart of gradient magnitude per layer, log scale, for a 10-layer network: sigmoid activations show gradients shrinking by a factor of about 200,000 from layer 10 to layer 1; ReLU with He initialisation stays flat around 4; ReLU with unit-variance initialisation sits at ten million.">
   <text x="400" y="24" text-anchor="middle" class="lbl-strong" font-size="13">‖∂L/∂W‖ at each of 10 layers (log scale), same random data, three configurations</text>
   <line x1="70" y1="250" x2="740" y2="250" class="axis"/><line x1="70" y1="40" x2="70" y2="250" class="axis"/>
   <!-- y ticks: log10 from -6 (y=250) to 8 (y=40): 15px per unit -->
@@ -626,9 +628,9 @@ p_te = sigmoid(np.maximum(<span class="nu">0</span>, X_te @ W1 + b1) @ W2 + b2)
     <text x="116" y="266">1</text><text x="182" y="266">2</text><text x="248" y="266">3</text><text x="314" y="266">4</text><text x="380" y="266">5</text><text x="446" y="266">6</text><text x="512" y="266">7</text><text x="578" y="266">8</text><text x="644" y="266">9</text><text x="710" y="266">10</text>
   </g>
   <text x="405" y="284" text-anchor="middle" class="lbl">layer (1 = closest to the input, 10 = closest to the loss)</text>
-  <rect x="90" y="42" width="12" height="10" fill="var(--s1)"/><text x="107" y="51" class="lbl" font-size="11">sigmoid, weights ~ N(0, 1/width): vanishes 10⁵× across 10 layers</text>
-  <rect x="90" y="60" width="12" height="10" fill="var(--s3)"/><text x="107" y="69" class="lbl" font-size="11">ReLU, He init N(0, 2/width): flat, every layer learns</text>
-  <rect x="90" y="78" width="12" height="10" fill="var(--s8)"/><text x="107" y="87" class="lbl" font-size="11">ReLU, weights ~ N(0, 1): explodes to 10⁷</text>
+  <rect x="70" y="304" width="12" height="10" fill="var(--s1)"/><text x="87" y="313" class="lbl" font-size="11">sigmoid, N(0, 1/width): vanishes 10⁵× over 10 layers</text>
+  <rect x="400" y="304" width="12" height="10" fill="var(--s3)"/><text x="417" y="313" class="lbl" font-size="11">ReLU, He init: flat</text>
+  <rect x="560" y="304" width="12" height="10" fill="var(--s8)"/><text x="577" y="313" class="lbl" font-size="11">ReLU, N(0, 1): explodes to 10⁷</text>
 </svg>
 <figcaption><strong>Figure 15.7 — Gradient magnitude per layer in a 10-layer network.</strong> With sigmoid activations the gradient shrinks by roughly 4× per layer, so layer 1 sees a signal 200,000× weaker than layer 10 and effectively never trains. ReLU with He initialisation keeps the magnitude constant across depth. ReLU with carelessly large weights explodes. Activation and initialisation are the two dials.</figcaption>
 </figure>

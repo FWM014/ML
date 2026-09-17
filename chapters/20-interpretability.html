@@ -261,7 +261,7 @@ sd = pd.Series(perm.importances_std, index=X.columns)
 <span class="out"># worst perimeter         0.493        worst texture           0.074 ± 0.026</span>
 <span class="out"># worst concave points    0.159        worst perimeter         0.045 ± 0.031</span>
 <span class="out"># mean concave points     0.105        mean concave points     0.044 ± 0.025</span>
-<span class="out"># worst concave points    0.080        worst concave points    0.044 ± 0.033</span>
+<span class="out"># worst radius            0.080        worst concave points    0.044 ± 0.033</span>
 <span class="out"># worst texture           0.029        worst radius            0.028 ± 0.029</span>
 <span class="out">#</span>
 <span class="out"># features whose permutation importance is &lt;= 0: 11 of 30</span></code></pre>
@@ -382,7 +382,7 @@ pd2 = partial_dependence(gbm, X, features=[(<span class="nu">0</span>, <span cla
 <span class="out">#  [0.666 0.396 0.097]</span>
 <span class="out">#  [0.38  0.178 0.01 ]]</span></code></pre>
 
-<p>The <code>mean radius</code> PDP drops from 0.71 to 0.31 between radius 12 and 16 and then flattens — a tree ensemble's typical staircase. But look at the ICE percentiles: at every grid value the 10th percentile row is near 0 and the 90th is near 1. In other words, for most tumours the other five features already decide the answer, and radius only moves the ones in the middle. The 2-D table shows the interaction: with small concave points, a small radius gives P(benign) = 0.99 and a large radius 0.38; with many concave points, radius hardly matters (0.20 → 0.01) because the model has already decided. <code>PartialDependenceDisplay.from_estimator(gbm, X, ["mean radius"], kind="both")</code> draws exactly these numbers.</p>
+<p>The <code>mean radius</code> PDP drops from 0.70 at radius 11.7 to 0.33 at 16.1 and then flattens at 0.31 — a tree ensemble's typical staircase. But look at the ICE percentiles: at every grid value the 10th percentile row is near 0 and the 90th is near 1. In other words, for most tumours the other five features already decide the answer, and radius only moves the ones in the middle. The 2-D table shows the interaction: with small concave points, a small radius gives P(benign) = 0.99 and a large radius 0.38; with many concave points, radius hardly matters (0.20 → 0.01) because the model has already decided. <code>PartialDependenceDisplay.from_estimator(gbm, X, ["mean radius"], kind="both")</code> draws exactly these numbers.</p>
 
 <div class="widget" id="w-pdp">
   <div class="w-title">Interactive: PDP explorer — the average versus the individuals</div>
@@ -482,6 +482,35 @@ n = <span class="fn">len</span>(players)
 <span class="out"># Shapley (via orderings): {'A': 2.0, 'B': 5.0, 'C': 35.0}</span>
 <span class="out"># Shapley (via formula):   {'A': 2.0, 'B': 5.0, 'C': 35.0}</span>
 <span class="out"># efficiency: sum = 42.0 = v(all) = 42</span></code></pre>
+
+<details class="deepdive"><summary>Deep dive: where the Shapley weights come from <span class="time">8 min</span></summary>
+<div class="callout eli9"><div class="title">Explain it like I'm 9</div>
+<p>Write every possible taxi order on a card: six cards. Now ask "on how many cards is Cara the <em>first</em> one in?" Two (C→A→B and C→B→A). "On how many cards does Cara get in right after Anna, with Ben still outside?" One (A→C→B). The Shapley formula is nothing but this card-counting, done once for every group of people who could already be in the taxi. The weights are the card counts divided by six.</p>
+</div>
+<p><strong>Precisely.</strong> The ordering table averages player <em>i</em>'s marginal contribution over all n! arrival orders. In any order, the people who arrived before <em>i</em> form some coalition S of size k; <em>i</em>'s contribution in that order is v(S ∪ {i}) − v(S), which depends only on S. So instead of summing over orders we can sum over coalitions, provided we count how many orders put <em>exactly</em> S before <em>i</em>: the k members of S can arrive in k! ways, then <em>i</em>, then the remaining n − k − 1 players in (n − k − 1)! ways. Divide by n! and you have the weight.</p>
+<div class="callout math"><div class="title">The math (optional)</div>
+<div class="formula">w(S) = |S|! (n − |S| − 1)! / n! = 1 / ( n · C(n−1, |S|) ) &nbsp;&nbsp;⇒&nbsp;&nbsp; φ<sub>i</sub> = ∑<sub>S ⊆ N∖{i}</sub> w(S) · [ v(S ∪ {i}) − v(S) ]</div>
+<p>n is the number of players, S a coalition that excludes <em>i</em>, |S| its size, and C(n−1, |S|) the number of coalitions of that size that can be formed from the other n − 1 players. The second form says something useful: each coalition <em>size</em> gets total weight 1/n, shared equally among the coalitions of that size. Empty and full coalitions (one each) therefore weigh most; middle-sized ones, of which there are many, weigh least. For n = 3 the weights are 1/3, 1/6, 1/6, 1/3 — and they sum to 1, so φ<sub>i</sub> is a weighted average of marginal contributions.</p>
+</div>
+<p>Here is the taxi game again, computed by the formula instead of the table. For Cara (C), the coalitions that exclude her are ∅, {A}, {B}, {A,B}:</p>
+<div class="tbl-wrap">
+<table class="tbl">
+<thead><tr><th>S (before C)</th><th>|S|</th><th>weight w(S)</th><th>v(S ∪ {C}) − v(S)</th><th>weight × marginal</th></tr></thead>
+<tbody>
+<tr><td>∅</td><td class="num">0</td><td class="num">0!·2!/3! = 1/3</td><td class="num">42 − 0 = 42</td><td class="num">14</td></tr>
+<tr><td>{A}</td><td class="num">1</td><td class="num">1!·1!/3! = 1/6</td><td class="num">42 − 6 = 36</td><td class="num">6</td></tr>
+<tr><td>{B}</td><td class="num">1</td><td class="num">1!·1!/3! = 1/6</td><td class="num">42 − 12 = 30</td><td class="num">5</td></tr>
+<tr><td>{A,B}</td><td class="num">2</td><td class="num">2!·0!/3! = 1/3</td><td class="num">42 − 12 = 30</td><td class="num">10</td></tr>
+<tr><td><strong>φ<sub>C</sub></strong></td><td></td><td class="num">(sum 1)</td><td></td><td class="num"><strong>35</strong></td></tr>
+</tbody>
+</table>
+</div>
+<p>The same four lines for Anna give 1/3·6 + 1/6·0 + 1/6·0 + 1/3·0 = 2, and for Ben 1/3·12 + 1/6·(12 − 6) + 1/6·0 + 1/3·0 = 5. Exactly the numbers the ordering table produced, because the two computations are the same sum grouped differently — which is what the code block above checks.</p>
+<p><strong>Why these weights and no others.</strong> Shapley's theorem says the ordering average is the <em>only</em> allocation rule that satisfies efficiency, symmetry, dummy and additivity together. The proof idea is short. Any game v can be written as a sum of "unanimity games" u<sub>T</sub>, each worth 1 to coalitions that contain all of T and 0 otherwise. In u<sub>T</sub>, players outside T are dummies (they get 0), players inside T are interchangeable (symmetry: they get equal shares), and the shares must sum to 1 (efficiency) — so each member of T gets 1/|T|, with no freedom left. Additivity then fixes the allocation for every v. The ordering average happens to satisfy all four axioms, so it must be that unique rule; any other weighting — say, equal weight on every coalition — breaks at least one axiom (equal coalition weights break efficiency). This is also why KernelSHAP's regression uses a kernel that is heaviest on very small and very large coalitions: it is reproducing exactly these weights.</p>
+<div class="callout pro"><div class="title">At work</div>
+<p>You will never evaluate this sum for a real model — with n = 30 there are 2<sup>29</sup> coalitions per feature — but you will be asked to justify why SHAP is "fair." The answer is the four axioms and the uniqueness theorem, not the algorithm. TreeSHAP is merely a fast way of computing the same numbers.</p>
+</div>
+</details>
 
 <div class="widget" id="w-shap">
   <div class="w-title">Interactive: Shapley calculator — set the coalition values, watch the fair split</div>
@@ -804,7 +833,7 @@ n = <span class="fn">len</span>(players)
   <text x="235" y="44" class="lbl" font-size="10">← pushes toward malignant</text>
   <text x="700" y="44" text-anchor="end" class="lbl" font-size="10">pushes toward benign →</text>
 </svg>
-<figcaption><strong>Figure 20.4 — The beeswarm shows three things at once.</strong> Vertical order = global importance (mean |SHAP|). Horizontal spread = how strongly the feature can move a prediction. Colour = direction: for <code>worst concave points</code>, high values (orange) sit on the left, so many concave points push toward malignant — the sign of the effect, which a bar chart cannot show.</figcaption>
+<figcaption><strong>Figure 20.4 — The beeswarm shows three things at once.</strong> Vertical order = global importance (mean |SHAP|). Horizontal spread = how strongly the feature can move a prediction. Colour = direction: for <code>worst concave points</code>, high values (orange) sit on the left, so many concave points push toward malignant — the sign of the effect, which a bar chart cannot show. (The dots are a subsample of the 171 validation rows; values beyond ±3 are drawn at the axis edge.)</figcaption>
 </figure>
 
 <figure class="fig">
@@ -817,7 +846,7 @@ n = <span class="fn">len</span>(players)
     <text x="218" y="134" text-anchor="end">worst radius</text><rect x="230" y="122" width="260" height="16" fill="var(--s1)"/><text x="496" y="134" font-size="11">0.87</text>
     <text x="218" y="160" text-anchor="end">worst area</text><rect x="230" y="148" width="199" height="16" fill="var(--s1)"/><text x="435" y="160" font-size="11">0.66</text>
     <text x="218" y="186" text-anchor="end">area error</text><rect x="230" y="174" width="190" height="16" fill="var(--s1)"/><text x="426" y="186" font-size="11">0.63</text>
-    <text x="218" y="212" text-anchor="end">24 other features</text><rect x="230" y="200" width="120" height="16" fill="var(--ink-3)" fill-opacity=".6"/><text x="356" y="212" font-size="11">0.40 (sum)</text>
+    <text x="218" y="212" text-anchor="end">each of the 24 others (avg)</text><rect x="230" y="200" width="27" height="16" fill="var(--ink-3)" fill-opacity=".6"/><text x="263" y="212" font-size="11">0.09 on average · 2.16 in total</text>
   </g>
   <line x1="230" y1="224" x2="700" y2="224" class="axis"/>
   <text x="230" y="240" text-anchor="middle" class="lbl" font-size="10">0</text><text x="465" y="240" text-anchor="middle" class="lbl" font-size="10">0.78</text><text x="700" y="240" text-anchor="middle" class="lbl" font-size="10">1.57</text>
@@ -928,7 +957,7 @@ k = <span class="fn">list</span>(X.columns).index(<span class="st">"worst concav
 <p>A <strong>SHAP dependence plot</strong> scatters one feature's value (x-axis) against its SHAP value (y-axis), one dot per row. It is the PDP's honest cousin: instead of averaging, it shows every row, so a vertical spread at a fixed x means an interaction — and colouring the dots by a second feature usually reveals which one. <strong>Interaction values</strong> (<code>shap_interaction_values</code>) go further and decompose each φ<sub>ij</sub> into a main effect plus pairwise terms φ<sub>ijk</sub>, so you can rank interactions the way you rank features. They are exact for trees and cost roughly n times more than plain SHAP.</p>
 
 <div class="callout warn"><div class="title">Common mistake</div>
-<p><strong>Reading classifier SHAP values as probabilities.</strong> For tree-based classifiers, <code>TreeExplainer</code> returns SHAP values in the model's <em>raw</em> output space — log-odds (margin) for GBM/XGBoost/LightGBM. A SHAP value of +1.0 does not mean "+100% probability"; it means the odds were multiplied by e ≈ 2.7. Log-odds are the right space for additivity, but not for a stakeholder. Either explain in odds ("this feature tripled the odds of approval") or, if you must show probabilities, use <code>model_output="probability"</code> with a background dataset — and accept that those values are approximate and no longer exactly additive across features. For scikit-learn's <code>RandomForestClassifier</code>, TreeSHAP works in probability space directly, and returns one matrix per class.</p>
+<p><strong>Reading classifier SHAP values as probabilities.</strong> For tree-based classifiers, <code>TreeExplainer</code> returns SHAP values in the model's <em>raw</em> output space — log-odds (margin) for GBM/XGBoost/LightGBM. A SHAP value of +1.0 does not mean "+100% probability"; it means the odds were multiplied by e ≈ 2.7. Log-odds are the right space for additivity, but not for a stakeholder. Either explain in odds ("this feature tripled the odds of approval") or, if you must show probabilities, use <code>model_output="probability"</code> with <code>feature_perturbation="interventional"</code> and a background dataset. Those values still add up to the predicted probability, but the per-feature split is an approximation that depends on the background sample, and the base value becomes a background-specific number rather than the training mean. For scikit-learn's <code>RandomForestClassifier</code>, TreeSHAP works in probability space directly and returns one matrix per class — in current <code>shap</code> versions stacked into one array of shape <code>(n_rows, n_features, n_classes)</code>, with one <code>expected_value</code> per class (older versions returned a list of matrices).</p>
 </div>
 
 <div class="callout pro"><div class="title">At work: SHAP hygiene</div>
@@ -939,6 +968,96 @@ k = <span class="fn">list</span>(X.columns).index(<span class="st">"worst concav
   <li><strong>Translate, don't paste.</strong> "worst concave points = 0.16 contributed −0.90 log-odds" is not a reason a customer can act on. Map features to plain-language reason codes in advance.</li>
 </ul>
 </div>
+
+<details class="deepdive"><summary>Deep dive: turning a log-odds waterfall into a decision <span class="time">9 min</span></summary>
+<div class="callout eli9"><div class="title">Explain it like I'm 9</div>
+<p>Pushing a swing always adds the same amount of <em>effort</em>, but how much <em>higher</em> it goes depends on where it already is: near the bottom a push lifts it a lot, near the top of its arc the same push barely adds height. SHAP values are the pushes (they add up exactly). Probability is the height (it doesn't). When the head of credit asks "how many percentage points did income add?", the honest answer starts with "that depends where the swing was."</p>
+</div>
+<p><strong>Precisely.</strong> A gradient-boosted classifier outputs a log-odds score f(x); the probability is the sigmoid of it. TreeSHAP decomposes f(x) exactly, so each φ<sub>j</sub> is a log-odds step, and e<sup>φ<sub>j</sub></sup> is the factor by which that feature multiplied the odds — a number that is exact and does not depend on the other features. A probability step, by contrast, depends on the running total at the moment you apply it.</p>
+<div class="callout math"><div class="title">The math (optional)</div>
+<div class="formula">P = σ(f) = 1 / (1 + e<sup>−f</sup>) &nbsp;&nbsp;·&nbsp;&nbsp; odds = P / (1 − P) = e<sup>f</sup> &nbsp;&nbsp;·&nbsp;&nbsp; f(x) = E[f] + ∑<sub>j</sub> φ<sub>j</sub> &nbsp;&nbsp;⇒&nbsp;&nbsp; odds(x) = e<sup>E[f]</sup> · ∏<sub>j</sub> e<sup>φ<sub>j</sub></sup></div>
+<p>f is the model's raw output (log-odds), σ the sigmoid, E[f] the base value, φ<sub>j</sub> feature j's SHAP value. Because the exponential turns sums into products, the odds are the base odds times one multiplier per feature, in any order. The probability change from one feature, σ(f + φ<sub>j</sub>) − σ(f), is not order-free: its size is governed by the slope dP/df = P(1 − P), which is 0.25 at P = 0.5 and only 0.086 at P = 0.905.</p>
+</div>
+<figure class="fig">
+<svg viewBox="0 0 780 300" role="img" aria-label="A sigmoid curve mapping log-odds to probability, with two equal log-odds steps of minus 1.47 drawn as staircases: one starting at the base value near the flat top of the curve gives a small probability drop, the other ending at the prediction on the steeper part gives a larger drop">
+  <defs><marker id="arr-f10" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+  <text x="390" y="22" text-anchor="middle" class="lbl-strong" font-size="14">The same log-odds step is a different probability step, depending on where you start</text>
+  <line x1="60" y1="250" x2="500" y2="250" class="axis"/><line x1="60" y1="250" x2="60" y2="40" class="axis"/>
+  <g class="lbl" font-size="11">
+    <text x="60" y="268" text-anchor="middle">−4</text><text x="170" y="268" text-anchor="middle">−2</text><text x="280" y="268" text-anchor="middle">0</text><text x="390" y="268" text-anchor="middle">2</text><text x="500" y="268" text-anchor="middle">4</text>
+    <text x="52" y="254" text-anchor="end">0</text><text x="52" y="149" text-anchor="end">0.5</text><text x="52" y="44" text-anchor="end">1</text>
+  </g>
+  <text x="280" y="290" text-anchor="middle" class="lbl">model output f(x), log-odds</text>
+  <text x="22" y="145" text-anchor="middle" class="lbl" transform="rotate(-90 22 145)">P(benign) = σ(f)</text>
+  <line x1="60" y1="145" x2="500" y2="145" class="grid" stroke-dasharray="3 3"/>
+  <path d="M60.0,246.2 L65.5,245.8 L71.0,245.4 L76.5,244.9 L82.0,244.4 L87.5,243.8 L93.0,243.2 L98.5,242.5 L104.0,241.8 L109.5,240.9 L115.0,240.0 L120.5,239.0 L126.0,238.0 L131.5,236.8 L137.0,235.5 L142.5,234.1 L148.0,232.5 L153.5,230.9 L159.0,229.1 L164.5,227.1 L170.0,225.0 L175.5,222.7 L181.0,220.2 L186.5,217.6 L192.0,214.7 L197.5,211.7 L203.0,208.5 L208.5,205.0 L214.0,201.4 L219.5,197.6 L225.0,193.5 L230.5,189.3 L236.0,184.9 L241.5,180.3 L247.0,175.6 L252.5,170.7 L258.0,165.7 L263.5,160.6 L269.0,155.5 L274.5,150.2 L280.0,145.0 L285.5,139.8 L291.0,134.5 L296.5,129.4 L302.0,124.3 L307.5,119.3 L313.0,114.4 L318.5,109.7 L324.0,105.1 L329.5,100.7 L335.0,96.5 L340.5,92.4 L346.0,88.6 L351.5,85.0 L357.0,81.5 L362.5,78.3 L368.0,75.3 L373.5,72.4 L379.0,69.8 L384.5,67.3 L390.0,65.0 L395.5,62.9 L401.0,60.9 L406.5,59.1 L412.0,57.5 L417.5,55.9 L423.0,54.5 L428.5,53.2 L434.0,52.0 L439.5,51.0 L445.0,50.0 L450.5,49.1 L456.0,48.2 L461.5,47.5 L467.0,46.8 L472.5,46.2 L478.0,45.6 L483.5,45.1 L489.0,44.6 L494.5,44.2 L500.0,43.8" fill="none" stroke="var(--s1)" stroke-width="2.5"/>
+  <!-- step 1: -1.47 from the base (added first) -->
+  <path d="M403.9,60 L323,60 L323,106" fill="none" stroke="var(--s2)" stroke-width="2.5" marker-end="url(#arr-f10)"/>
+  <circle cx="403.9" cy="60" r="5" fill="var(--s2)" stroke="var(--surface)" stroke-width="2"/>
+  <text x="410" y="52" class="lbl-strong" font-size="11" fill="var(--s2)">base 2.25 → P 0.905</text>
+  <text x="316" y="56" text-anchor="end" class="lbl-strong" font-size="11" fill="var(--s2)">① −1.47 added first</text>
+  <text x="316" y="70" text-anchor="end" class="lbl" font-size="11" fill="var(--s2)">0.905 → 0.686 : ΔP = −0.22</text>
+  <!-- step 2: the same -1.47 into the final prediction (added last) -->
+  <path d="M382.5,68.2 L382.5,124.7 L301.6,124.7" fill="none" stroke="var(--s7)" stroke-width="2.5" marker-end="url(#arr-f10)"/>
+  <circle cx="301.6" cy="124.7" r="5" fill="var(--s7)" stroke="var(--surface)" stroke-width="2"/>
+  <text x="392" y="112" class="lbl-strong" font-size="11" fill="var(--s7)">② the same −1.47 added last</text>
+  <text x="392" y="126" class="lbl" font-size="11" fill="var(--s7)">0.866 → 0.597 : ΔP = −0.27</text>
+  <text x="296" y="138" text-anchor="end" class="lbl-strong" font-size="11" fill="var(--s7)">f(x) = 0.39 → P 0.597</text>
+  <!-- right-hand summary -->
+  <g class="lbl" font-size="11">
+    <text x="530" y="160" class="lbl-strong" font-size="12">Same feature, same SHAP value:</text>
+    <text x="530" y="180">log-odds step: −1.47 (always)</text>
+    <text x="530" y="198">odds multiplier: e<tspan font-size="8" dy="-4">−1.47</tspan><tspan dy="4"> = ×0.23 (always)</tspan></text>
+    <text x="530" y="216">probability step: −0.22 or −0.27</text>
+    <text x="530" y="234">(depends on what was added before)</text>
+    <text x="530" y="256" fill="var(--ink-2)">slope dP/df = P(1 − P): 0.086 at</text>
+    <text x="530" y="272" fill="var(--ink-2)">P = 0.905, 0.25 at P = 0.5</text>
+  </g>
+</svg>
+<figcaption><strong>Figure 20.7 — Log-odds add; probabilities do not.</strong> The waterfall's first bar (mean concave points, −1.47) is the same log-odds step whether it is applied first or last, but the probability it removes depends on where on the sigmoid the running total sits. That is why a classifier's SHAP values are reported in log-odds — and why the "probability contribution" of a feature is not a single number.</figcaption>
+</figure>
+<pre class="code" data-lang="python"><code><span class="cm"># From a log-odds waterfall to numbers a stakeholder can use (the row explained in Figure 20.6)</span>
+<span class="kw">import</span> numpy <span class="kw">as</span> np
+base = <span class="nu">2.252</span>                                   <span class="cm"># E[f(x)]: mean log-odds on the training data</span>
+contrib = {<span class="st">"mean concave points"</span>: -<span class="nu">1.471</span>, <span class="st">"worst texture"</span>: -<span class="nu">1.395</span>, <span class="st">"worst concave points"</span>: -<span class="nu">0.898</span>,
+           <span class="st">"worst radius"</span>: <span class="nu">0.535</span>, <span class="st">"mean concavity"</span>: <span class="nu">0.526</span>, <span class="st">"25 other features"</span>: <span class="nu">0.843</span>}
+sigmoid = <span class="kw">lambda</span> z: <span class="nu">1</span> / (<span class="nu">1</span> + np.<span class="fn">exp</span>(-z))
+final = base + <span class="fn">sum</span>(contrib.<span class="fn">values</span>())
+<span class="fn">print</span>(<span class="st">f"base  {base:.3f} log-odds = odds {np.exp(base):5.2f}:1 = P(benign) {sigmoid(base):.3f}"</span>)
+<span class="fn">print</span>(<span class="st">f"final {final:.3f} log-odds = odds {np.exp(final):5.2f}:1 = P(benign) {sigmoid(final):.3f}\n"</span>)
+<span class="fn">print</span>(<span class="st">f"{'feature':22}{'log-odds':&gt;9}{'odds ×':&gt;8}{'ΔP if added first':&gt;19}{'ΔP if added last':&gt;18}"</span>)
+<span class="kw">for</span> f, v <span class="kw">in</span> contrib.<span class="fn">items</span>():
+    first = <span class="fn">sigmoid</span>(base + v) - <span class="fn">sigmoid</span>(base)      <span class="cm"># probability change if this is the first step away from the base</span>
+    last = <span class="fn">sigmoid</span>(final) - <span class="fn">sigmoid</span>(final - v)     <span class="cm"># probability change if it is the final step into the prediction</span>
+    <span class="fn">print</span>(<span class="st">f"{f:22}{v:9.2f}{np.exp(v):8.2f}{first:+19.3f}{last:+18.3f}"</span>)
+<span class="fn">print</span>(<span class="st">f"\nlog-odds steps sum exactly: {sum(contrib.values()):+.3f} = {final - base:+.3f}"</span>)
+<span class="fn">print</span>(<span class="st">f"'first' probability steps sum to {sum(sigmoid(base + v) - sigmoid(base) for v in contrib.values()):+.3f}, "</span>
+      <span class="st">f"but the real change is {sigmoid(final) - sigmoid(base):+.3f}"</span>)
+<span class="out"># base  2.252 log-odds = odds  9.51:1 = P(benign) 0.905</span>
+<span class="out"># final 0.392 log-odds = odds  1.48:1 = P(benign) 0.597</span>
+<span class="out">#</span>
+<span class="out"># feature                log-odds  odds ×  ΔP if added first  ΔP if added last</span>
+<span class="out"># mean concave points       -1.47    0.23             -0.219            -0.269</span>
+<span class="out"># worst texture             -1.40    0.25             -0.203            -0.260</span>
+<span class="out"># worst concave points      -0.90    0.41             -0.110            -0.187</span>
+<span class="out"># worst radius               0.54    1.71             +0.037            +0.132</span>
+<span class="out"># mean concavity             0.53    1.69             +0.037            +0.130</span>
+<span class="out"># 25 other features          0.84    2.32             +0.052            +0.208</span>
+<span class="out">#</span>
+<span class="out"># log-odds steps sum exactly: -1.860 = -1.860</span>
+<span class="out"># 'first' probability steps sum to -0.406, but the real change is -0.308</span></code></pre>
+<p>Read the two ΔP columns. Every feature's probability effect is 20–300% larger when it is applied last (near P = 0.6, where the curve is steep) than when it is applied first (near P = 0.9, where it is flat) — and the "first" steps do not even sum to the true change (−0.41 versus −0.31). So there is no such thing as <em>the</em> probability contribution of a feature; there is only a contribution under a stated convention.</p>
+<p>That leaves four honest ways to present a local explanation, in decreasing order of exactness:</p>
+<ol class="steps">
+  <li><strong>Odds multipliers.</strong> "Mean concave points cut the odds of benign by a factor of 4 (×0.23)." Exact, order-free, and additive in the multiplicative sense. Clinicians and actuaries are comfortable with odds; most other audiences are not.</li>
+  <li><strong>Probability steps in a declared order.</strong> Apply features from largest |φ| to smallest and report each probability step as you go; the steps then sum exactly to the final probability. State the convention on the slide. This is what a waterfall drawn on the probability axis is doing whether or not the author knows it.</li>
+  <li><strong>Probability-space SHAP</strong> (<code>model_output="probability"</code> with a background set). The values sum exactly to the probability, but each feature's share is an approximation that moves when the background sample changes — acceptable for a dashboard, weaker for an audit.</li>
+  <li><strong>Rank and sign only.</strong> "The three factors that most reduced this applicant's score were utilisation, months on book and recent late payments." This is what an adverse-action notice actually requires, and it is immune to every problem above because it quotes no number at all.</li>
+</ol>
+<div class="callout pro"><div class="title">At work</div>
+<p>Default to option 4 for customers and option 1 for reviewers, keep the log-odds waterfall in the appendix for the data scientists, and never put a raw log-odds number in front of a business audience — "−1.47" is not a quantity anyone can act on. If a probability number is demanded, use option 2 and write the ordering rule into the model card so the same row explains the same way next year.</p>
+</div>
+</details>
 
 <!-- ============================================================ -->
 <h2 id="s7">7. LIME, counterfactuals &amp; surrogates</h2>
@@ -992,7 +1111,7 @@ k = <span class="fn">list</span>(X.columns).index(<span class="st">"worst concav
   <text x="652" y="126" class="lbl-strong">x′ (approved)</text>
   <text x="595" y="318" text-anchor="middle" class="lbl" font-size="11">"Reduce utilisation from 71% to 48% and the decision flips."</text>
 </svg>
-<figcaption><strong>Figure 20.7 — Two local explanations of one decision.</strong> LIME describes the boundary <em>near</em> x with a line; move x slightly and the sampled neighbourhood — and the line — can change a lot, which is LIME's instability. A counterfactual ignores the model's internals entirely and reports the smallest change to the inputs that would flip the output: the most useful sentence a declined customer can hear.</figcaption>
+<figcaption><strong>Figure 20.8 — Two local explanations of one decision.</strong> LIME describes the boundary <em>near</em> x with a line; move x slightly and the sampled neighbourhood — and the line — can change a lot, which is LIME's instability. A counterfactual ignores the model's internals entirely and reports the smallest change to the inputs that would flip the output: the most useful sentence a declined customer can hear.</figcaption>
 </figure>
 
 <p>LIME's weakness is <strong>instability</strong>: the explanation depends on the random perturbations, the kernel width and the discretisation of features, none of which have a principled default. Run it twice on the same row and the top-3 features can reorder; run it on two nearly identical rows and the signs can differ. For a debugging session that is tolerable; for an adverse-action notice that must be reproducible six months later in front of a regulator, it is not. This is the main practical reason SHAP replaced LIME for tabular models: the same input, model and background give the same explanation every time. Where LIME still shines is unstructured data — explaining an image classifier by super-pixels or a text classifier by words — because its perturbation scheme adapts naturally to "turn this word off."</p>
@@ -1067,6 +1186,69 @@ best = <span class="kw">None</span>
 <p>An explanation describes the model's <em>function</em>, faithfully. Whether that function is good, fair, or causally meaningful are three separate questions that need validation metrics, fairness metrics and causal methods respectively. SHAP tells you <em>what the model does</em>. It never tells you whether the model <em>should</em>.</p>
 </div>
 
+<details class="deepdive"><summary>Deep dive: correlated features — three methods, three answers <span class="time">8 min</span></summary>
+<div class="callout eli9"><div class="title">Explain it like I'm 9</div>
+<p>Two twins always give the same answer in class. Cover one twin's mouth and the teacher still hears the answer, so that twin looks useless. Send one twin home for the day and nothing changes either, so <em>that</em> twin looks useless too. Ask the pair to leave together and suddenly nobody knows the answer. "How much does this twin matter?" is the wrong question; "how much does the pair matter?" has a clear answer.</p>
+</div>
+<p><strong>Precisely.</strong> Section 8 said that correlated features "spread credit." The experiment below makes the mechanism visible, and it shows that the three standard importance methods do not merely disagree by a little — they answer three different questions. The data has a signal feature x<sub>1</sub>, a near-copy x<sub>2</sub> with no effect of its own, and an independent useful feature x<sub>3</sub>:</p>
+<pre class="code" data-lang="python"><code><span class="cm"># Correlated features: three importance methods, three different answers for the same twin features</span>
+<span class="kw">import</span> numpy <span class="kw">as</span> np, pandas <span class="kw">as</span> pd, shap
+<span class="kw">from</span> sklearn.ensemble <span class="kw">import</span> GradientBoostingRegressor
+<span class="kw">from</span> sklearn.inspection <span class="kw">import</span> permutation_importance
+<span class="kw">from</span> sklearn.model_selection <span class="kw">import</span> train_test_split
+<span class="kw">from</span> sklearn.metrics <span class="kw">import</span> root_mean_squared_error <span class="kw">as</span> rmse
+
+rng = np.random.<span class="fn">default_rng</span>(<span class="nu">0</span>); n = <span class="nu">3000</span>
+x1 = rng.<span class="fn">normal</span>(size=n)
+x2 = x1 + rng.<span class="fn">normal</span>(scale=<span class="nu">0.1</span>, size=n)            <span class="cm"># a near-copy of x1 (corr ≈ 0.995) with NO effect of its own</span>
+x3 = rng.<span class="fn">normal</span>(size=n)                            <span class="cm"># independent and genuinely useful</span>
+y = <span class="nu">2</span> * x1 + <span class="nu">1</span> * x3 + rng.<span class="fn">normal</span>(scale=<span class="nu">0.5</span>, size=n)
+X = pd.<span class="fn">DataFrame</span>({<span class="st">"x1"</span>: x1, <span class="st">"x2_copy"</span>: x2, <span class="st">"x3"</span>: x3})
+X_tr, X_va, y_tr, y_va = <span class="fn">train_test_split</span>(X, y, test_size=<span class="nu">0.3</span>, random_state=<span class="nu">0</span>)
+
+<span class="kw">def</span> <span class="fn">fit</span>(cols):
+    <span class="kw">return</span> <span class="fn">GradientBoostingRegressor</span>(n_estimators=<span class="nu">300</span>, max_depth=<span class="nu">3</span>, learning_rate=<span class="nu">0.05</span>, random_state=<span class="nu">0</span>).<span class="fn">fit</span>(X_tr[cols], y_tr)
+gbm = <span class="fn">fit</span>(<span class="fn">list</span>(X.columns)); base = <span class="fn">rmse</span>(y_va, gbm.<span class="fn">predict</span>(X_va))
+
+<span class="cm"># 1) permutation importance = RMSE increase when ONE column is shuffled (the model is NOT retrained)</span>
+pi = <span class="fn">permutation_importance</span>(gbm, X_va, y_va, scoring=<span class="st">"neg_root_mean_squared_error"</span>, n_repeats=<span class="nu">20</span>, random_state=<span class="nu">0</span>, n_jobs=<span class="nu">1</span>).importances_mean
+<span class="cm"># 2) drop-column importance = RMSE increase when the model is RETRAINED without the column</span>
+drop = {c: <span class="fn">rmse</span>(y_va, <span class="fn">fit</span>([k <span class="kw">for</span> k <span class="kw">in</span> X.columns <span class="kw">if</span> k != c]).<span class="fn">predict</span>(X_va.<span class="fn">drop</span>(columns=c))) - base <span class="kw">for</span> c <span class="kw">in</span> X.columns}
+<span class="cm"># 3) mean |SHAP| on the validation rows</span>
+ms = np.<span class="fn">abs</span>(shap.<span class="fn">TreeExplainer</span>(gbm).<span class="fn">shap_values</span>(X_va)).<span class="fn">mean</span>(axis=<span class="nu">0</span>)
+
+<span class="fn">print</span>(<span class="st">f"corr(x1, x2_copy) = {np.corrcoef(x1, x2)[0, 1]:.3f}   validation RMSE = {base:.3f}   (noise sd = 0.5)\n"</span>)
+<span class="fn">print</span>(<span class="st">f"{'feature':10}{'perm (ΔRMSE)':&gt;14}{'drop-col (ΔRMSE)':&gt;18}{'mean|SHAP|':&gt;12}"</span>)
+<span class="kw">for</span> i, c <span class="kw">in</span> <span class="fn">enumerate</span>(X.columns):
+    <span class="fn">print</span>(<span class="st">f"{c:10}{pi[i]:14.3f}{drop[c]:18.3f}{ms[i]:12.3f}"</span>)
+
+<span class="cm"># 4) ask about the GROUP: shuffle the twins together (same row order), or retrain without both</span>
+Xg = X_va.<span class="fn">copy</span>(); perm = rng.<span class="fn">permutation</span>(<span class="fn">len</span>(Xg)); Xg[[<span class="st">"x1"</span>, <span class="st">"x2_copy"</span>]] = X_va[[<span class="st">"x1"</span>, <span class="st">"x2_copy"</span>]].values[perm]
+<span class="fn">print</span>(<span class="st">f"\nshuffle x1 + x2_copy together: ΔRMSE = {rmse(y_va, gbm.predict(Xg)) - base:.3f}"</span>)
+<span class="fn">print</span>(<span class="st">f"retrain without both:          ΔRMSE = {rmse(y_va, fit(['x3']).predict(X_va[['x3']])) - base:.3f}"</span>)
+<span class="fn">print</span>(<span class="st">f"shuffle x3 alone:              ΔRMSE = {pi[2]:.3f}   (x3 has no twin, so all methods agree on it)"</span>)
+<span class="out"># corr(x1, x2_copy) = 0.995   validation RMSE = 0.546   (noise sd = 0.5)</span>
+<span class="out">#</span>
+<span class="out"># feature     perm (ΔRMSE)  drop-col (ΔRMSE)  mean|SHAP|</span>
+<span class="out"># x1                 1.832             0.030       1.329</span>
+<span class="out"># x2_copy            0.253             0.002       0.290</span>
+<span class="out"># x3                 0.991             0.620       0.813</span>
+<span class="out">#</span>
+<span class="out"># shuffle x1 + x2_copy together: ΔRMSE = 2.333</span>
+<span class="out"># retrain without both:          ΔRMSE = 1.538</span>
+<span class="out"># shuffle x3 alone:              ΔRMSE = 0.991   (x3 has no twin, so all methods agree on it)</span></code></pre>
+<p>Three different verdicts on the same twins:</p>
+<ul>
+  <li><strong>Permutation importance</strong> asks "what if this column stopped carrying information <em>while every other column stayed as it is</em>?" Shuffling x<sub>1</sub> alone leaves x<sub>2</sub> intact, so every shuffled row is an impossible combination (x<sub>1</sub> and x<sub>2</sub> no longer agree) and the model is evaluated far outside the data it saw. The damage is large for the twin the trees leaned on (x<sub>1</sub>: 1.83) and small for the other (x<sub>2</sub>: 0.25) — but which twin the trees leaned on is an accident of the fit. This is the off-manifold problem, and it inflates rather than under-counts the "used" twin.</li>
+  <li><strong>Drop-column importance</strong> asks "what if we had never collected this column?" Retrain without x<sub>1</sub> and x<sub>2</sub> takes over almost perfectly: 0.03. Without x<sub>2</sub>: 0.002. Both twins look worthless, although together they carry most of the signal. This is the method that answers "can we delete it?", and for a redundant feature the honest answer <em>is</em> yes — one of them.</li>
+  <li><strong>Mean |SHAP|</strong> splits the pair's credit 1.33 : 0.29. The symmetry axiom guarantees an equal split only for features that are <em>exactly</em> interchangeable in every coalition; a 0.995 correlation is not that, and the trees' preference for x<sub>1</sub> decides the ratio. The split is faithful to the model, arbitrary with respect to the world.</li>
+</ul>
+<p>Only the <strong>group</strong> question has a stable answer: shuffling the twins together (same row order, so the pair stays consistent) or retraining without both gives the largest importance of all, and x<sub>3</sub>, which has no twin, gets a consistent verdict from every method.</p>
+<div class="callout pro"><div class="title">At work</div>
+<p>Before you rank features, cluster them: hierarchical clustering on |Spearman correlation| with a cut at 0.8–0.9, or simply the pairs above 0.95. Then permute or drop <em>clusters</em>, sum |SHAP| within a cluster, and report the cluster with one plain-language name ("tumour size", "credit utilisation"). Two consequences for regulated work: a reason code that says <code>worst perimeter</code> when radius and area are its twins is an accident of the fit, so map the cluster to one reason code; and when a feature's permutation importance is near zero, check for a twin before you call it useless — the honest wording is "redundant given the others."</p>
+</div>
+</details>
+
 <!-- ============================================================ -->
 <h2 id="s9">9. Fairness &amp; bias</h2>
 
@@ -1124,7 +1306,7 @@ best = <span class="kw">None</span>
   <text x="580" y="272" text-anchor="middle" class="lbl">approval: A 58% · B 55% → ratio 0.95</text>
   <text x="580" y="290" text-anchor="middle" class="lbl">TPR: A 0.79 · B 0.79 → gap 0.00, but FPR<tspan font-size="9" dy="3">B</tspan><tspan dy="-3"> rises 0.23 → 0.34</tspan></text>
 </svg>
-<figcaption><strong>Figure 20.8 — Fairness is a threshold decision as much as a modelling decision.</strong> The same scores, shifted for group B (because its proxies pull scores down), produce a 14-point approval gap under one threshold. A per-group threshold equalises opportunity — at the price of a higher false-positive rate for group B and a policy that is itself legally contested in some jurisdictions. There is no free lunch; there is only an explicit choice.</figcaption>
+<figcaption><strong>Figure 20.9 — Fairness is a threshold decision as much as a modelling decision.</strong> The same scores, shifted for group B (because its proxies pull scores down), produce a 14-point approval gap under one threshold. A per-group threshold equalises opportunity — at the price of a higher false-positive rate for group B and a policy that is itself legally contested in some jurisdictions. There is no free lunch; there is only an explicit choice.</figcaption>
 </figure>
 
 <pre class="code" data-lang="python"><code><span class="cm"># Group fairness metrics on a synthetic loan dataset with a biased proxy feature</span>
@@ -1296,7 +1478,7 @@ m2 = group_metrics(y_te, scores, g_te, thr=np.where(g_te == <span class="nu">1</
     <text x="454" y="342">• Full model card: link</text>
   </g>
 </svg>
-<figcaption><strong>Figure 20.9 — The stakeholder pack: one global bar, three PDPs, two waterfalls, one fairness panel.</strong> Ordered to answer the questions in the order people ask them: what does it look at, how does it react, why this person, can we trust it. The income bump circled in ② is the kind of thing this pack exists to catch <em>before</em> the meeting.</figcaption>
+<figcaption><strong>Figure 20.10 — The stakeholder pack: one global bar, three PDPs, two waterfalls, one fairness panel.</strong> Ordered to answer the questions in the order people ask them: what does it look at, how does it react, why this person, can we trust it. The income bump circled in ② is the kind of thing this pack exists to catch <em>before</em> the meeting.</figcaption>
 </figure>
 
 <ol class="steps">
@@ -1314,6 +1496,8 @@ m2 = group_metrics(y_te, scores, g_te, thr=np.where(g_te == <span class="nu">1</
 <div class="callout pro"><div class="title">At work</div>
 <p>Build the explanation pack as code, not as screenshots. A script that regenerates the four panels from the current model and a fixed background set takes an afternoon, and it means every retrain (Chapter 21) automatically produces an updated pack — and a diff against the previous one. "The top feature changed from utilisation to income between v3 and v4" is exactly the sentence a model-risk reviewer wants to see, and the one that catches a broken pipeline before the customers do.</p>
 </div>
+
+<div class="callout lab"><div class="title">Lab</div><p>Open <code>labs/ch20_interpretability.py</code> in VS Code and make the tests in <code>labs/tests/test_ch20.py</code> pass. You will build the chapter's toolkit by hand — permutation importance with repeats and error bars, exact Shapley values from the coalition formula, a one-feature counterfactual search and a per-group fairness table — and check each against scikit-learn and shap.</p></div>
 
 <!-- ============================================================ -->
 <h2 id="quiz">Quiz</h2>
@@ -1404,7 +1588,7 @@ m2 = group_metrics(y_te, scores, g_te, thr=np.where(g_te == <span class="nu">1</
 </div>
 
 <div class="exercise"><div class="title">Exercise 20.3 — Build the pack for a model at work</div>
-<p>Take a model you or your team have in production (or the best model from your Chapter 13 tuning). Produce the four-panel pack of Figure 20.9: permutation importance (validation data, 20 repeats, with error bars), PDP+ICE for the top three features with a rug of data density, two SHAP waterfalls (one clear positive, one clear negative) translated into plain-language reasons, and the fairness table for one protected attribute or a plausible proxy (region, age band). Present it to a colleague who does not know the model and write down every question they ask that the pack could not answer. Those questions are the next version.</p>
+<p>Take a model you or your team have in production (or the best model from your Chapter 13 tuning). Produce the four-panel pack of Figure 20.10: permutation importance (validation data, 20 repeats, with error bars), PDP+ICE for the top three features with a rug of data density, two SHAP waterfalls (one clear positive, one clear negative) translated into plain-language reasons, and the fairness table for one protected attribute or a plausible proxy (region, age band). Present it to a colleague who does not know the model and write down every question they ask that the pack could not answer. Those questions are the next version.</p>
 <details class="answer"><summary>Show answer</summary>
 <p>There is no single answer, but check yourself against the failure modes in this chapter: Did you compute importance on validation data? Did you draw ICE under the PDP and mark where the data is thin? Are the waterfall units log-odds, and did you translate them? Did you state the background dataset? Did you report the fairness gap with a confidence interval and name the criterion? If the top feature surprised the domain expert, did you treat it as a leakage suspect before treating it as an insight?</p>
 </details>

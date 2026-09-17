@@ -379,7 +379,7 @@ model.load_state_dict(best_state)       <span class="cm"># roll back to the best
 <div class="callout math"><div class="title">The math (optional): Adam</div>
 <div class="formula">m<sub>t</sub> = β<sub>1</sub>m<sub>t−1</sub> + (1−β<sub>1</sub>)g<sub>t</sub>      s<sub>t</sub> = β<sub>2</sub>s<sub>t−1</sub> + (1−β<sub>2</sub>)g<sub>t</sub><sup>2</sup></div>
 <div class="formula">m̂<sub>t</sub> = m<sub>t</sub>/(1−β<sub>1</sub><sup>t</sup>)      ŝ<sub>t</sub> = s<sub>t</sub>/(1−β<sub>2</sub><sup>t</sup>)      w<sub>t+1</sub> = w<sub>t</sub> − η · m̂<sub>t</sub> / (√ŝ<sub>t</sub> + ε)</div>
-<p><em>m<sub>t</sub></em> is the momentum (first moment) of the gradient with decay β<sub>1</sub> = 0.9; <em>s<sub>t</sub></em> is the running mean of the squared gradient (second moment, computed per weight) with decay β<sub>2</sub> = 0.999; the hats are bias corrections so the first steps are not artificially tiny; <em>ε</em> ≈ 10<sup>−8</sup> avoids division by zero. Reading the update: the step direction is the smoothed gradient, and its size in every coordinate is about <em>η</em> because the gradient is divided by its own typical magnitude. That is why Adam's learning rate is "unit-free" and why 10<sup>−3</sup> works across so many problems.</p>
+<p><em>m<sub>t</sub></em> is the momentum (first moment) of the gradient with decay β<sub>1</sub> = 0.9; <em>s<sub>t</sub></em> is the running mean of the squared gradient (second moment, computed per weight) with decay β<sub>2</sub> = 0.999; the hats are bias corrections: both running averages start at zero, so early on <em>m<sub>t</sub></em> under-estimates the true mean gradient by a factor (1−β<sub>1</sub><sup>t</sup>) and <em>s<sub>t</sub></em> under-estimates the mean squared gradient by (1−β<sub>2</sub><sup>t</sup>); because β<sub>2</sub> is much closer to 1, <em>s</em> is under-estimated far more than <em>m</em>, and without the correction the first steps would be several times too <em>large</em> (the deep dive below traces the numbers); <em>ε</em> ≈ 10<sup>−8</sup> avoids division by zero. Reading the update: the step direction is the smoothed gradient, and its size in every coordinate is about <em>η</em> because the gradient is divided by its own typical magnitude. That is why Adam's learning rate is "unit-free" and why 10<sup>−3</sup> works across so many problems.</p>
 <p><strong>AdamW</strong> is Adam with weight decay applied <em>directly to the weights</em> (<em>w ← w − η·λ·w</em>) instead of being added to the gradient. In Adam the added L2 gradient gets divided by √ŝ like everything else, which makes the regularization strength depend on gradient scale and effectively disables it for weights with large gradients. AdamW decouples the two. It is the default in essentially all modern training recipes.</p>
 </div>
 
@@ -450,6 +450,61 @@ y = torch.tensor(y, dtype=torch.float32).unsqueeze(<span class="nu">1</span>)
 <div class="callout pro"><div class="title">At work</div>
 <p>Start with <code>AdamW(lr=1e-3, weight_decay=1e-2)</code> and a cosine schedule with a short warmup. That configuration gets you to within a few percent of the best achievable result on most problems with zero tuning, which means you can spend your time on data and features, where the real gains are. Switch to SGD only when you are reproducing a published recipe that uses it or you have a benchmark showing it helps.</p>
 </div>
+
+
+<details class="deepdive"><summary>Deep dive: Adam, step by step <span class="time">12 min</span></summary>
+<p>Adam is two running averages and a division. Everything people find mysterious about it — the hats, the ε, the difference between Adam and AdamW — becomes obvious once you trace one weight through three steps by hand.</p>
+<div class="callout eli9"><div class="title">Explain it like I'm 9</div>
+<p>Keep two notes about each weight. Note 1: "which way, and how hard, have I been pushed lately?" (that is <em>m</em>, a momentum). Note 2: "how hard have the pushes been, ignoring which way?" (that is <em>s</em>, the mean of the squared pushes). Step by note 1 divided by the square root of note 2. A weight that always gets pushed hard takes the same-sized step as a weight that always gets pushed gently, because you divided by "how hard".</p>
+</div>
+<h4>Why the bias correction — and in which direction it corrects</h4>
+<p>Both averages start at zero. After the first step, with β<sub>1</sub> = 0.9 and β<sub>2</sub> = 0.999, you have <em>m</em><sub>1</sub> = 0.1·<em>g</em> and <em>s</em><sub>1</sub> = 0.001·<em>g</em><sup>2</sup>. Both are under-estimates, but not by the same amount: <em>m</em> is 10× too small, <em>s</em> is 1000× too small. Take the ratio and the mismatch does not cancel: <em>m</em><sub>1</sub>/√<em>s</em><sub>1</sub> = 0.1/√0.001 = 3.16 — the first step would be three times too <em>large</em>, not too small. Dividing <em>m</em> by (1−β<sub>1</sub><sup>t</sup>) = 0.1 and <em>s</em> by (1−β<sub>2</sub><sup>t</sup>) = 0.001 restores <em>m̂</em><sub>1</sub> = <em>g</em> and <em>ŝ</em><sub>1</sub> = <em>g</em><sup>2</sup>, so the very first update is exactly η in magnitude. The trace below shows the uncorrected ratio drifting from 3.2 to 5 over the first steps while the corrected step stays at 1.0; without the correction, hundreds of early steps would be oversized, which is one concrete reason warmup helps Adam-family optimizers even though they "correct" for it.</p>
+<div class="callout math"><div class="title">The math (optional): the full AdamW update</div>
+<div class="formula">w<sub>t+1</sub> = w<sub>t</sub> − η · [ m̂<sub>t</sub> / (√ŝ<sub>t</sub> + ε) + λ·w<sub>t</sub> ]</div>
+<p><em>η</em> is the learning rate; <em>m̂<sub>t</sub></em> and <em>ŝ<sub>t</sub></em> are the bias-corrected first and second moments of the gradient for this weight; <em>ε</em> (10<sup>−8</sup> by default) is added to the denominator; <em>λ</em> is the weight-decay coefficient, applied to the weight itself and <em>not</em> passed through the moments. Plain Adam with <code>weight_decay=λ</code> instead adds λ·<em>w</em> to the gradient before computing <em>m</em> and <em>s</em>, so the decay is divided by √<em>ŝ</em> along with everything else.</p>
+</div>
+<h4>What ε is for</h4>
+<p>Two things. It prevents a division by zero for weights whose gradient is exactly zero (a dead ReLU unit, an embedding row that never appears), and it caps the step for weights with tiny but non-zero gradients: the update can never exceed η·|<em>m̂</em>|/ε. At 10<sup>−8</sup> it is invisible in ordinary training; recipes that train in float16 sometimes raise it to 10<sup>−6</sup> so the square root never underflows.</p>
+<h4>What AdamW changes</h4>
+<p>Run the last part of the code: a weight with a large gradient (|<em>g</em>| = 100) and <code>weight_decay=0.1</code>. Under Adam the decay term 0.1·<em>w</em> is added to a gradient of 100, then the whole thing is normalized to a unit step: the decay has vanished. Under AdamW the same weight moves by 1.0·η from the gradient <em>plus</em> 0.1·η from the decay, exactly as intended, regardless of the gradient's size. That is the entire difference, and it is why AdamW's <code>weight_decay</code> behaves like a real regularizer while Adam's does not.</p>
+<pre class="code" data-lang="python"><code><span class="cm"># Adam by hand: the first three steps on one weight, with and without bias correction</span>
+<span class="kw">import</span> torch
+g_seq = [<span class="nu">0.5</span>, <span class="nu">0.5</span>, <span class="nu">0.5</span>]                 <span class="cm"># a constant gradient of 0.5 on one weight</span>
+b1, b2, eps, lr = <span class="nu">0.9</span>, <span class="nu">0.999</span>, <span class="nu">1e-8</span>, <span class="nu">1e-3</span>
+m = s = <span class="nu">0.0</span>
+<span class="fn">print</span>(<span class="st">"step   m        s        raw m/sqrt(s)   corrected step/lr"</span>)
+<span class="kw">for</span> t, g <span class="kw">in</span> <span class="fn">enumerate</span>(g_seq, <span class="nu">1</span>):
+    m = b1 * m + (<span class="nu">1</span> - b1) * g           <span class="cm"># first moment (momentum)</span>
+    s = b2 * s + (<span class="nu">1</span> - b2) * g * g       <span class="cm"># second moment (mean squared gradient)</span>
+    raw = m / (s ** <span class="nu">0.5</span> + eps)          <span class="cm"># what you would get WITHOUT bias correction</span>
+    m_hat, s_hat = m / (<span class="nu">1</span> - b1 ** t), s / (<span class="nu">1</span> - b2 ** t)
+    step = m_hat / (s_hat ** <span class="nu">0.5</span> + eps) <span class="cm"># the actual Adam update, in units of lr</span>
+    <span class="fn">print</span>(<span class="st">f"{t:3d}  {m:7.4f}  {s:8.6f}  {raw:12.3f}   {step:12.3f}"</span>)
+
+<span class="cm"># Cross-check step 1 against torch.optim.Adam on a single weight</span>
+w = torch.tensor([<span class="nu">1.0</span>], requires_grad=<span class="kw">True</span>)
+opt = torch.optim.Adam([w], lr=lr, betas=(b1, b2), eps=eps)
+w.grad = torch.tensor([<span class="nu">0.5</span>]); opt.step()
+<span class="fn">print</span>(<span class="st">"torch.optim.Adam moved w by"</span>, <span class="fn">round</span>((<span class="nu">1.0</span> - w.item()) / lr, <span class="nu">3</span>), <span class="st">"× lr"</span>)
+
+<span class="cm"># Adam + L2 vs AdamW on a weight with a LARGE gradient: same lambda, different decay</span>
+<span class="kw">for</span> cls, kw <span class="kw">in</span> [(torch.optim.Adam, <span class="fn">dict</span>(weight_decay=<span class="nu">0.1</span>)), (torch.optim.AdamW, <span class="fn">dict</span>(weight_decay=<span class="nu">0.1</span>))]:
+    w = torch.tensor([<span class="nu">1.0</span>], requires_grad=<span class="kw">True</span>)
+    opt = cls([w], lr=lr, **kw)
+    w.grad = torch.tensor([<span class="nu">100.0</span>]); opt.step()   <span class="cm"># big gradient: |g| = 100</span>
+    <span class="fn">print</span>(<span class="st">f"{cls.__name__:6s} weight_decay=0.1, |g|=100: w moved by {(1.0 - w.item()) / lr:.4f} × lr"</span>)
+<span class="out"># step   m        s        raw m/sqrt(s)   corrected step/lr</span>
+<span class="out">#   1   0.0500  0.000250         3.162          1.000</span>
+<span class="out">#   2   0.0950  0.000500         4.250          1.000</span>
+<span class="out">#   3   0.1355  0.000749         4.950          1.000</span>
+<span class="out"># torch.optim.Adam moved w by 1.0 × lr</span>
+<span class="out"># Adam   weight_decay=0.1, |g|=100: w moved by 1.0000 × lr</span>
+<span class="out"># AdamW  weight_decay=0.1, |g|=100: w moved by 1.1000 × lr</span></code></pre>
+
+<div class="callout pro"><div class="title">At work</div>
+<p>Leave betas at (0.9, 0.999) and ε at 10<sup>−8</sup> unless you are reproducing a recipe that says otherwise. The one knob worth knowing: large-batch and language-model recipes lower β<sub>2</sub> to 0.95–0.98 so <em>s</em> forgets faster and reacts to sudden gradient spikes. And remember that Adam's optimizer state is two extra copies of every parameter: for a big model, plan the memory.</p>
+</div>
+</details>
 
 <!-- ============================================================ -->
 <h2 id="s5">5. The learning rate and its schedules</h2>
@@ -608,6 +663,72 @@ sched = torch.optim.lr_scheduler.LambdaLR(opt, lr_lambda)
 <p><strong>The learning rate is a property of the (model, optimizer, batch size, loss scale) combination, not of the problem.</strong> Change any of those and re-tune it, ideally with a range test. When something stops working after a "harmless" change, the learning rate is the first suspect.</p>
 </div>
 
+
+<details class="deepdive"><summary>Deep dive: batch size, learning rate and the LR finder <span class="time">10 min</span></summary>
+<p>The learning rate and the batch size are not two independent knobs. This deep dive gives the reason, states the scaling rules precisely, and then turns the "range test" of §5 into a ten-line recipe you can run before every project.</p>
+<div class="callout eli9"><div class="title">Explain it like I'm 9</div>
+<p>To guess whether a coin is fair you flip it. Ten flips give a rough answer; a hundred give a confident one. A mini-batch gradient is a guess at the true downhill direction made from <em>B</em> examples: a bigger batch is more flips, so the guess is less noisy, so you can afford to trust it with a bigger step.</p>
+</div>
+<div class="callout math"><div class="title">The math (optional): gradient noise and linear scaling</div>
+<div class="formula">g<sub>B</sub> = ∇L(w) + ξ,   Var(ξ) ≈ σ<sup>2</sup>/B      ⇒      (η, B) ≈ (k·η, k·B)</div>
+<p><em>g<sub>B</sub></em> is the gradient of a mini-batch of size <em>B</em>; ∇L(w) is the gradient of the full-data loss; <em>ξ</em> is the sampling noise, whose variance shrinks with 1/<em>B</em> (<em>σ<sup>2</sup></em> is the per-example gradient variance). Taking <em>k</em> small steps of size η with batches of size <em>B</em> moves the weights by about the same amount as one step of size <em>k</em>·η with batch <em>k</em>·<em>B</em>, provided the gradient does not change much over those <em>k</em> steps. That is the <strong>linear scaling rule</strong> for SGD (Goyal et al., 2017). It holds up to a problem-dependent "critical batch size", beyond which noise is no longer the bottleneck and extra batch buys nothing; that is why very large batches need warmup and still generalize slightly worse. For Adam the step is already normalized by √ŝ, so the noise reduction is only partly converted into progress; the common heuristic is to scale η by √<em>k</em>.</p>
+</div>
+<h4>The LR finder, as a recipe</h4>
+<ol class="steps">
+  <li><strong>Fresh copy.</strong> Build a new model and optimizer; the sweep will wreck the weights, so never continue training from it.</li>
+  <li><strong>Geometric sweep.</strong> Over 100–300 mini-batches, multiply the learning rate by a constant factor each step, from 10<sup>−5</sup> up to 10.</li>
+  <li><strong>Record (lr, loss) per batch</strong>, and stop as soon as the loss exceeds ~4× its starting value or becomes NaN.</li>
+  <li><strong>Read the curve on a log axis.</strong> Flat region (rate too small to matter) → steep descent (the useful region) → minimum → explosion.</li>
+  <li><strong>Choose.</strong> For a constant rate or the peak of a cosine schedule, take about one order of magnitude below the minimum-loss rate; for one-cycle, put <code>max_lr</code> in the middle of the steep descent, just before the minimum.</li>
+</ol>
+<pre class="code" data-lang="python"><code><span class="cm"># LR range test: sweep the learning rate geometrically and watch the loss</span>
+<span class="kw">import</span> math, torch, torch.nn <span class="kw">as</span> nn
+<span class="kw">from</span> sklearn.datasets <span class="kw">import</span> load_breast_cancer
+<span class="kw">from</span> sklearn.preprocessing <span class="kw">import</span> StandardScaler
+torch.manual_seed(<span class="nu">0</span>)
+X, y = load_breast_cancer(return_X_y=<span class="kw">True</span>)
+X = torch.tensor(StandardScaler().fit_transform(X), dtype=torch.float32)
+y = torch.tensor(y, dtype=torch.float32).unsqueeze(<span class="nu">1</span>)
+
+model = nn.Sequential(nn.Linear(<span class="nu">30</span>, <span class="nu">32</span>), nn.ReLU(), nn.Linear(<span class="nu">32</span>, <span class="nu">1</span>))
+loss_fn = nn.BCEWithLogitsLoss()
+lr_min, lr_max, steps = <span class="nu">1e-5</span>, <span class="nu">10.0</span>, <span class="nu">100</span>
+opt = torch.optim.SGD(model.parameters(), lr=lr_min, momentum=<span class="nu">0.9</span>)
+gamma = (lr_max / lr_min) ** (<span class="nu">1</span> / (steps - <span class="nu">1</span>))        <span class="cm"># multiply lr by this every step</span>
+perm = torch.randperm(<span class="fn">len</span>(X))
+log = []
+<span class="kw">for</span> step <span class="kw">in</span> <span class="fn">range</span>(steps):
+    idx = perm[(step * <span class="nu">64</span>) % <span class="fn">len</span>(X):][:<span class="nu">64</span>]             <span class="cm"># a mini-batch of 64</span>
+    loss = loss_fn(model(X[idx]), y[idx])
+    opt.zero_grad(); loss.backward(); opt.step()
+    lr = opt.param_groups[<span class="nu">0</span>][<span class="st">"lr"</span>]; log.append((lr, loss.item()))
+    <span class="kw">if</span> <span class="kw">not</span> math.isfinite(loss.item()) <span class="kw">or</span> loss.item() &gt; <span class="nu">4</span> * log[<span class="nu">0</span>][<span class="nu">1</span>]:
+        <span class="kw">break</span>                                          <span class="cm"># diverged: stop the sweep</span>
+    opt.param_groups[<span class="nu">0</span>][<span class="st">"lr"</span>] = lr * gamma
+<span class="kw">for</span> lr, l <span class="kw">in</span> log[::<span class="nu">10</span>]:
+    <span class="fn">print</span>(<span class="st">f"lr {lr:9.2e}   loss {l:.3f}"</span>)
+<span class="fn">print</span>(<span class="st">f"stopped: loss blew up at lr = {log[-1][0]:.2e}"</span>)
+best_lr = <span class="fn">min</span>(log, key=<span class="kw">lambda</span> t: t[<span class="nu">1</span>])[<span class="nu">0</span>]
+<span class="fn">print</span>(<span class="st">f"lowest loss at lr ≈ {best_lr:.1e}  →  use ≈ {best_lr / 10:.0e} as a constant rate"</span>)
+<span class="out"># lr  1.00e-05   loss 0.682</span>
+<span class="out"># lr  4.04e-05   loss 0.689</span>
+<span class="out"># lr  1.63e-04   loss 0.693</span>
+<span class="out"># lr  6.58e-04   loss 0.681</span>
+<span class="out"># lr  2.66e-03   loss 0.640</span>
+<span class="out"># lr  1.07e-02   loss 0.528</span>
+<span class="out"># lr  4.33e-02   loss 0.289</span>
+<span class="out"># lr  1.75e-01   loss 0.190</span>
+<span class="out"># lr  7.05e-01   loss 0.003</span>
+<span class="out"># lr  2.85e+00   loss 0.346</span>
+<span class="out"># stopped: loss blew up at lr = 3.76e+00</span>
+<span class="out"># lowest loss at lr ≈ 9.3e-01  →  use ≈ 9e-02 as a constant rate</span></code></pre>
+
+<p>Read the output: nothing happens below 10<sup>−3</sup>, the loss falls steeply between 10<sup>−2</sup> and 1, bottoms out near 1 and blows up at ≈ 4. The recipe says: constant rate ≈ 0.1, or one-cycle peaking at ≈ 0.3, for SGD with momentum on this network. Run the same test with Adam and the whole curve shifts left by about two decades, which is precisely why "1e-3 for Adam, 1e-1 for SGD" are the folk defaults. Per-batch losses are noisy; on a real problem smooth the curve (an exponential moving average over 5–10 batches) before reading it.</p>
+<div class="callout warn"><div class="title">Common mistake</div>
+<p><strong>Changing the batch size and keeping the learning rate.</strong> Moving from batch 32 to batch 256 to speed things up on a GPU and leaving η alone quietly turns a well-tuned run into an under-trained one (the effective step shrank 8×). Re-run the finder, or scale η by the rules above and then re-check the curve.</p>
+</div>
+</details>
+
 <!-- ============================================================ -->
 <h2 id="s6">6. Initialization and normalization</h2>
 
@@ -626,7 +747,7 @@ sched = torch.optim.lr_scheduler.LambdaLR(opt, lr_lambda)
 </div>
 
 <figure class="fig">
-<svg viewBox="0 0 820 300" role="img" aria-label="Bar chart of activation standard deviation per layer for a 10-layer ReLU network under three initializations: too small weights shrink to zero within a few layers, too large weights explode, He initialization stays near one at every layer">
+<svg viewBox="0 0 820 300" role="img" aria-label="Bar chart of activation standard deviation per layer for a 10-layer ReLU network under three initializations: at half the He scale the activations halve every layer and drop below the axis, at twice the He scale they double every layer and explode, He initialization stays near one at every layer">
   <defs><marker id="arr16-6" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
   <line x1="70" y1="240" x2="790" y2="240" class="axis" marker-end="url(#arr16-6)"/>
   <line x1="70" y1="240" x2="70" y2="30" class="axis" marker-end="url(#arr16-6)"/>
@@ -642,7 +763,7 @@ sched = torch.optim.lr_scheduler.LambdaLR(opt, lr_lambda)
   <!-- groups per layer: 3 bars each. heights from y=240 baseline; log scale: 70px per decade -->
   <g>
     <!-- layer positions 1..10 -->
-    <g transform="translate(90,0)"><rect x="0" y="228" width="14" height="12" fill="var(--s4)"/><rect x="16" y="240" width="14" height="0" fill="var(--s1)"/><rect x="32" y="238" width="14" height="2" fill="var(--critical)"/><text x="23" y="256" text-anchor="middle" class="lbl" font-size="10">1</text></g>
+    <g transform="translate(90,0)"><rect x="0" y="240" width="14" height="0" fill="var(--s4)"/><rect x="16" y="240" width="14" height="0" fill="var(--s1)"/><rect x="32" y="238" width="14" height="2" fill="var(--critical)"/><text x="23" y="256" text-anchor="middle" class="lbl" font-size="10">1</text></g>
     <g transform="translate(160,0)"><rect x="0" y="240" width="14" height="0" fill="var(--s4)"/><rect x="16" y="240" width="14" height="0" fill="var(--s1)"/><rect x="32" y="220" width="14" height="20" fill="var(--critical)"/><text x="23" y="256" text-anchor="middle" class="lbl" font-size="10">2</text></g>
     <g transform="translate(230,0)"><rect x="0" y="240" width="14" height="0" fill="var(--s4)"/><rect x="16" y="240" width="14" height="0" fill="var(--s1)"/><rect x="32" y="200" width="14" height="40" fill="var(--critical)"/><text x="23" y="256" text-anchor="middle" class="lbl" font-size="10">3</text></g>
     <g transform="translate(300,0)"><rect x="0" y="240" width="14" height="0" fill="var(--s4)"/><rect x="16" y="240" width="14" height="0" fill="var(--s1)"/><rect x="32" y="180" width="14" height="60" fill="var(--critical)"/><text x="23" y="256" text-anchor="middle" class="lbl" font-size="10">4</text></g>
@@ -657,15 +778,12 @@ sched = torch.optim.lr_scheduler.LambdaLR(opt, lr_lambda)
   <g fill="var(--s1)">
     <circle cx="113" cy="240" r="4"/><circle cx="183" cy="240" r="4"/><circle cx="253" cy="241" r="4"/><circle cx="323" cy="239" r="4"/><circle cx="393" cy="240" r="4"/><circle cx="463" cy="241" r="4"/><circle cx="533" cy="239" r="4"/><circle cx="603" cy="240" r="4"/><circle cx="673" cy="240" r="4"/><circle cx="743" cy="241" r="4"/>
   </g>
-  <g fill="var(--s4)">
-    <circle cx="97" cy="228" r="4"/><circle cx="167" cy="262" r="0"/>
-  </g>
   <!-- annotations -->
-  <text x="90" y="50" class="lbl-strong" font-size="11" fill="var(--s4)">std = 0.5/√n: activations vanish (below 0.01 by layer 3; bars too short to see)</text>
+  <text x="90" y="50" class="lbl-strong" font-size="11" fill="var(--s4)">std = ½·√(2/n) (half He): activations halve every layer — below 0.01 by layer 7 (bars fall below the axis)</text>
   <text x="90" y="68" class="lbl-strong" font-size="11" fill="var(--s1)">He: std = √(2/n) → activations stay ≈ 1 at every depth (blue dots on the baseline)</text>
-  <text x="600" y="92" text-anchor="end" class="lbl-strong" font-size="11" fill="var(--critical)">std = 2/√n: activations explode ≈ ×2 per layer</text>
+  <text x="600" y="92" text-anchor="end" class="lbl-strong" font-size="11" fill="var(--critical)">std = 2·√(2/n) (twice He): activations double every layer, ×1000 by layer 10</text>
 </svg>
-<figcaption><strong>Figure 16.6 — Why the initial weight scale matters.</strong> The same 10-layer ReLU network with three weight scales. Slightly too small and the signal is gone by the third layer; slightly too large and it doubles every layer; He initialization keeps the standard deviation near 1 all the way down, so gradients are also well scaled on the way back.</figcaption>
+<figcaption><strong>Figure 16.6 — Why the initial weight scale matters.</strong> The same 10-layer ReLU network with three weight scales. At half the He scale the signal halves at every layer and is below 1% of its size by layer 7; at twice the He scale it doubles every layer, a factor of 1,000 by layer 10; He initialization keeps the standard deviation near 1 all the way down, so gradients are also well scaled on the way back. Being off by only 2× in either direction compounds to 1000× across ten layers.</figcaption>
 </figure>
 
 <h3>Batch normalization and layer normalization</h3>
@@ -724,6 +842,56 @@ sched = torch.optim.lr_scheduler.LambdaLR(opt, lr_lambda)
 <div class="callout warn"><div class="title">Common mistake</div>
 <p><strong>Evaluating with <code>model.train()</code> still on, or training with batch size 1–4 while using batch norm.</strong> In train mode batch norm normalizes each example with the statistics of whatever batch it happens to be in, so predictions for one example depend on its neighbors — and with a batch of one, the variance is undefined. Always call <code>model.eval()</code> before validation and inference, and if your batches must be tiny, use layer norm (or group norm in CNNs) instead.</p>
 </div>
+
+
+<details class="deepdive"><summary>Deep dive: what batch norm really does <span class="time">10 min</span></summary>
+<p>Batch norm was introduced in 2015 with the explanation that it reduces "internal covariate shift": the drift in each layer's input distribution as the layers below it change. The explanation stuck, but it turned out not to be the mechanism. This deep dive gives the account that survived scrutiny, and then demonstrates the one behavior of batch norm that causes real bugs at work.</p>
+<div class="callout eli9"><div class="title">Explain it like I'm 9</div>
+<p>Imagine walking downhill on a slope covered in small, sharp bumps: you have to take tiny steps or you trip. Now imagine the same hill with the bumps sanded smooth: you can take big confident strides. Batch norm sands the bumps off the loss surface. It does not change where the bottom is; it changes how fast you can safely walk toward it.</p>
+</div>
+<h4>The evidence</h4>
+<p>Santurkar and colleagues (2018) took a batch-normed network and, right after every BN layer, injected random noise with a different mean and variance for every step — deliberately re-creating the covariate shift BN was supposed to remove. The network trained just as fast. What they measured instead was that with BN the loss changes more smoothly along the gradient direction and the gradient itself changes less from one step to the next. In the language of optimization, BN reduces the Lipschitz constant of the loss and of its gradient, and that is exactly the quantity that limits how large a step is safe.</p>
+<div class="callout math"><div class="title">The math (optional): smoothness and the safe step size</div>
+<div class="formula">‖∇L(w + Δ) − ∇L(w)‖ ≤ β·‖Δ‖      ⇒      η ≤ 1/β is safe</div>
+<div class="formula">∂L/∂x = (γ/σ<sub>B</sub>) · [ ∂L/∂x̂ − mean(∂L/∂x̂) − x̂ · mean(∂L/∂x̂ · x̂) ]</div>
+<p>First line: <em>β</em> is the gradient's Lipschitz constant — the most the gradient can change when the weights move by Δ; gradient descent is stable when the learning rate is below 1/<em>β</em>, so a smoother loss (smaller <em>β</em>) allows a larger η. Second line: the gradient that batch norm passes back to its input <em>x</em>, where <em>x̂</em> is the normalized activation, <em>σ<sub>B</sub></em> the batch standard deviation, <em>γ</em> the learned scale and the means are over the batch. Two things to see: the whole gradient is divided by <em>σ<sub>B</sub></em>, so a layer whose activations have grown large automatically gets a smaller effective step; and the two subtracted terms remove the components of the gradient that would only shift the batch mean or rescale its variance — directions BN would undo anyway. Both effects flatten the landscape.</p>
+</div>
+<p>A consequence you will meet in practice: BN makes the layer <em>scale-invariant</em> in its weights, BN(α·<em>W</em><em>x</em>) = BN(<em>W</em><em>x</em>) for any α &gt; 0, and the gradient with respect to <em>W</em> shrinks by 1/α. So the effective learning rate of a BN layer depends on the size of its weights, and weight decay, by shrinking the weights, silently <em>raises</em> that effective rate. That interaction is why weight decay still helps in networks where it "should not" matter, and why decaying γ and β themselves is pointless.</p>
+<h4>The train/eval trap, demonstrated</h4>
+<p>In train mode BN normalizes each example with the mean and variance of <em>its batch</em>; in eval mode it uses running averages (updated with momentum 0.1 by default) frozen from training. The code shows the same input row producing two different outputs depending on who else is in the batch, then the same, stable output in eval mode — and the error you get with a batch of one.</p>
+<pre class="code" data-lang="python"><code><span class="cm"># The batch-norm train/eval trap: the same row gets different outputs in train mode</span>
+<span class="kw">import</span> torch, torch.nn <span class="kw">as</span> nn
+torch.manual_seed(<span class="nu">0</span>)
+bn = nn.BatchNorm1d(<span class="nu">1</span>)                 <span class="cm"># one feature, gamma=1, beta=0 at init</span>
+row = torch.tensor([[<span class="nu">2.0</span>]])            <span class="cm"># the example we care about</span>
+mates_a = torch.tensor([[<span class="nu">0.0</span>], [<span class="nu">1.0</span>], [<span class="nu">3.0</span>]])
+mates_b = torch.tensor([[<span class="nu">10.0</span>], [<span class="nu">12.0</span>], [<span class="nu">14.0</span>]])
+
+bn.train()
+out_a = bn(torch.cat([row, mates_a]))[<span class="nu">0</span>].item()   <span class="cm"># row normalized with batch A's mean/var</span>
+out_b = bn(torch.cat([row, mates_b]))[<span class="nu">0</span>].item()   <span class="cm"># same row, batch B's mean/var</span>
+<span class="fn">print</span>(<span class="st">f"train mode: row=2.0 → {out_a:+.3f} in batch A, {out_b:+.3f} in batch B"</span>)
+<span class="fn">print</span>(<span class="st">f"running mean/var so far: {bn.running_mean.item():.3f} / {bn.running_var.item():.3f}"</span>)
+
+bn.<span class="fn">eval</span>()
+<span class="fn">print</span>(<span class="st">f"eval mode:  row=2.0 → {bn(torch.cat([row, mates_a]))[0].item():+.3f} in batch A,"</span>,
+      <span class="st">f"{bn(row)[0].item():+.3f} alone"</span>)
+
+<span class="cm"># batch size 1 in train mode is an error, not a warning</span>
+bn.train()
+<span class="kw">try</span>:
+    bn(row)
+<span class="kw">except</span> <span class="fn">ValueError</span> <span class="kw">as</span> e:
+    <span class="fn">print</span>(<span class="st">"batch of 1 in train mode →"</span>, <span class="fn">str</span>(e)[:<span class="nu">52</span>])
+<span class="out"># train mode: row=2.0 → +0.447 in batch A, -1.646 in batch B</span>
+<span class="out"># running mean/var so far: 1.085 / 3.727</span>
+<span class="out"># eval mode:  row=2.0 → +0.474 in batch A, +0.474 alone</span>
+<span class="out"># batch of 1 in train mode → Expected more than 1 value per channel when training</span></code></pre>
+
+<div class="callout pro"><div class="title">At work</div>
+<p>Three rules follow. (1) <code>model.eval()</code> before any prediction, always. (2) Running statistics are only as good as the batches that produced them: if you fine-tune a pretrained network with batches of 4–8, the running mean and variance get overwritten by noisy estimates, and eval-mode accuracy drops while train-mode accuracy looks fine. Keep BN layers in eval mode during such fine-tuning (Chapter 17, §8) or switch to group norm. (3) If train-mode and eval-mode validation scores disagree by more than a point, the running statistics are stale or corrupted; running a few hundred training-mode batches with the optimizer off and momentum set to <code>None</code> (a cumulative average) recomputes them.</p>
+</div>
+</details>
 
 <!-- ============================================================ -->
 <h2 id="s7">7. Regularization and gradient clipping</h2>
@@ -844,7 +1012,7 @@ model.eval()                                <span class="cm"># dropout OFF, batc
 <span class="kw">with</span> torch.no_grad():
     acc = ((model(X_te) &gt; <span class="nu">0</span>).<span class="fn">float</span>() == y_te).<span class="fn">float</span>().mean().item()
 <span class="fn">print</span>(<span class="st">f"test accuracy: {acc:.3f}"</span>)
-<span class="out"># test accuracy: ≈ 0.944</span>
+<span class="out"># test accuracy: 0.944</span>
 
 <span class="cm"># --- save &amp; load: persist the state_dict, not the object ---</span>
 torch.save(model.state_dict(), <span class="st">"mlp.pt"</span>)
@@ -968,6 +1136,55 @@ opt = torch.optim.Adam(model.parameters(), lr=<span class="nu">1e-2</span>)
 <p>Log every run: hyperparameters, git commit, data version, seed, per-epoch train/val loss and metric, gradient norm, learning rate. A spreadsheet or a lightweight tracker (MLflow, Weights &amp; Biases, or a CSV per run) is fine. The reason is not tidiness: two weeks in, the question "what changed between the run that worked and the one that didn't?" will be the only question that matters, and memory will not answer it. Chapter 21 covers experiment tracking properly.</p>
 </div>
 
+
+<details class="deepdive"><summary>Deep dive: sanity checks with numbers <span class="time">8 min</span></summary>
+<p>Step 2 of the recipe says "loss at init should be ln(<em>C</em>)". Here is where that number comes from, what it becomes for imbalanced classes and for regression, and the one-line fix that makes a network start from the right place instead of spending its first epochs learning the label frequencies.</p>
+<div class="callout eli9"><div class="title">Explain it like I'm 9</div>
+<p>Before you have looked at anything, the honest guess for a ten-way question is "10% each". The penalty for that honest guess is a known number. If your untrained model is being penalized <em>more</em> than that, it is guessing confidently about things it cannot know: a sign of broken scaling. If it is being penalized <em>less</em>, it already knows something it should not: a leak.</p>
+</div>
+<div class="callout math"><div class="title">The math (optional): what an uninformed model scores</div>
+<div class="formula">CE(uniform) = −ln(1/C) = ln C      BCE(prior) = H(p) = −[p·ln p + (1−p)·ln(1−p)]      MSE(mean) = Var(y)</div>
+<p><em>C</em> is the number of classes; the cross-entropy of predicting 1/<em>C</em> for every class is ln <em>C</em> whatever the true label. For a binary problem with positive rate <em>p</em>, the best constant prediction is <em>p</em> itself, and its log-loss is the entropy <em>H</em>(<em>p</em>) of the label distribution: 0.693 at <em>p</em> = 0.5, 0.199 at <em>p</em> = 0.05, 0.056 at <em>p</em> = 0.01. For regression, predicting the mean of <em>y</em> gives mean squared error equal to the variance of <em>y</em>; predicting zero gives the mean of <em>y</em><sup>2</sup>, which is larger by the squared mean.</p>
+</div>
+<p>Three practical readings. <strong>Imbalanced classes:</strong> a fraud model with 5% positives that reports a validation log-loss of 0.30 is <em>worse than predicting the base rate</em> (0.199); ln 2 is the wrong bar. <strong>Init scale:</strong> random logits with standard deviation 1 already give an init loss of 2.81 on ten classes instead of 2.30, and standard deviation 10 gives 14.7 — a network that starts at 5 or 10 on a ten-class problem has outputs that are far too large, usually from unscaled inputs or a hand-written last layer. <strong>Regression:</strong> if you did not standardize the target, the init loss is roughly the mean of <em>y</em><sup>2</sup>, in the millions for a price in dollars, and the gradients are scaled to match.</p>
+<pre class="code" data-lang="python"><code><span class="cm"># Sanity-check numbers: what the loss SHOULD be before training</span>
+<span class="kw">import</span> math, torch, torch.nn <span class="kw">as</span> nn
+torch.manual_seed(<span class="nu">0</span>)
+<span class="cm"># 1. Balanced C-class problem, uniform guess: cross-entropy = ln(C)</span>
+<span class="kw">for</span> C <span class="kw">in</span> (<span class="nu">2</span>, <span class="nu">10</span>, <span class="nu">1000</span>):
+    logits = torch.zeros(<span class="nu">8</span>, C); y = torch.randint(<span class="nu">0</span>, C, (<span class="nu">8</span>,))
+    <span class="fn">print</span>(<span class="st">f"C={C:4d}: uniform-guess CE = {nn.CrossEntropyLoss()(logits, y).item():.3f}   ln(C) = {math.log(C):.3f}"</span>)
+
+<span class="cm"># 2. Imbalanced binary problem: the bar is the entropy of the prior, not ln(2)</span>
+p = <span class="nu">0.05</span>                                     <span class="cm"># 5% positives</span>
+H = -(p * math.log(p) + (<span class="nu">1</span> - p) * math.log(<span class="nu">1</span> - p))
+<span class="fn">print</span>(<span class="st">f"5% positives: predicting the prior gives BCE = {H:.3f} (ln 2 = 0.693 would be a BAD start)"</span>)
+
+<span class="cm"># 3. Init scale: logits that are too large make the init loss much worse than ln(C)</span>
+y = torch.randint(<span class="nu">0</span>, <span class="nu">10</span>, (<span class="nu">256</span>,))
+<span class="kw">for</span> scale <span class="kw">in</span> (<span class="nu">0.01</span>, <span class="nu">1.0</span>, <span class="nu">10.0</span>):
+    logits = scale * torch.randn(<span class="nu">256</span>, <span class="nu">10</span>)
+    <span class="fn">print</span>(<span class="st">f"logit std {scale:5.2f}: init CE = {nn.CrossEntropyLoss()(logits, y).item():.3f}"</span>)
+
+<span class="cm"># 4. Regression: an untrained net predicting ~0 has MSE ≈ mean(y²); predicting the mean has MSE = Var(y)</span>
+y = torch.tensor([<span class="nu">3.0</span>, <span class="nu">5.0</span>, <span class="nu">4.0</span>, <span class="nu">8.0</span>])
+<span class="fn">print</span>(<span class="st">f"MSE of predicting 0: {(y ** 2).mean():.2f}   of predicting mean(y): {y.var(unbiased=False):.2f}"</span>)
+<span class="out"># C=   2: uniform-guess CE = 0.693   ln(C) = 0.693</span>
+<span class="out"># C=  10: uniform-guess CE = 2.303   ln(C) = 2.303</span>
+<span class="out"># C=1000: uniform-guess CE = 6.908   ln(C) = 6.908</span>
+<span class="out"># 5% positives: predicting the prior gives BCE = 0.199 (ln 2 = 0.693 would be a BAD start)</span>
+<span class="out"># logit std  0.01: init CE = 2.303</span>
+<span class="out"># logit std  1.00: init CE = 2.814</span>
+<span class="out"># logit std 10.00: init CE = 14.742</span>
+<span class="out"># MSE of predicting 0: 28.50   of predicting mean(y): 3.50</span></code></pre>
+
+<h4>The one-line fix: initialize the last-layer bias to the prior</h4>
+<p>Set the final bias so that the untrained model already predicts the label frequencies: for a binary problem <code>model[-1].bias.data.fill_(math.log(p / (1 - p)))</code>, for multi-class the log of each class's frequency, for regression the mean of <em>y</em>. The init loss then equals the entropy bar exactly, the first epochs are spent learning features rather than the base rate, and on heavily imbalanced data it removes the early phase where the model predicts "negative" for everything and the gradients from the rare class are swamped. This is standard in detection losses (it is where the −ln(99) bias in the focal-loss paper comes from) and costs nothing.</p>
+<div class="callout key"><div class="title">Key idea</div>
+<p><strong>Every loss has a "knows nothing" value, and you should know it before training.</strong> ln <em>C</em> for balanced classes, <em>H</em>(<em>p</em>) for imbalanced ones, Var(<em>y</em>) for regression on a centred target. Above it at init: outputs too large. Below it after epoch one on validation: leakage, until proven otherwise. Above it after ten epochs: the model is not learning the problem.</p>
+</div>
+</details>
+
 <!-- ============================================================ -->
 <h2 id="s9">9. Hardware, precision, checkpoints, reproducibility</h2>
 
@@ -1065,13 +1282,15 @@ torch.use_deterministic_algorithms(<span class="kw">True</span>, warn_only=<span
 <p>The strongest tabular systems in production are frequently <em>both</em>: a GBM and an MLP trained on the same features, averaged (Chapter 10, stacking). Their errors are different enough that the blend beats either alone by a small, reliable margin. But that is the last 1%. Get the features, the validation scheme and the GBM baseline right first; the neural network is a refinement, not a rescue.</p>
 </div>
 
-<div class="callout lab"><div class="title">Lab</div>
+<div class="callout lab"><div class="title">Try it yourself</div>
 <p>Take the breast-cancer example from §7. (1) Train a <code>LightGBMClassifier</code> with default settings on the same split and compare test accuracy and log-loss with the MLP. (2) Run the MLP with three seeds and report the spread. (3) Remove the <code>StandardScaler</code> and watch what happens to the loss at initialization and the epochs needed. Write down the three numbers; they are the argument you will be making to colleagues for years.</p>
 </div>
 
 <div class="callout key"><div class="title">Key idea</div>
 <p><strong>Deep learning is a set of engineering defaults, not magic.</strong> AdamW at 1e-3 with warmup and cosine decay, He-initialized ReLU layers with batch norm, mild weight decay and dropout, gradient clipping at 1.0, early stopping on a validation set, seeds logged, checkpoints saved — that recipe trains almost everything in this book. Deviate from it only with a measured reason.</p>
 </div>
+
+<div class="callout lab"><div class="title">Lab</div><p>Open <code>labs/ch16_pytorch_training.py</code> in VS Code and make the tests in <code>labs/tests/test_ch16.py</code> pass. You will build a configurable MLP that outputs logits, a training loop with validation and early stopping that restores the best weights, an optimizer bake-off from identical initial weights, a warmup + cosine schedule, a regularization experiment, and a <code>state_dict</code> save/load round-trip.</p></div>
 
 <!-- ============================================================ -->
 <h2 id="quiz">Quiz</h2>
@@ -1150,7 +1369,7 @@ torch.use_deterministic_algorithms(<span class="kw">True</span>, warn_only=<span
 <div class="exercise"><div class="title">Exercise 16.1 — Break the loop on purpose</div>
 <p>Take the training loop from §3 and introduce each of these bugs one at a time, re-running each time: (a) delete <code>opt.zero_grad()</code>; (b) add <code>nn.Sigmoid()</code> as the final layer; (c) pass <code>y_tr</code> with shape <code>(n,)</code> instead of <code>(n, 1)</code>; (d) set <code>lr=1.0</code>. For each, record what the loss curve looks like at epochs 5, 10, 15 and which check from the §8 recipe would have caught it.</p>
 <details class="answer"><summary>Show answer</summary>
-<p>(a) Loss falls for a few batches then stalls or oscillates as stale gradients accumulate; the gradient-norm log grows steadily — caught by "plot grads". (b) Loss decreases slowly and plateaus higher (around 0.3–0.4 instead of 0.15); the model cannot produce confident predictions — caught by the "loss at init" check being suspicious (≈ 0.63 rather than 0.69, since squashed outputs are pulled toward 0.5 twice) and by "overfit one batch" failing to reach ~0. (c) <code>BCEWithLogitsLoss</code> raises a shape-mismatch error; with <code>MSELoss</code> it would broadcast silently — caught by "check shapes". (d) Loss jumps around and typically hits NaN within an epoch — the learning-rate signature; caught by the NaN check and Figure 16.9 C.</p>
+<p>(a) Loss falls for a few batches then stalls or oscillates as stale gradients accumulate; the gradient-norm log grows steadily — caught by "plot grads". (b) The loss at init is ≈ 0.73 rather than 0.69: the extra sigmoid pins the "logit" to (0, 1), so the loss's own sigmoid sees ≈ 0.5 and softplus(±0.5) averages 0.72. Validation loss then plateaus around 0.53 instead of 0.15, because with z ∈ (0, 1) the best achievable loss is softplus(−1) ≈ 0.31 on positives and softplus(0) = 0.69 on negatives. Worse, the loop's <code>model(X_va) &gt; 0</code> rule now labels every example positive (a sigmoid output is always &gt; 0), so validation accuracy sits at exactly 0.50 — caught by "loss at init" being off and by "overfit one batch" failing to reach ~0. (c) <code>BCEWithLogitsLoss</code> raises a shape-mismatch error; with <code>MSELoss</code> it would broadcast silently — caught by "check shapes". (d) Loss jumps around and typically hits NaN within an epoch — the learning-rate signature; caught by the NaN check and Figure 16.9 C.</p>
 </details>
 </div>
 
