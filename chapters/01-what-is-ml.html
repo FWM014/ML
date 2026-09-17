@@ -1,0 +1,579 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>01 · What Machine Learning Really Is — ML: Zero to Expert</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body data-chapter="01">
+<header class="topbar"></header>
+<div class="progress-track"><div></div></div>
+<div class="shell">
+<nav class="sidebar"></nav>
+<main class="content"><div class="container">
+
+<header class="ch-header">
+  <div class="kicker">Part I · Foundations · Chapter 01</div>
+  <h1>What Machine Learning Really Is</h1>
+  <p class="lede">Before touching a single algorithm, you need the mental map: what machine learning is, what it is not, the three big families, and the seven-step loop that every real project follows.</p>
+  <div class="meta"><span class="level">Beginner</span> <span>⏱ 45 min read</span> <span>·</span> <span>No prerequisites</span></div>
+</header>
+
+<div class="objectives">
+  <h3>By the end of this chapter you will be able to</h3>
+  <ul>
+    <li>Explain, in one sentence, the difference between traditional programming and machine learning.</li>
+    <li>Name the three families of ML (supervised, unsupervised, reinforcement) and sort any business problem into one of them.</li>
+    <li>Tell regression from classification instantly.</li>
+    <li>Walk through the 7-step ML workflow and say where projects usually die.</li>
+    <li>Decide whether a problem at work even needs ML.</li>
+  </ul>
+</div>
+
+<div class="toc-inline"><strong>In this chapter</strong>
+<ol>
+  <li><a href="#s1">Programs vs. learners</a></li>
+  <li><a href="#s2">The three families of ML</a></li>
+  <li><a href="#s3">Regression vs. classification</a></li>
+  <li><a href="#s4">The vocabulary you'll use every day</a></li>
+  <li><a href="#s5">The 7-step ML workflow</a></li>
+  <li><a href="#s6">When NOT to use ML</a></li>
+  <li><a href="#s7">Try it: your first "model"</a></li>
+  <li><a href="#quiz">Quiz &amp; exercises</a></li>
+</ol></div>
+
+<!-- ============================================================ -->
+<h2 id="s1">1. Programs vs. learners</h2>
+
+<p>For seventy years, software worked one way: a human writes <strong>rules</strong>, the computer applies them to <strong>data</strong>, and out come <strong>answers</strong>. Want to flag spam? Write rules: "if the subject contains FREE MONEY, it's spam." This works until the spammers write "FR33 M0NEY", and then you write another rule, and another, forever.</p>
+
+<p>Machine learning flips the arrows. You give the computer <strong>data</strong> and the <strong>answers</strong> (thousands of emails, each labeled spam or not), and it figures out the <strong>rules</strong> on its own. Those learned rules are the <em>model</em>.</p>
+
+<figure class="fig">
+<svg viewBox="0 0 800 260" role="img" aria-label="Traditional programming takes rules and data and produces answers; machine learning takes data and answers and produces rules (a model)">
+  <defs>
+    <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker>
+  </defs>
+  <!-- left: traditional -->
+  <text x="180" y="28" text-anchor="middle" class="lbl-strong" font-size="14">Traditional programming</text>
+  <rect x="40" y="60" width="120" height="44" class="box"/><text x="100" y="87" text-anchor="middle" class="lbl-strong">Rules</text>
+  <rect x="40" y="150" width="120" height="44" class="box"/><text x="100" y="177" text-anchor="middle" class="lbl-strong">Data</text>
+  <rect x="200" y="100" width="90" height="54" class="box-accent"/><text x="245" y="132" text-anchor="middle" class="lbl-strong">Computer</text>
+  <line x1="160" y1="82" x2="200" y2="115" class="arrow" marker-end="url(#arr)"/>
+  <line x1="160" y1="172" x2="200" y2="139" class="arrow" marker-end="url(#arr)"/>
+  <line x1="290" y1="127" x2="330" y2="127" class="arrow" marker-end="url(#arr)"/>
+  <rect x="332" y="105" width="0" height="0"/>
+  <text x="340" y="131" class="lbl-strong">Answers</text>
+  <!-- divider -->
+  <line x1="410" y1="20" x2="410" y2="240" class="grid" stroke-dasharray="4 4"/>
+  <!-- right: ML -->
+  <text x="590" y="28" text-anchor="middle" class="lbl-strong" font-size="14">Machine learning</text>
+  <rect x="440" y="60" width="120" height="44" class="box"/><text x="500" y="87" text-anchor="middle" class="lbl-strong">Data</text>
+  <rect x="440" y="150" width="120" height="44" class="box"/><text x="500" y="177" text-anchor="middle" class="lbl-strong">Answers</text>
+  <rect x="600" y="100" width="90" height="54" class="box-accent"/><text x="645" y="132" text-anchor="middle" class="lbl-strong">Computer</text>
+  <line x1="560" y1="82" x2="600" y2="115" class="arrow" marker-end="url(#arr)"/>
+  <line x1="560" y1="172" x2="600" y2="139" class="arrow" marker-end="url(#arr)"/>
+  <line x1="690" y1="127" x2="720" y2="127" class="arrow" marker-end="url(#arr)"/>
+  <text x="726" y="123" class="lbl-strong" font-size="12">Rules</text>
+  <text x="726" y="138" class="lbl" font-size="11">(= model)</text>
+  <text x="590" y="228" text-anchor="middle" class="lbl">The output of learning is a program you didn't write.</text>
+</svg>
+<figcaption><strong>Figure 1.1 — The arrow flip.</strong> Traditional programming: rules + data → answers. Machine learning: data + answers → rules. The learned rules are what we call a <em>model</em>.</figcaption>
+</figure>
+
+<div class="callout eli9"><div class="title">Explain it like I'm 9</div>
+<p>Imagine teaching a little brother to tell cats from dogs. You could try writing rules: "cats have pointy ears" (but so do some dogs), "dogs are bigger" (but not Chihuahuas). It never works. Instead, you just show him 100 pictures and say "cat, dog, cat, cat, dog…" Eventually he <em>gets it</em>, even though neither of you could write down the rule. That "getting it" from examples is machine learning.</p>
+</div>
+
+<div class="callout key"><div class="title">Key idea</div>
+<p><strong>A model is a function learned from data.</strong> It takes an input (an email, an image, a customer record) and returns an output (spam/not spam, a price, a category). Everything in this book is about how to learn that function well and how to know whether it's any good.</p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s2">2. The three families of ML</h2>
+
+<p>Every ML problem you will ever meet belongs to one of three families. The family is decided by <strong>what kind of feedback the data gives you</strong>.</p>
+
+<figure class="fig">
+<svg viewBox="0 0 780 330" role="img" aria-label="Three families of machine learning: supervised learning with labeled examples, unsupervised learning finding structure without labels, and reinforcement learning learning from rewards">
+  <!-- supervised -->
+  <rect x="20" y="20" width="235" height="290" rx="10" class="fill-surface2" stroke="var(--s1)" stroke-width="2"/>
+  <text x="137" y="48" text-anchor="middle" class="lbl-strong" font-size="15">Supervised</text>
+  <text x="137" y="66" text-anchor="middle" class="lbl">"Here are examples with answers"</text>
+  <!-- little labeled dots -->
+  <g>
+    <circle cx="60" cy="110" r="7" class="fill-s1"/><text x="73" y="114" class="lbl">cat</text>
+    <circle cx="60" cy="140" r="7" class="fill-s2"/><text x="73" y="144" class="lbl">dog</text>
+    <circle cx="60" cy="170" r="7" class="fill-s1"/><text x="73" y="174" class="lbl">cat</text>
+    <circle cx="60" cy="200" r="7" class="fill-s2"/><text x="73" y="204" class="lbl">dog</text>
+    <circle cx="145" cy="110" r="7" class="fill-s2"/><text x="158" y="114" class="lbl">dog</text>
+    <circle cx="145" cy="140" r="7" class="fill-s1"/><text x="158" y="144" class="lbl">cat</text>
+    <circle cx="145" cy="170" r="7" class="fill-s1"/><text x="158" y="174" class="lbl">cat</text>
+    <circle cx="145" cy="200" r="7" class="fill-s2"/><text x="158" y="204" class="lbl">dog</text>
+  </g>
+  <text x="137" y="245" text-anchor="middle" class="lbl-strong">Learn: input → label</text>
+  <text x="137" y="265" text-anchor="middle" class="lbl">Spam filter · price prediction</text>
+  <text x="137" y="283" text-anchor="middle" class="lbl">churn · fraud · demand forecast</text>
+  <text x="137" y="301" text-anchor="middle" class="lbl-strong" fill="var(--s1)">~80% of business ML</text>
+
+  <!-- unsupervised -->
+  <rect x="272" y="20" width="235" height="290" rx="10" class="fill-surface2" stroke="var(--s3)" stroke-width="2"/>
+  <text x="389" y="48" text-anchor="middle" class="lbl-strong" font-size="15">Unsupervised</text>
+  <text x="389" y="66" text-anchor="middle" class="lbl">"Here are examples. Find structure."</text>
+  <g class="fill-ink3">
+    <circle cx="320" cy="115" r="6"/><circle cx="335" cy="128" r="6"/><circle cx="312" cy="138" r="6"/><circle cx="330" cy="105" r="6"/>
+    <circle cx="450" cy="120" r="6"/><circle cx="462" cy="138" r="6"/><circle cx="440" cy="140" r="6"/><circle cx="470" cy="112" r="6"/>
+    <circle cx="380" cy="195" r="6"/><circle cx="395" cy="210" r="6"/><circle cx="372" cy="212" r="6"/><circle cx="392" cy="185" r="6"/>
+  </g>
+  <ellipse cx="324" cy="122" rx="30" ry="28" fill="none" stroke="var(--s3)" stroke-width="1.5" stroke-dasharray="4 3"/>
+  <ellipse cx="455" cy="127" rx="30" ry="28" fill="none" stroke="var(--s3)" stroke-width="1.5" stroke-dasharray="4 3"/>
+  <ellipse cx="385" cy="200" rx="30" ry="28" fill="none" stroke="var(--s3)" stroke-width="1.5" stroke-dasharray="4 3"/>
+  <text x="389" y="245" text-anchor="middle" class="lbl-strong">Learn: groups, patterns</text>
+  <text x="389" y="265" text-anchor="middle" class="lbl">customer segments · anomaly</text>
+  <text x="389" y="283" text-anchor="middle" class="lbl">detection · compression (PCA)</text>
+  <text x="389" y="301" text-anchor="middle" class="lbl-strong" fill="var(--s3)">no labels needed</text>
+
+  <!-- reinforcement -->
+  <rect x="524" y="20" width="235" height="290" rx="10" class="fill-surface2" stroke="var(--s2)" stroke-width="2"/>
+  <text x="641" y="48" text-anchor="middle" class="lbl-strong" font-size="15">Reinforcement</text>
+  <text x="641" y="66" text-anchor="middle" class="lbl">"Act, get a reward, act better."</text>
+  <rect x="560" y="95" width="70" height="40" class="box"/><text x="595" y="120" text-anchor="middle" class="lbl-strong">Agent</text>
+  <rect x="655" y="95" width="80" height="40" class="box"/><text x="695" y="120" text-anchor="middle" class="lbl-strong">World</text>
+  <path d="M630,105 L655,105" class="arrow" marker-end="url(#arr)"/>
+  <text x="642" y="98" text-anchor="middle" class="lbl" font-size="10">action</text>
+  <path d="M655,125 L630,125" class="arrow" marker-end="url(#arr)"/>
+  <text x="642" y="150" text-anchor="middle" class="lbl" font-size="10">reward + new state</text>
+  <text x="641" y="245" text-anchor="middle" class="lbl-strong">Learn: a policy (what to do)</text>
+  <text x="641" y="265" text-anchor="middle" class="lbl">games · robotics · ad bidding</text>
+  <text x="641" y="283" text-anchor="middle" class="lbl">LLM fine-tuning (RLHF)</text>
+  <text x="641" y="301" text-anchor="middle" class="lbl-strong" fill="var(--s2)">rare at most companies</text>
+</svg>
+<figcaption><strong>Figure 1.2 — The three families.</strong> Supervised learning has labeled answers; unsupervised learning finds structure in unlabeled data; reinforcement learning learns by trial, error, and reward. At work you will spend most of your time in the first column.</figcaption>
+</figure>
+
+<h3>Supervised learning — learning with an answer key</h3>
+<p>You have <em>inputs</em> and the <em>correct outputs</em> for each. The model learns the mapping. Examples: predicting house prices from square footage (you know past sale prices), detecting fraud from transaction details (you know which past ones were fraudulent). <strong>This is the workhorse of industry</strong> and the focus of Parts I and II.</p>
+
+<h3>Unsupervised learning — learning without an answer key</h3>
+<p>You have inputs but no labels. The model finds structure: clusters of similar customers, unusual transactions that don't look like the rest, or a compressed representation of the data. Chapter 12 covers this.</p>
+
+<h3>Reinforcement learning — learning by doing</h3>
+<p>An agent takes actions in an environment and receives rewards. Nobody hands it labels; it discovers good behavior by trial and error. This powers game-playing AIs and parts of modern LLM training. It is rare in typical business settings, so we cover it as a primer in Chapter 22.</p>
+
+<div class="callout pro"><div class="title">At work</div>
+<p>When someone brings you a problem, your first question is: <em>"Do we have historical examples where we know the right answer?"</em> If yes → supervised. If no, but we have lots of data → unsupervised (or go collect labels!). If the problem is sequential decision-making with feedback → reinforcement. Sorting the problem correctly in the first five minutes saves weeks.</p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s3">3. Regression vs. classification</h2>
+
+<p>Within supervised learning, there are two sub-types, decided by <strong>what kind of answer you want</strong>:</p>
+
+<div class="grid2">
+  <div class="card accent">
+    <h4>Regression → a number</h4>
+    <p>"How much?" "How many?" "When?"</p>
+    <p>House price, tomorrow's demand, time until a machine fails, a customer's lifetime value.</p>
+  </div>
+  <div class="card accent">
+    <h4>Classification → a category</h4>
+    <p>"Which one?" "Yes or no?"</p>
+    <p>Spam or not, will this customer churn, which of 10 product categories, is this tumor malignant.</p>
+  </div>
+</div>
+
+<figure class="fig">
+<svg viewBox="0 0 760 280" role="img" aria-label="Left: regression fits a line through points to predict a number. Right: classification draws a boundary between two groups of points to predict a category">
+  <defs><marker id="arr2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+  <!-- regression panel -->
+  <text x="190" y="24" text-anchor="middle" class="lbl-strong" font-size="14">Regression: predict a number</text>
+  <line x1="50" y1="230" x2="340" y2="230" class="axis" marker-end="url(#arr2)"/>
+  <line x1="50" y1="230" x2="50" y2="45" class="axis" marker-end="url(#arr2)"/>
+  <text x="200" y="255" text-anchor="middle" class="lbl">size of house (m²)</text>
+  <text x="18" y="140" text-anchor="middle" class="lbl" transform="rotate(-90 18 140)">price</text>
+  <g class="fill-s1">
+    <circle cx="80" cy="200" r="5"/><circle cx="110" cy="185" r="5"/><circle cx="130" cy="195" r="5"/><circle cx="160" cy="160" r="5"/>
+    <circle cx="185" cy="150" r="5"/><circle cx="210" cy="130" r="5"/><circle cx="240" cy="125" r="5"/><circle cx="265" cy="100" r="5"/>
+    <circle cx="290" cy="90" r="5"/><circle cx="315" cy="70" r="5"/>
+  </g>
+  <line x1="60" y1="212" x2="330" y2="62" stroke="var(--s2)" stroke-width="2.5"/>
+  <text x="250" y="60" class="lbl" fill="var(--s2)" font-weight="700">learned line</text>
+  <!-- prediction -->
+  <line x1="225" y1="230" x2="225" y2="121" stroke="var(--ink-3)" stroke-dasharray="3 3"/>
+  <line x1="225" y1="121" x2="50" y2="121" stroke="var(--ink-3)" stroke-dasharray="3 3"/>
+  <text x="228" y="245" class="lbl" font-size="10">new house</text>
+  <text x="55" y="116" class="lbl" font-size="10">→ predicted price</text>
+
+  <!-- classification panel -->
+  <text x="570" y="24" text-anchor="middle" class="lbl-strong" font-size="14">Classification: predict a category</text>
+  <line x1="430" y1="230" x2="720" y2="230" class="axis" marker-end="url(#arr2)"/>
+  <line x1="430" y1="230" x2="430" y2="45" class="axis" marker-end="url(#arr2)"/>
+  <text x="580" y="255" text-anchor="middle" class="lbl">purchases per month</text>
+  <text x="398" y="140" text-anchor="middle" class="lbl" transform="rotate(-90 398 140)">days since last visit</text>
+  <g class="fill-s1">
+    <circle cx="470" cy="90" r="6"/><circle cx="500" cy="110" r="6"/><circle cx="460" cy="130" r="6"/><circle cx="520" cy="80" r="6"/><circle cx="490" cy="150" r="6"/><circle cx="540" cy="120" r="6"/>
+  </g>
+  <g class="fill-s2">
+    <circle cx="620" cy="190" r="6"/><circle cx="650" cy="170" r="6"/><circle cx="680" cy="200" r="6"/><circle cx="600" cy="210" r="6"/><circle cx="690" cy="160" r="6"/><circle cx="640" cy="215" r="6"/>
+  </g>
+  <line x1="470" y1="225" x2="700" y2="60" stroke="var(--s7)" stroke-width="2.5" stroke-dasharray="7 4"/>
+  <text x="640" y="60" class="lbl" fill="var(--s7)" font-weight="700">decision boundary</text>
+  <text x="470" y="70" class="lbl" fill="var(--s1)" font-weight="700">churned</text>
+  <text x="640" y="240" class="lbl" fill="var(--s2)" font-weight="700" text-anchor="end">stayed</text>
+</svg>
+<figcaption><strong>Figure 1.3 — Two shapes of "answer".</strong> Regression learns a line (or curve) to read off a number. Classification learns a boundary that separates categories. Most algorithms in this book come in both flavors.</figcaption>
+</figure>
+
+<div class="callout warn"><div class="title">Common mistake</div>
+<p>"Predict how many days until the customer churns" is <strong>regression</strong>. "Predict whether the customer churns within 30 days" is <strong>classification</strong>. Same business question, different framing, different algorithms, different metrics. Choose the framing that matches the <em>decision</em> someone will make with the prediction.</p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s4">4. The vocabulary you'll use every day</h2>
+
+<p>ML has a small set of words that show up in every conversation. Learn them now and the rest of the book reads easily.</p>
+
+<div class="tbl-wrap">
+<table class="tbl">
+<thead><tr><th>Term</th><th>Plain-English meaning</th><th>Also called</th></tr></thead>
+<tbody>
+<tr><td><strong>Example / sample</strong></td><td>One row of data: one email, one customer, one house.</td><td>instance, observation, record</td></tr>
+<tr><td><strong>Feature</strong></td><td>One input column: email length, customer age, house size. The things the model looks at.</td><td>attribute, predictor, variable, <code>X</code></td></tr>
+<tr><td><strong>Label / target</strong></td><td>The answer column we want to predict: spam?, churned?, price.</td><td>ground truth, response, <code>y</code></td></tr>
+<tr><td><strong>Model</strong></td><td>The learned function that maps features → prediction.</td><td>estimator, hypothesis</td></tr>
+<tr><td><strong>Training</strong></td><td>The process of learning the model from labeled examples.</td><td>fitting, learning</td></tr>
+<tr><td><strong>Parameters</strong></td><td>The numbers inside the model that training adjusts (e.g. the slope of the line).</td><td>weights, coefficients</td></tr>
+<tr><td><strong>Hyperparameters</strong></td><td>Settings <em>you</em> choose before training (e.g. how deep a tree can grow).</td><td>knobs, config</td></tr>
+<tr><td><strong>Prediction / inference</strong></td><td>Using the trained model on new data.</td><td>scoring, serving</td></tr>
+<tr><td><strong>Loss</strong></td><td>A number saying how wrong the model is. Training = making loss small.</td><td>cost, objective, error</td></tr>
+<tr><td><strong>Generalization</strong></td><td>How well the model does on data it has <em>never seen</em>. The only thing that matters.</td><td>out-of-sample performance</td></tr>
+</tbody>
+</table>
+</div>
+
+<figure class="fig">
+<svg viewBox="0 0 760 240" role="img" aria-label="A data table showing rows as examples, feature columns as X, and the label column as y">
+  <text x="20" y="24" class="lbl-strong" font-size="14">A dataset is a table. Rows = examples. Columns = features + one label.</text>
+  <!-- header -->
+  <rect x="20" y="45" width="60" height="32" class="fill-surface2" stroke="var(--border)"/>
+  <rect x="80" y="45" width="130" height="32" fill="var(--accent-soft)" stroke="var(--border)"/>
+  <rect x="210" y="45" width="130" height="32" fill="var(--accent-soft)" stroke="var(--border)"/>
+  <rect x="340" y="45" width="130" height="32" fill="var(--accent-soft)" stroke="var(--border)"/>
+  <rect x="470" y="45" width="130" height="32" fill="var(--accent-soft)" stroke="var(--border)"/>
+  <rect x="620" y="45" width="120" height="32" fill="var(--s2)" fill-opacity=".25" stroke="var(--border)"/>
+  <text x="50" y="66" text-anchor="middle" class="lbl">id</text>
+  <text x="145" y="66" text-anchor="middle" class="lbl-strong">age</text>
+  <text x="275" y="66" text-anchor="middle" class="lbl-strong">plan</text>
+  <text x="405" y="66" text-anchor="middle" class="lbl-strong">monthly spend</text>
+  <text x="535" y="66" text-anchor="middle" class="lbl-strong">support calls</text>
+  <text x="680" y="66" text-anchor="middle" class="lbl-strong">churned?</text>
+  <!-- rows -->
+  <g class="lbl">
+    <g><rect x="20" y="77" width="720" height="30" fill="none" stroke="var(--border)"/><text x="50" y="97" text-anchor="middle">1</text><text x="145" y="97" text-anchor="middle">34</text><text x="275" y="97" text-anchor="middle">basic</text><text x="405" y="97" text-anchor="middle">$12</text><text x="535" y="97" text-anchor="middle">0</text><text x="680" y="97" text-anchor="middle">no</text></g>
+    <g><rect x="20" y="107" width="720" height="30" fill="none" stroke="var(--border)"/><text x="50" y="127" text-anchor="middle">2</text><text x="145" y="127" text-anchor="middle">51</text><text x="275" y="127" text-anchor="middle">premium</text><text x="405" y="127" text-anchor="middle">$48</text><text x="535" y="127" text-anchor="middle">4</text><text x="680" y="127" text-anchor="middle">yes</text></g>
+    <g><rect x="20" y="137" width="720" height="30" fill="none" stroke="var(--border)"/><text x="50" y="157" text-anchor="middle">3</text><text x="145" y="157" text-anchor="middle">27</text><text x="275" y="157" text-anchor="middle">basic</text><text x="405" y="157" text-anchor="middle">$9</text><text x="535" y="157" text-anchor="middle">1</text><text x="680" y="157" text-anchor="middle">no</text></g>
+  </g>
+  <!-- annotations -->
+  <path d="M340,30 L340,44" class="arrow"/>
+  <text x="340" y="195" text-anchor="middle" class="lbl-strong" fill="var(--accent)">Features  =  X  (what the model sees)</text>
+  <text x="680" y="195" text-anchor="middle" class="lbl-strong" fill="var(--s2)">Label  =  y</text>
+  <text x="680" y="212" text-anchor="middle" class="lbl">(what it predicts)</text>
+  <text x="20" y="230" class="lbl">← each row is one example (one customer)</text>
+</svg>
+<figcaption><strong>Figure 1.4 — Anatomy of a dataset.</strong> In code you will constantly see <code>X</code> (a table of features) and <code>y</code> (the label column). Training means: learn to produce <code>y</code> from <code>X</code>.</figcaption>
+</figure>
+
+<!-- ============================================================ -->
+<h2 id="s5">5. The 7-step ML workflow</h2>
+
+<p>Here is a truth that no course tells you early enough: <strong>the algorithm is about 10% of the work.</strong> Real ML projects follow a loop, and most of the effort (and most of the failures) live in the steps around the model.</p>
+
+<figure class="fig">
+<svg viewBox="0 0 780 300" role="img" aria-label="The seven-step ML workflow as a loop: define the problem, get data, explore and clean, engineer features, train models, evaluate, deploy and monitor, with an arrow returning to the start">
+  <defs><marker id="arr3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+  <!-- top row -->
+  <g>
+    <rect x="20" y="40" width="130" height="64" class="box-accent"/><text x="85" y="66" text-anchor="middle" class="lbl-strong">1. Define</text><text x="85" y="84" text-anchor="middle" class="lbl">the problem</text>
+    <rect x="215" y="40" width="130" height="64" class="box"/><text x="280" y="66" text-anchor="middle" class="lbl-strong">2. Get data</text><text x="280" y="84" text-anchor="middle" class="lbl">collect, label</text>
+    <rect x="410" y="40" width="130" height="64" class="box"/><text x="475" y="66" text-anchor="middle" class="lbl-strong">3. Explore &amp; clean</text><text x="475" y="84" text-anchor="middle" class="lbl">EDA, fix errors</text>
+    <rect x="605" y="40" width="150" height="64" class="box"/><text x="680" y="66" text-anchor="middle" class="lbl-strong">4. Engineer features</text><text x="680" y="84" text-anchor="middle" class="lbl">make X useful</text>
+    <line x1="150" y1="72" x2="213" y2="72" class="arrow" marker-end="url(#arr3)"/>
+    <line x1="345" y1="72" x2="408" y2="72" class="arrow" marker-end="url(#arr3)"/>
+    <line x1="540" y1="72" x2="603" y2="72" class="arrow" marker-end="url(#arr3)"/>
+  </g>
+  <!-- down arrow -->
+  <path d="M680,104 L680,150" class="arrow" marker-end="url(#arr3)"/>
+  <!-- bottom row (right to left) -->
+  <g>
+    <rect x="605" y="152" width="150" height="64" class="box"/><text x="680" y="178" text-anchor="middle" class="lbl-strong">5. Train models</text><text x="680" y="196" text-anchor="middle" class="lbl">try several</text>
+    <rect x="410" y="152" width="130" height="64" class="box"/><text x="475" y="178" text-anchor="middle" class="lbl-strong">6. Evaluate</text><text x="475" y="196" text-anchor="middle" class="lbl">on unseen data</text>
+    <rect x="215" y="152" width="130" height="64" class="box-accent"/><text x="280" y="178" text-anchor="middle" class="lbl-strong">7. Deploy &amp;</text><text x="280" y="196" text-anchor="middle" class="lbl">monitor</text>
+    <line x1="603" y1="184" x2="542" y2="184" class="arrow" marker-end="url(#arr3)"/>
+    <line x1="408" y1="184" x2="347" y2="184" class="arrow" marker-end="url(#arr3)"/>
+  </g>
+  <!-- loop back -->
+  <path d="M215,184 L85,184 L85,106" class="arrow" marker-end="url(#arr3)" stroke-dasharray="6 4"/>
+  <text x="140" y="178" text-anchor="middle" class="lbl" font-size="11">iterate</text>
+  <!-- effort bar -->
+  <text x="20" y="250" class="lbl-strong">Where the time really goes (typical project):</text>
+  <rect x="20" y="260" width="360" height="18" fill="var(--s1)"/><text x="200" y="273" text-anchor="middle" font-size="11" fill="#fff" font-weight="700">data: define, get, clean, features ≈ 60%</text>
+  <rect x="380" y="260" width="110" height="18" fill="var(--s2)"/><text x="435" y="273" text-anchor="middle" font-size="11" fill="#fff" font-weight="700">modeling ≈ 15%</text>
+  <rect x="490" y="260" width="250" height="18" fill="var(--s3)"/><text x="615" y="273" text-anchor="middle" font-size="11" fill="#fff" font-weight="700">evaluate, deploy, monitor ≈ 25%</text>
+</svg>
+<figcaption><strong>Figure 1.5 — The workflow is a loop, not a line.</strong> Steps 1 and 7 (highlighted) are where projects most often fail: a badly defined problem, or a model that never makes it to production. The colored bar shows roughly where the hours go.</figcaption>
+</figure>
+
+<ol class="steps">
+  <li><strong>Define the problem.</strong> What decision will the prediction drive? What is the target exactly? How will we measure success in <em>business</em> terms (money saved, hours freed)? What does "good enough" look like? Write this down.</li>
+  <li><strong>Get data.</strong> Where does it live? Is it labeled? Is there enough? Is it legally and ethically usable? Do the labels mean what we think they mean?</li>
+  <li><strong>Explore and clean.</strong> Look at distributions, missing values, outliers, duplicates, and weird encodings. You will find surprises every single time. (Chapter 2)</li>
+  <li><strong>Engineer features.</strong> Transform raw columns into signals the model can use: scale numbers, encode categories, build ratios and time-based features. (Chapter 8)</li>
+  <li><strong>Train models.</strong> Start with the simplest thing that could work (a baseline). Then try stronger models. (Chapters 5–19)</li>
+  <li><strong>Evaluate.</strong> Measure on data the model has never seen, with the metric that matches the business goal. Compare to the baseline. (Chapters 6, 7, 13)</li>
+  <li><strong>Deploy and monitor.</strong> Put the model where it makes decisions. Watch it, because the world changes and models rot. (Chapter 21)</li>
+</ol>
+
+<div class="callout pro"><div class="title">At work: the baseline rule</div>
+<p>Before any fancy model, build a <strong>baseline</strong>: predict the average (regression) or the most common class (classification), or use whatever rule the business uses today. Every model you build must beat it convincingly. A shocking number of "ML projects" fail to beat a one-line rule, and it's better to find out on day two than month six.</p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s6">6. When NOT to use ML</h2>
+
+<p>The expert's superpower is knowing when to say no. ML is the right tool when <em>all</em> of these are true:</p>
+
+<div class="grid2">
+  <div class="card good"><h4>✅ Use ML when…</h4>
+    <ul>
+      <li>The rule is too complex or unknown to write by hand (recognizing images, ranking search results).</li>
+      <li>You have (or can get) lots of relevant historical data.</li>
+      <li>The pattern is reasonably stable over time.</li>
+      <li>Being wrong sometimes is acceptable, and you can measure it.</li>
+      <li>The prediction feeds a decision that has value.</li>
+    </ul>
+  </div>
+  <div class="card bad"><h4>❌ Don't use ML when…</h4>
+    <ul>
+      <li>A simple rule or lookup table works ("if balance &lt; 0, send reminder").</li>
+      <li>You have a few dozen examples.</li>
+      <li>Every decision must be 100% explainable and auditable by law and a rule would do.</li>
+      <li>The thing you want to predict isn't in the data (no signal → no model).</li>
+      <li>Nobody will act on the prediction.</li>
+    </ul>
+  </div>
+</div>
+
+<figure class="fig">
+<svg viewBox="0 0 760 330" role="img" aria-label="Decision flowchart: does a simple rule solve it? if yes, use the rule. Do we have historical examples with known answers? if no, collect labels or use unsupervised methods. Will someone act on the prediction? if no, stop. Otherwise, build a supervised model">
+  <defs><marker id="arr4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+  <rect x="270" y="15" width="220" height="48" class="box-accent"/><text x="380" y="44" text-anchor="middle" class="lbl-strong">Does a simple rule solve it?</text>
+  <line x1="490" y1="39" x2="600" y2="39" class="arrow" marker-end="url(#arr4)"/><text x="545" y="33" text-anchor="middle" class="lbl">yes</text>
+  <rect x="602" y="15" width="140" height="48" rx="6" fill="var(--s3)" fill-opacity=".2" stroke="var(--s3)" stroke-width="1.5"/><text x="672" y="44" text-anchor="middle" class="lbl-strong">Use the rule. Done.</text>
+  <line x1="380" y1="63" x2="380" y2="98" class="arrow" marker-end="url(#arr4)"/><text x="392" y="84" class="lbl">no</text>
+
+  <rect x="240" y="100" width="280" height="48" class="box-accent"/><text x="380" y="129" text-anchor="middle" class="lbl-strong">Do we have examples with known answers?</text>
+  <line x1="240" y1="124" x2="150" y2="124" class="arrow" marker-end="url(#arr4)"/><text x="195" y="118" text-anchor="middle" class="lbl">no</text>
+  <rect x="10" y="100" width="138" height="48" rx="6" fill="var(--s4)" fill-opacity=".2" stroke="var(--s4)" stroke-width="1.5"/><text x="79" y="121" text-anchor="middle" class="lbl-strong" font-size="11">Collect labels, or</text><text x="79" y="137" text-anchor="middle" class="lbl-strong" font-size="11">try unsupervised</text>
+  <line x1="380" y1="148" x2="380" y2="183" class="arrow" marker-end="url(#arr4)"/><text x="392" y="169" class="lbl">yes</text>
+
+  <rect x="240" y="185" width="280" height="48" class="box-accent"/><text x="380" y="214" text-anchor="middle" class="lbl-strong">Will someone act on the prediction?</text>
+  <line x1="520" y1="209" x2="600" y2="209" class="arrow" marker-end="url(#arr4)"/><text x="560" y="203" text-anchor="middle" class="lbl">no</text>
+  <rect x="602" y="185" width="140" height="48" rx="6" fill="var(--s8)" fill-opacity=".18" stroke="var(--s8)" stroke-width="1.5"/><text x="672" y="206" text-anchor="middle" class="lbl-strong" font-size="11">Stop. No decision</text><text x="672" y="222" text-anchor="middle" class="lbl-strong" font-size="11">= no value.</text>
+  <line x1="380" y1="233" x2="380" y2="268" class="arrow" marker-end="url(#arr4)"/><text x="392" y="254" class="lbl">yes</text>
+
+  <rect x="240" y="270" width="280" height="48" rx="6" fill="var(--s1)" fill-opacity=".2" stroke="var(--s1)" stroke-width="2"/><text x="380" y="299" text-anchor="middle" class="lbl-strong">Build a supervised model. Beat the baseline.</text>
+</svg>
+<figcaption><strong>Figure 1.6 — The "should we even do ML?" flowchart.</strong> Print this. Most requests exit at the first or third box.</figcaption>
+</figure>
+
+<!-- ============================================================ -->
+<h2 id="s7">7. Try it: your first "model"</h2>
+
+<p>Let's make the idea of <em>learning a rule from data</em> physical. Below are 20 fruits with their weights: apples (blue) and oranges (orange). A one-number model, a <strong>threshold</strong>, says: "if weight &gt; threshold, call it an orange." Drag the threshold and watch the accuracy. <strong>You are doing by hand what training does automatically: searching for the parameter that minimizes mistakes.</strong></p>
+
+<div class="widget" id="w-threshold">
+  <div class="w-title">Interactive: find the best threshold</div>
+  <div class="controls">
+    <label>Threshold (grams) <input type="range" id="thr" min="100" max="260" value="120" data-out="thr-out"> <output id="thr-out"></output></label>
+    <span>Accuracy: <span class="readout" id="thr-acc">–</span></span>
+    <span>Mistakes: <span class="readout" id="thr-err">–</span></span>
+  </div>
+  <svg viewBox="0 0 700 150" id="thr-svg" role="img" aria-label="Fruit weights on a number line with a movable threshold"></svg>
+  <div class="note">Blue = apple, orange = orange. Filled with a red ring = misclassified by the current threshold. Try to reach the maximum accuracy, then notice that <em>several</em> thresholds tie. That ambiguity is real: data rarely pins the model down exactly.</div>
+</div>
+
+<p>Now the same idea in Python. This is a real (tiny) learning algorithm: try every threshold, keep the best.</p>
+
+<pre class="code" data-lang="python"><code><span class="cm"># Your first learning algorithm: search for the threshold with the fewest mistakes</span>
+<span class="kw">import</span> numpy <span class="kw">as</span> np
+
+weights = np.array([<span class="nu">120</span>, <span class="nu">135</span>, <span class="nu">142</span>, <span class="nu">150</span>, <span class="nu">158</span>, <span class="nu">163</span>, <span class="nu">170</span>, <span class="nu">176</span>, <span class="nu">181</span>, <span class="nu">190</span>,
+                    <span class="nu">168</span>, <span class="nu">185</span>, <span class="nu">195</span>, <span class="nu">205</span>, <span class="nu">210</span>, <span class="nu">218</span>, <span class="nu">226</span>, <span class="nu">235</span>, <span class="nu">244</span>, <span class="nu">252</span>])
+labels  = np.array([<span class="nu">0</span>]*<span class="nu">10</span> + [<span class="nu">1</span>]*<span class="nu">10</span>)   <span class="cm"># 0 = apple, 1 = orange</span>
+
+best_thr, best_acc = <span class="kw">None</span>, <span class="nu">0</span>
+<span class="kw">for</span> thr <span class="kw">in</span> <span class="fn">range</span>(<span class="nu">100</span>, <span class="nu">261</span>):
+    preds = (weights &gt; thr).astype(<span class="fn">int</span>)        <span class="cm"># the "model": 1 if heavier than thr</span>
+    acc = (preds == labels).mean()
+    <span class="kw">if</span> acc &gt; best_acc:
+        best_thr, best_acc = thr, acc
+
+<span class="fn">print</span>(<span class="st">f"best threshold = {best_thr} g, accuracy = {best_acc:.0%}"</span>)
+<span class="out"># best threshold = 181 g, accuracy = 90%</span></code></pre>
+
+<div class="callout key"><div class="title">Key idea</div>
+<p>Every algorithm in this book is a more sophisticated version of exactly this loop: <strong>propose parameters → measure error → adjust → repeat</strong>. Linear regression adjusts a slope and intercept. A neural network adjusts millions of weights. The <em>idea</em> never changes.</p>
+</div>
+
+<div class="callout eli9"><div class="title">Explain it like I'm 9</div>
+<p>Training a model is like playing "hot or cold." The model guesses, you tell it how wrong it was (that's the <em>loss</em>), and it nudges its guess to be less wrong. Do that a million times very fast and you get a model.</p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="quiz">Quiz</h2>
+<div class="quiz">
+  <h3>Check your understanding</h3>
+
+  <div class="q">
+    <p class="question">1. A hospital wants to predict how many days a patient will stay after surgery. Which type of problem is this?</p>
+    <ul class="opts">
+      <li><button>Classification</button></li>
+      <li><button data-correct>Regression</button></li>
+      <li><button>Unsupervised clustering</button></li>
+      <li><button>Reinforcement learning</button></li>
+    </ul>
+    <div class="explain">"How many days" is a number, so this is regression. If the question were "will the stay exceed 7 days?", it would become classification.</div>
+  </div>
+
+  <div class="q">
+    <p class="question">2. You have 2 million customer records but no information about which ones are "good" or "bad." A manager asks you to "find groups of similar customers." This is…</p>
+    <ul class="opts">
+      <li><button>Supervised learning</button></li>
+      <li><button data-correct>Unsupervised learning</button></li>
+      <li><button>Reinforcement learning</button></li>
+      <li><button>Not possible without labels</button></li>
+    </ul>
+    <div class="explain">No labels, and the goal is to discover structure (segments). That is unsupervised learning — clustering, specifically (Chapter 12).</div>
+  </div>
+
+  <div class="q">
+    <p class="question">3. What is the difference between a parameter and a hyperparameter?</p>
+    <ul class="opts">
+      <li><button>They are the same thing</button></li>
+      <li><button data-correct>Parameters are learned from data; hyperparameters are set by you before training</button></li>
+      <li><button>Hyperparameters are learned from data; parameters are set by you</button></li>
+      <li><button>Parameters only exist in neural networks</button></li>
+    </ul>
+    <div class="explain">The slope of a regression line is a parameter (learned). The maximum depth of a decision tree is a hyperparameter (chosen). Chapter 13 shows how to choose hyperparameters systematically.</div>
+  </div>
+
+  <div class="q">
+    <p class="question">4. Which step of the workflow do experienced practitioners say consumes the most time?</p>
+    <ul class="opts">
+      <li><button>Training the model</button></li>
+      <li><button>Choosing the algorithm</button></li>
+      <li><button data-correct>Getting, cleaning, and preparing data</button></li>
+      <li><button>Writing the final report</button></li>
+    </ul>
+    <div class="explain">Data work is routinely 50–70% of a project. Modeling is a small slice. This is why Chapters 2 and 8 exist.</div>
+  </div>
+
+  <div class="q">
+    <p class="question">5. A colleague proposes an ML model to decide whether to send a reminder when an invoice is 30 days overdue. What should you say?</p>
+    <ul class="opts">
+      <li><button>Great, let's collect training data</button></li>
+      <li><button data-correct>That's a simple rule — no ML needed</button></li>
+      <li><button>Use reinforcement learning</button></li>
+      <li><button>Use deep learning for best accuracy</button></li>
+    </ul>
+    <div class="explain">"If overdue &gt; 30 days, send reminder" is a rule. The first box of Figure 1.6 exits here. Save ML for problems where the rule is unknown or too complex.</div>
+  </div>
+</div>
+
+<h2 id="exercises">Exercises</h2>
+
+<div class="exercise"><div class="title">Exercise 1.1 — Sort the problems</div>
+<p>For each, say: supervised or unsupervised? If supervised, regression or classification? What is the label?</p>
+<ol>
+  <li>Predict which of 5 support teams an incoming ticket should go to.</li>
+  <li>Estimate next month's electricity consumption for each building.</li>
+  <li>Group 10,000 product photos by visual similarity.</li>
+  <li>Flag credit-card transactions that are probably fraudulent.</li>
+  <li>Detect unusual sensor readings in a factory with no history of failures.</li>
+</ol>
+<details class="answer"><summary>Show answers</summary>
+<ol>
+  <li>Supervised, classification (5 classes). Label = team that resolved the ticket historically.</li>
+  <li>Supervised, regression. Label = kWh next month.</li>
+  <li>Unsupervised (clustering / similarity). No label.</li>
+  <li>Supervised, binary classification. Label = fraud yes/no (from chargebacks).</li>
+  <li>Unsupervised anomaly detection: no labeled failures exist yet.</li>
+</ol>
+</details>
+</div>
+
+<div class="exercise"><div class="title">Exercise 1.2 — Write a one-page problem definition</div>
+<p>Pick a real problem from your job. Write down: (a) the decision the prediction will drive, (b) the exact target variable, (c) the features you think are available, (d) the baseline you'd have to beat, (e) the metric in business terms. Keep this page; you'll reuse it in the capstone (Chapter 23).</p>
+</div>
+
+<div class="exercise"><div class="title">Exercise 1.3 — Break the threshold model</div>
+<p>In the Python snippet above, add a 260 g apple and a 130 g orange to the data. Re-run. What happens to the best accuracy? Why can no threshold reach 100% now? (Hint: one feature isn't always enough — that's why Chapter 8 exists.)</p>
+<details class="answer"><summary>Show answer</summary>
+<p>The best accuracy drops (to about 82%). A single threshold on weight can only split the number line once; if a heavy apple and a light orange exist, at least those two are always wrong. To fix it you need more features (color, texture) or a model that can carve more complex boundaries.</p>
+</details>
+</div>
+
+<div class="summary">
+  <h3>Chapter summary</h3>
+  <ul class="checklist">
+    <li>Traditional code: rules + data → answers. ML: data + answers → rules (a model).</li>
+    <li>Three families: supervised (labels), unsupervised (no labels), reinforcement (rewards). Business ML is mostly supervised.</li>
+    <li>Regression predicts a number; classification predicts a category. Frame to match the decision.</li>
+    <li>Features = X, label = y, model = learned function, loss = how wrong, generalization = performance on unseen data.</li>
+    <li>The 7-step loop: define → data → explore → features → train → evaluate → deploy/monitor. Data is most of the work.</li>
+    <li>Always build a baseline first. Always ask whether a simple rule would do.</li>
+    <li>All learning = propose parameters, measure error, adjust, repeat.</li>
+  </ul>
+</div>
+
+<div class="mark-done"></div>
+<nav class="pager"></nav>
+
+</div></main>
+</div>
+
+<script src="../assets/chapters.js"></script>
+<script src="../assets/app.js"></script>
+<script>
+(function () {
+  var weights = [120,135,142,150,158,163,170,176,181,190,168,185,195,205,210,218,226,235,244,252];
+  var labels  = [0,0,0,0,0,0,0,0,0,0,1,1,1,1,1,1,1,1,1,1];
+  var svg = document.getElementById("thr-svg"), slider = document.getElementById("thr");
+  var acc = document.getElementById("thr-acc"), err = document.getElementById("thr-err");
+  function x(w) { return 40 + (w - 100) / 160 * 620; }
+  function render() {
+    var thr = +slider.value, mistakes = 0, s = "";
+    s += '<line x1="40" y1="100" x2="660" y2="100" stroke="currentColor" stroke-opacity=".4"/>';
+    for (var g = 100; g <= 260; g += 20) s += '<line x1="' + x(g) + '" y1="96" x2="' + x(g) + '" y2="104" stroke="currentColor" stroke-opacity=".5"/><text x="' + x(g) + '" y="122" text-anchor="middle" font-size="11">' + g + '</text>';
+    s += '<text x="350" y="142" text-anchor="middle" font-size="12" opacity=".7">weight (g)</text>';
+    s += '<rect x="' + x(thr) + '" y="30" width="' + (660 - x(thr)) + '" height="70" fill="var(--s2)" fill-opacity=".08"/>';
+    s += '<line x1="' + x(thr) + '" y1="25" x2="' + x(thr) + '" y2="105" stroke="var(--s7)" stroke-width="2.5" stroke-dasharray="6 3"/>';
+    s += '<text x="' + x(thr) + '" y="18" text-anchor="middle" font-size="11" font-weight="700" fill="var(--s7)">threshold</text>';
+    s += '<text x="' + ((x(thr)+660)/2) + '" y="45" text-anchor="middle" font-size="11" fill="var(--s2)" font-weight="700">→ "orange"</text>';
+    s += '<text x="' + ((40+x(thr))/2) + '" y="45" text-anchor="middle" font-size="11" fill="var(--s1)" font-weight="700">"apple" ←</text>';
+    for (var i = 0; i < weights.length; i++) {
+      var pred = weights[i] > thr ? 1 : 0, wrong = pred !== labels[i];
+      if (wrong) mistakes++;
+      var cy = labels[i] ? 68 : 84;
+      s += '<circle cx="' + x(weights[i]) + '" cy="' + cy + '" r="7" fill="' + (labels[i] ? "var(--s2)" : "var(--s1)") + '"' + (wrong ? ' stroke="var(--critical)" stroke-width="3"' : ' stroke="var(--surface)" stroke-width="1.5"') + '/>';
+    }
+    svg.innerHTML = s;
+    acc.textContent = Math.round(100 * (weights.length - mistakes) / weights.length) + "%";
+    err.textContent = mistakes;
+  }
+  slider.addEventListener("input", render); render();
+})();
+</script>
+</body>
+</html>
