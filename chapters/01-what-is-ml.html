@@ -194,7 +194,7 @@
   <text x="120" y="277" text-anchor="middle" class="lbl" font-size="10">the foundation under all of it</text>
   <line x1="150" y1="245" x2="200" y2="215" class="arrow"/>
 </svg>
-<figcaption><strong>Figure 1.7 — The word map.</strong> AI is the umbrella goal. ML is the dominant technique for reaching it. Deep learning is one family of ML models. Data science is the job of turning data into decisions, and ML is one of its tools. Statistics is the ground everything stands on.</figcaption>
+<figcaption><strong>Figure 1.3 — The word map.</strong> AI is the umbrella goal. ML is the dominant technique for reaching it. Deep learning is one family of ML models. Data science is the job of turning data into decisions, and ML is one of its tools. Statistics is the ground everything stands on.</figcaption>
 </figure>
 
 <div class="callout eli9"><div class="title">Explain it like I'm 9</div>
@@ -274,12 +274,38 @@
   <text x="470" y="70" class="lbl" fill="var(--s1)" font-weight="700">churned</text>
   <text x="640" y="240" class="lbl" fill="var(--s2)" font-weight="700" text-anchor="end">stayed</text>
 </svg>
-<figcaption><strong>Figure 1.3 — Two shapes of "answer".</strong> Regression learns a line (or curve) to read off a number. Classification learns a boundary that separates categories. Most algorithms in this book come in both flavors.</figcaption>
+<figcaption><strong>Figure 1.4 — Two shapes of "answer".</strong> Regression learns a line (or curve) to read off a number. Classification learns a boundary that separates categories. Most algorithms in this book come in both flavors.</figcaption>
 </figure>
 
 <div class="callout warn"><div class="title">Common mistake</div>
 <p>"Predict how many days until the customer churns" is <strong>regression</strong>. "Predict whether the customer churns within 30 days" is <strong>classification</strong>. Same business question, different framing, different algorithms, different metrics. Choose the framing that matches the <em>decision</em> someone will make with the prediction.</p>
 </div>
+
+<details class="deepdive"><summary>Deep dive: one question, two framings <span class="time">6 min</span></summary>
+<div class="callout eli9"><div class="title">Explain it like I'm 9</div>
+<p>"When will the ice cream melt?" needs a stopwatch: the answer is a number. "Will it melt before we get home?" only needs to know how far home is: the answer is yes or no. Same ice cream, different question, different answer sheet. And notice that <em>you</em> chose where home is. Move home closer and more ice creams "survive"; move it further and more "melt".</p>
+</div>
+<p><strong>Precisely.</strong> Let <em>T</em> be the number of days until a customer cancels. The regression framing predicts <em>T</em> itself. The classification framing picks a <strong>horizon</strong> <em>H</em> and predicts the label <em>y</em> = 1 if <em>T</em> ≤ <em>H</em>, else 0. Every horizon manufactures a different label column from the same raw data, and the consequence that nobody warns you about is that the <strong>class balance</strong> (and therefore the "predict the majority" baseline you must beat) is a choice you made, not a property of the customers:</p>
+<pre class="code" data-lang="python"><code><span class="cm"># The same churn question framed at three horizons: the horizon defines the label AND the class balance</span>
+<span class="kw">import</span> numpy <span class="kw">as</span> np
+rng = np.random.default_rng(<span class="nu">1</span>)
+days_until_churn = rng.exponential(scale=<span class="nu">200</span>, size=<span class="nu">10_000</span>).astype(<span class="fn">int</span>) + <span class="nu">1</span>   <span class="cm"># regression target: a number</span>
+<span class="kw">for</span> horizon <span class="kw">in</span> (<span class="nu">30</span>, <span class="nu">90</span>, <span class="nu">180</span>):
+    y = (days_until_churn &lt;= horizon).astype(<span class="fn">int</span>)                             <span class="cm"># classification target: yes/no</span>
+    <span class="fn">print</span>(<span class="st">f"churns within {horizon:3d} days: positive rate = {y.mean():5.1%}   "</span>
+          <span class="st">f"majority-class baseline accuracy = {max(y.mean(), 1 - y.mean()):.1%}"</span>)
+<span class="out"># churns within  30 days: positive rate = 14.2%   majority-class baseline accuracy = 85.8%</span>
+<span class="out"># churns within  90 days: positive rate = 36.2%   majority-class baseline accuracy = 63.8%</span>
+<span class="out"># churns within 180 days: positive rate = 58.9%   majority-class baseline accuracy = 58.9%</span></code></pre><p>Three practical consequences follow.</p>
+<ol class="steps">
+  <li><strong>The horizon must match the decision.</strong> If retention agents call customers a month before they leave, the useful label is "churns within 30 days". If finance plans headcount per quarter, it is "churns within 90 days". Pick <em>H</em> from the calendar of the decision, then read every accuracy number against the baseline that horizon implies (85.8% is the floor at 30 days above, 58.9% at 180 days).</li>
+  <li><strong>The regression framing has a hidden trap: censoring.</strong> "Days until churn" is only known for customers who have <em>already</em> churned. The loyal ones have no number yet, so a naive regression is trained only on leavers and learns what leavers look like, not who will leave. The classification framing avoids this cleanly, provided you keep only customers who were observed for at least <em>H</em> days after the prediction date (Chapter 2's "known when?" rule) and label the ones who stayed as 0.</li>
+  <li><strong>The framing fixes the metric.</strong> A number gets error in days (Chapter 5); a yes/no gets precision, recall and a threshold (Chapter 6). Decide the framing before the first model, because switching later means redoing every evaluation.</li>
+</ol>
+<div class="callout key"><div class="title">Key idea</div>
+<p>Write the label as one sentence with a source and a window before any modelling: <em>"churned = no successful payment in the 60 days after the renewal date, per the billing table."</em> If you cannot write that sentence, you do not have a supervised-learning problem yet; you have a conversation to schedule.</p>
+</div>
+</details>
 
 <!-- ============================================================ -->
 <h2 id="s4">4. The vocabulary you'll use every day</h2>
@@ -341,7 +367,7 @@
   <text x="680" y="212" text-anchor="middle" class="lbl">(what it predicts)</text>
   <text x="20" y="230" class="lbl">← each row is one example (one customer)</text>
 </svg>
-<figcaption><strong>Figure 1.4 — Anatomy of a dataset.</strong> In code you will constantly see <code>X</code> (a table of features) and <code>y</code> (the label column). Training means: learn to produce <code>y</code> from <code>X</code>.</figcaption>
+<figcaption><strong>Figure 1.5 — Anatomy of a dataset.</strong> In code you will constantly see <code>X</code> (a table of features) and <code>y</code> (the label column). Training means: learn to produce <code>y</code> from <code>X</code>.</figcaption>
 </figure>
 
 <!-- ============================================================ -->
@@ -381,7 +407,7 @@
   <rect x="380" y="260" width="110" height="18" fill="var(--s2)"/><text x="435" y="273" text-anchor="middle" font-size="11" fill="#fff" font-weight="700">modeling ≈ 15%</text>
   <rect x="490" y="260" width="250" height="18" fill="var(--s3)"/><text x="615" y="273" text-anchor="middle" font-size="11" fill="#fff" font-weight="700">evaluate, deploy, monitor ≈ 25%</text>
 </svg>
-<figcaption><strong>Figure 1.5 — The workflow is a loop, not a line.</strong> Steps 1 and 7 (highlighted) are where projects most often fail: a badly defined problem, or a model that never makes it to production. The colored bar shows roughly where the hours go.</figcaption>
+<figcaption><strong>Figure 1.6 — The workflow is a loop, not a line.</strong> Steps 1 and 7 (highlighted) are where projects most often fail: a badly defined problem, or a model that never makes it to production. The colored bar shows roughly where the hours go.</figcaption>
 </figure>
 
 <ol class="steps">
@@ -397,6 +423,44 @@
 <div class="callout pro"><div class="title">At work: the baseline rule</div>
 <p>Before any fancy model, build a <strong>baseline</strong>: predict the average (regression) or the most common class (classification), or use whatever rule the business uses today. Every model you build must beat it convincingly. A shocking number of "ML projects" fail to beat a one-line rule, and it's better to find out on day two than month six.</p>
 </div>
+
+<details class="deepdive"><summary>Deep dive: baselines that are hard to beat <span class="time">7 min</span></summary>
+<div class="callout eli9"><div class="title">Explain it like I'm 9</div>
+<p>A bag holds 9 blue marbles and 1 red one. If you shout "blue!" every single time, you are right 90% of the time without looking. Anyone who claims their marble-guessing machine is "88% accurate" has built something worse than shouting. Before you admire any machine, ask what shouting would score.</p>
+</div>
+<p><strong>Precisely.</strong> Call the fraction of positive examples <em>p</em>. Three no-skill strategies have accuracies you can write down in advance, and scikit-learn's <code>DummyClassifier</code> implements all of them so you never have to argue about the floor:</p>
+<div class="callout math"><div class="title">The math (optional)</div>
+<div class="formula">most_frequent: max(p, 1−p)      stratified: p² + (1−p)²      uniform: 0.5</div>
+<p><strong>p</strong> is the positive rate in the training labels. <strong>most_frequent</strong> always predicts the bigger class, so it is right exactly as often as that class occurs. <strong>stratified</strong> guesses "positive" with probability <em>p</em>, independently of the features; it is right when it guesses positive on a positive (probability <em>p</em>·<em>p</em>) or negative on a negative ((1−<em>p</em>)·(1−<em>p</em>)). <strong>uniform</strong> flips a fair coin. With <em>p</em> = 0.103 these give 0.897, 0.815 and 0.5; the code reports 0.897, 0.806 and 0.503, the small differences being sampling noise on 1,500 test rows.</p>
+</div>
+<pre class="code" data-lang="python"><code><span class="cm"># Three dumb baselines on an imbalanced problem, plus a one-line business rule. Beat all four or go home.</span>
+<span class="kw">import</span> numpy <span class="kw">as</span> np
+<span class="kw">from</span> sklearn.datasets <span class="kw">import</span> make_classification
+<span class="kw">from</span> sklearn.dummy <span class="kw">import</span> DummyClassifier
+<span class="kw">from</span> sklearn.model_selection <span class="kw">import</span> train_test_split
+
+X, y = make_classification(n_samples=<span class="nu">5000</span>, n_features=<span class="nu">10</span>, n_informative=<span class="nu">4</span>, weights=[<span class="nu">0.9</span>, <span class="nu">0.1</span>], random_state=<span class="nu">0</span>)
+X_tr, X_te, y_tr, y_te = train_test_split(X, y, test_size=<span class="nu">0.3</span>, stratify=y, random_state=<span class="nu">0</span>)
+<span class="fn">print</span>(<span class="st">f"positive rate = {y_tr.mean():.3f}"</span>)
+<span class="kw">for</span> strategy <span class="kw">in</span> (<span class="st">"most_frequent"</span>, <span class="st">"stratified"</span>, <span class="st">"uniform"</span>):
+    dummy = DummyClassifier(strategy=strategy, random_state=<span class="nu">0</span>).fit(X_tr, y_tr)
+    <span class="fn">print</span>(<span class="st">f"{strategy:14s} accuracy = {dummy.score(X_te, y_te):.3f}"</span>)
+
+<span class="cm"># a rule a domain expert might propose: flag the top 10% of the single most correlated feature</span>
+corr = [<span class="fn">abs</span>(np.corrcoef(X_tr[:, j], y_tr)[<span class="nu">0</span>, <span class="nu">1</span>]) <span class="kw">for</span> j <span class="kw">in</span> <span class="fn">range</span>(X.shape[<span class="nu">1</span>])]
+j = <span class="fn">int</span>(np.argmax(corr)); cut = np.quantile(X_tr[:, j], <span class="nu">0.9</span>)
+rule_pred = (X_te[:, j] &gt; cut).astype(<span class="fn">int</span>)
+<span class="fn">print</span>(<span class="st">f"one-feature rule accuracy = {(rule_pred == y_te).mean():.3f}   (feature {j}, |corr| = {corr[j]:.2f})"</span>)
+<span class="out"># positive rate = 0.103</span>
+<span class="out"># most_frequent  accuracy = 0.897</span>
+<span class="out"># stratified     accuracy = 0.806</span>
+<span class="out"># uniform        accuracy = 0.503</span>
+<span class="out"># one-feature rule accuracy = 0.850   (feature 1, |corr| = 0.21)</span></code></pre><p>Now the uncomfortable line: the one-feature rule, the kind of thing a domain expert proposes in the first meeting, scores 0.850, <em>below</em> the majority baseline, even though it actually catches some positives while "always negative" catches none. That is not a flaw in the rule; it is a flaw in accuracy as a yardstick on imbalanced data, and Chapter 6 replaces it with precision and recall. The lesson for now is narrower: <strong>a baseline is a model, and it must be evaluated with the same metric, on the same test rows, as the candidate it is meant to floor.</strong></p>
+<p>For regression the same idea is <code>DummyRegressor(strategy="mean")</code> (or <code>"median"</code>): predicting the training mean for every row gives R² = 0 by construction (Chapter 5), which is why a negative R² on the test set means "worse than a constant".</p>
+<div class="callout pro"><div class="title">At work</div>
+<p>The first slide of every model review is a four-row table with identical columns: (1) majority class or mean, (2) the rule the business uses today, (3) the simplest model (logistic or linear regression), (4) the candidate. If row 4 does not beat row 2 by a margin that changes a decision, the honest recommendation is to keep row 2 and save the engineering budget. Rows 1 and 2 take ten minutes to build and prevent the most expensive mistake in applied ML: shipping something that is worse than doing nothing.</p>
+</div>
+</details>
 
 <!-- ============================================================ -->
 <h2 id="s6">6. When NOT to use ML</h2>
@@ -444,7 +508,7 @@
 
   <rect x="240" y="270" width="280" height="48" rx="6" fill="var(--s1)" fill-opacity=".2" stroke="var(--s1)" stroke-width="2"/><text x="380" y="299" text-anchor="middle" class="lbl-strong">Build a supervised model. Beat the baseline.</text>
 </svg>
-<figcaption><strong>Figure 1.6 — The "should we even do ML?" flowchart.</strong> Print this. Most requests exit at the first or third box.</figcaption>
+<figcaption><strong>Figure 1.7 — The "should we even do ML?" flowchart.</strong> Print this. Most requests exit at the first or third box.</figcaption>
 </figure>
 
 <!-- ============================================================ -->
@@ -517,7 +581,7 @@ model = make_pipeline(StandardScaler(), LogisticRegression(max_iter=<span class=
 
 <p>Read it top to bottom:</p>
 <ol class="steps">
-  <li><strong>Load data.</strong> <code>X</code> is the feature table (569 rows × 30 columns), <code>y</code> is the label column. Exactly Figure 1.4.</li>
+  <li><strong>Load data.</strong> <code>X</code> is the feature table (569 rows × 30 columns), <code>y</code> is the label column. Exactly Figure 1.5.</li>
   <li><strong>Split.</strong> A quarter of the rows are locked away as the <em>test set</em>. The model never sees them during training. <code>stratify=y</code> keeps the class mix the same in both halves.</li>
   <li><strong>Baseline.</strong> The dumbest possible model: always predict the most common class. It scores 63% simply because 63% of tumors in this dataset are benign. Any real model must beat 63%, not 0%.</li>
   <li><strong>Model.</strong> Scale the features, then fit a logistic regression (Chapter 6). The <code>.fit()</code> call is the "propose, measure, adjust, repeat" loop running automatically.</li>
@@ -564,6 +628,41 @@ churns_within_30 = (days_until_churn &lt;= <span class="nu">30</span>).astype(<s
 <span class="fn">print</span>(<span class="st">"classification target:"</span>, churns_within_30)
 <span class="out"># regression target:     [310 232 187  99 113  15  28   7]</span>
 <span class="out"># classification target: [0 0 0 0 0 1 1 1]</span></code></pre>
+
+<details class="deepdive"><summary>Deep dive: why memorizing looks like learning <span class="time">6 min</span></summary>
+<div class="callout eli9"><div class="title">Explain it like I'm 9</div>
+<p>A kid with a photographic memory gets 100% on the practice sheet by remembering "question 7 → answer C". Another kid understands the material and gets 96% on the practice sheet because she makes a couple of honest slips. On the real exam, with new questions, the first kid has nothing to remember from. The practice-sheet score told you which kid <em>memorized</em>, not which kid <em>learned</em>.</p>
+</div>
+<p><strong>Precisely.</strong> Some algorithms score 100% on their training rows <em>by construction</em>, whatever the data. A 1-nearest-neighbour classifier predicts the label of the closest training row; asked about a training row, the closest row is itself, so it is always "right". An unpruned decision tree (Chapter 9) keeps splitting until every leaf contains rows of one class, so it too reproduces every training label. Their training accuracy is a property of the algorithm, not of your data, and it carries zero information. The same split as in Section 8 (25% test, <code>random_state=0</code>, stratified) shows what happens where it counts:</p>
+<pre class="code" data-lang="python"><code><span class="cm"># A model that memorizes scores 100% on its training rows and gives the game away on the test rows</span>
+<span class="kw">from</span> sklearn.datasets <span class="kw">import</span> load_breast_cancer
+<span class="kw">from</span> sklearn.model_selection <span class="kw">import</span> train_test_split
+<span class="kw">from</span> sklearn.neighbors <span class="kw">import</span> KNeighborsClassifier
+<span class="kw">from</span> sklearn.tree <span class="kw">import</span> DecisionTreeClassifier
+<span class="kw">from</span> sklearn.linear_model <span class="kw">import</span> LogisticRegression
+<span class="kw">from</span> sklearn.pipeline <span class="kw">import</span> make_pipeline
+<span class="kw">from</span> sklearn.preprocessing <span class="kw">import</span> StandardScaler
+
+X, y = load_breast_cancer(return_X_y=<span class="kw">True</span>)
+X_tr, X_te, y_tr, y_te = train_test_split(X, y, test_size=<span class="nu">0.25</span>, random_state=<span class="nu">0</span>, stratify=y)
+models = {
+    <span class="st">"1-nearest neighbour"</span>:  make_pipeline(StandardScaler(), KNeighborsClassifier(n_neighbors=<span class="nu">1</span>)),
+    <span class="st">"unpruned tree"</span>:        DecisionTreeClassifier(random_state=<span class="nu">0</span>),
+    <span class="st">"logistic regression"</span>:  make_pipeline(StandardScaler(), LogisticRegression(max_iter=<span class="nu">1000</span>)),
+}
+<span class="kw">for</span> name, m <span class="kw">in</span> models.items():
+    m.fit(X_tr, y_tr)
+    tr, te = m.score(X_tr, y_tr), m.score(X_te, y_te)
+    <span class="fn">print</span>(<span class="st">f"{name:20s} train = {tr:.3f}   test = {te:.3f}   gap = {tr - te:+.3f}"</span>)
+<span class="out"># 1-nearest neighbour  train = 1.000   test = 0.951   gap = +0.049</span>
+<span class="out"># unpruned tree        train = 1.000   test = 0.902   gap = +0.098</span>
+<span class="out"># logistic regression  train = 0.991   test = 0.958   gap = +0.033</span></code></pre><p>Read the three columns. The two memorizers are perfect on training rows and lose 5 and 10 points on unseen rows; logistic regression, which cannot memorize 426 rows with 31 parameters, is imperfect on training rows and <em>best</em> on the test rows (the 0.958 is the same number you saw in Section 8). The <strong>gap</strong> column is the quantity to watch: it measures how much of the training score was memorization. Chapter 7 gives it a name (variance), a diagnosis (the learning curve) and a cure (regularization, more data, simpler models).</p>
+<div class="callout warn"><div class="title">Common mistake</div>
+<p>Comparing algorithms by training score, or reporting "our model is 100% accurate" because the notebook printed <code>model.score(X_train, y_train)</code>. A perfect training score should make you <em>more</em> suspicious, not less. The reportable number is always the one on rows the model never saw, and even that number is only honest if you looked at it once (Chapter 7's test-set rule).</p>
+</div>
+</details>
+
+<div class="callout lab"><div class="title">Lab</div><p>Open <code>labs/ch01_first_model.py</code> in VS Code and make the tests in <code>labs/tests/test_ch01.py</code> pass. You will build the threshold-search "model" by hand, then the split → baseline → model → evaluate skeleton with scikit-learn, and prove your model beats the majority-class baseline on unseen rows.</p></div>
 
 <!-- ============================================================ -->
 <h2 id="quiz">Quiz</h2>
@@ -622,7 +721,7 @@ churns_within_30 = (days_until_churn &lt;= <span class="nu">30</span>).astype(<s
       <li><button>Use reinforcement learning</button></li>
       <li><button>Use deep learning for best accuracy</button></li>
     </ul>
-    <div class="explain">"If overdue &gt; 30 days, send reminder" is a rule. The first box of Figure 1.6 exits here. Save ML for problems where the rule is unknown or too complex.</div>
+    <div class="explain">"If overdue &gt; 30 days, send reminder" is a rule. The first box of Figure 1.7 exits here. Save ML for problems where the rule is unknown or too complex.</div>
   </div>
 
   <div class="q">

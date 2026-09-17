@@ -66,8 +66,8 @@ def mse(y: np.ndarray, y_hat: np.ndarray) -> float:
 
     Example: y = [1, 2, 3], y_hat = [1, 2, 5] -> 4/3 ≈ 1.333
     """
-    y, y_hat = np.asarray(y, dtype=float), np.asarray(y_hat, dtype=float)
-    return float(np.mean((y - y_hat) ** 2))
+    # TODO: np.mean((y - y_hat) ** 2), returned as a float
+    raise NotImplementedError("Task: mse")
 
 
 # ---------------------------------------------------------------- Task 2
@@ -82,12 +82,8 @@ def gradient(X: np.ndarray, y: np.ndarray, w: np.ndarray, b: float) -> tuple[np.
     Example: X = [[1], [2]], y = [1, 2], w = [0], b = 0 -> err = [-1, -2],
              dw = [2/2 * (1*-1 + 2*-2)] = [-5.0], db = 2/2 * (-3) = -3.0
     """
-    X, y, w = np.asarray(X, dtype=float), np.asarray(y, dtype=float), np.asarray(w, dtype=float)
-    n = len(y)
-    err = X @ w + b - y                      # (n,)
-    dw = 2.0 / n * X.T @ err                 # (d,)
-    db = 2.0 / n * float(err.sum())
-    return dw, db
+    # TODO: err = X @ w + b - y; dw = 2/n * X.T @ err; db = 2/n * err.sum()
+    raise NotImplementedError("Task: gradient")
 
 
 # ---------------------------------------------------------------- Task 3
@@ -104,15 +100,8 @@ def batch_gradient_descent(X: np.ndarray, y: np.ndarray, lr: float = 0.1, n_epoc
     Example: X = standardised size column of the flat data, lr=0.1, 100 epochs ->
              losses[0] > losses[1] > ... and losses[-1] within 1% of the closed-form MSE.
     """
-    X, y = np.asarray(X, dtype=float), np.asarray(y, dtype=float)
-    w, b = np.zeros(X.shape[1]), 0.0
-    losses = []
-    for _ in range(n_epochs):
-        dw, db = gradient(X, y, w, b)
-        w = w - lr * dw
-        b = b - lr * db
-        losses.append(mse(y, X @ w + b))
-    return w, b, losses
+    # TODO: start at np.zeros(X.shape[1]) and 0.0; loop n_epochs: call gradient(), update w and b, append mse() after the update
+    raise NotImplementedError("Task: batch_gradient_descent")
 
 
 # ---------------------------------------------------------------- Task 4
@@ -125,10 +114,8 @@ def normal_equation(X: np.ndarray, y: np.ndarray) -> tuple[np.ndarray, float]:
 
     Example: X = [[1], [2], [3]], y = [3, 5, 7] -> w = [2.0], b = 1.0
     """
-    X, y = np.asarray(X, dtype=float), np.asarray(y, dtype=float)
-    A = np.column_stack([np.ones(len(y)), X])
-    theta = np.linalg.solve(A.T @ A, A.T @ y)
-    return theta[1:], float(theta[0])
+    # TODO: A = np.column_stack([np.ones(n), X]); theta = np.linalg.solve(A.T @ A, A.T @ y); split theta into b (first) and w (rest)
+    raise NotImplementedError("Task: normal_equation")
 
 
 # ---------------------------------------------------------------- Task 5
@@ -141,9 +128,8 @@ def standardize(X_train: np.ndarray, X_test: np.ndarray) -> tuple[np.ndarray, np
 
     Example: X_train = [[0], [2]], X_test = [[4]] -> Z_train = [[-1], [1]], Z_test = [[3]], mu=[1], sd=[1]
     """
-    X_train, X_test = np.asarray(X_train, dtype=float), np.asarray(X_test, dtype=float)
-    mu, sd = X_train.mean(axis=0), X_train.std(axis=0)
-    return (X_train - mu) / sd, (X_test - mu) / sd, mu, sd
+    # TODO: mu = X_train.mean(axis=0); sd = X_train.std(axis=0); apply (X - mu) / sd to BOTH arrays with the same mu, sd
+    raise NotImplementedError("Task: standardize")
 
 
 # ---------------------------------------------------------------- Task 6
@@ -156,12 +142,8 @@ def regression_metrics(y: np.ndarray, y_hat: np.ndarray) -> dict:
 
     Example: y = [1, 2, 3], y_hat = [1, 2, 5] -> rmse 1.155, mae 0.667, r2 = 1 - 4/2 = -1.0
     """
-    y, y_hat = np.asarray(y, dtype=float), np.asarray(y_hat, dtype=float)
-    resid = y - y_hat
-    ss_res = float((resid ** 2).sum())
-    ss_tot = float(((y - y.mean()) ** 2).sum())
-    return {"rmse": float(np.sqrt(np.mean(resid ** 2))), "mae": float(np.mean(np.abs(resid))),
-            "r2": 1.0 - ss_res / ss_tot}
+    # TODO: resid = y - y_hat; rmse = sqrt(mean(resid**2)); mae = mean(|resid|); r2 = 1 - sum(resid**2) / sum((y - y.mean())**2)
+    raise NotImplementedError("Task: regression_metrics")
 
 
 # ---------------------------------------------------------------- Task 7
@@ -177,17 +159,8 @@ def polynomial_sweep(x_tr: np.ndarray, y_tr: np.ndarray, x_te: np.ndarray, y_te:
 
     Example: on make_curve_data() -> best_degree in (3, 5); degree 15 test_mse >> 1.
     """
-    from sklearn.linear_model import LinearRegression
-    from sklearn.pipeline import make_pipeline
-    from sklearn.preprocessing import PolynomialFeatures, StandardScaler
-
-    Xtr, Xte = np.asarray(x_tr, dtype=float)[:, None], np.asarray(x_te, dtype=float)[:, None]
-    results = {}
-    for d in degrees:
-        model = make_pipeline(PolynomialFeatures(d), StandardScaler(), LinearRegression()).fit(Xtr, y_tr)
-        results[int(d)] = {"train_mse": mse(y_tr, model.predict(Xtr)), "test_mse": mse(y_te, model.predict(Xte))}
-    best = min(results, key=lambda d: results[d]["test_mse"])
-    return results, best
+    # TODO: reshape x[:, None]; for each degree fit make_pipeline(PolynomialFeatures(d), StandardScaler(), LinearRegression()); record both MSEs; best = min over test_mse
+    raise NotImplementedError("Task: polynomial_sweep")
 
 
 if __name__ == "__main__":

@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>15 · Neural Networks From Scratch — ML: Zero to Expert</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body data-chapter="15">
+<header class="topbar"></header>
+<div class="progress-track"><div></div></div>
+<div class="shell">
+<nav class="sidebar"></nav>
+<main class="content"><div class="container">
+
+<header class="ch-header">
+  <div class="kicker">Part III · Deep Learning · Chapter 15</div>
+  <h1>Neural Networks From Scratch</h1>
+  <p class="lede">Every deep-learning system, from image classifiers to language models, is built from one idea repeated: a weighted sum, a bend, and a rule for nudging the weights. This chapter builds that idea up from a single neuron to a working network in sixty lines of numpy, derives backpropagation without hand-waving, and tells you honestly when a network is the right tool at work.</p>
+  <div class="meta"><span class="level advanced">Advanced</span> <span>⏱ 90 min read</span> <span>·</span> <span>Prereqs: Ch 3, 5, 6</span></div>
+</header>
+
+<div class="objectives">
+  <h3>By the end of this chapter you will be able to</h3>
+  <ul>
+    <li>Explain a neuron as "weighted sum + bias + activation" and show that one sigmoid neuron <em>is</em> logistic regression.</li>
+    <li>Say why XOR needs a hidden layer, and what the hidden layer does to the input space.</li>
+    <li>Write the forward pass of a multi-layer perceptron in matrix form, with the shape of every array, and count its parameters.</li>
+    <li>Derive backpropagation from the chain rule, verify it by hand on a tiny network, and implement a 2-layer network in numpy that trains.</li>
+    <li>Diagnose vanishing and exploding gradients, choose activations and initialisation sensibly, and decide when a network beats gradient boosting at work.</li>
+  </ul>
+</div>
+
+<div class="toc-inline"><strong>In this chapter</strong>
+<ol>
+  <li><a href="#s1">The neuron: a weighted sum with a bend</a></li>
+  <li><a href="#s2">Why one neuron isn't enough: XOR</a></li>
+  <li><a href="#s3">Activation functions and why ReLU won</a></li>
+  <li><a href="#s4">The multi-layer perceptron in matrix form</a></li>
+  <li><a href="#s5">Loss functions</a></li>
+  <li><a href="#s6">Backpropagation, derived gently</a></li>
+  <li><a href="#s7">A complete network in numpy</a></li>
+  <li><a href="#s8">Why depth is hard: vanishing and exploding gradients</a></li>
+  <li><a href="#s9">What networks can do, and when to use them at work</a></li>
+  <li><a href="#s10">Reading a network diagram and the vocabulary</a></li>
+  <li><a href="#quiz">Quiz &amp; exercises</a></li>
+</ol></div>
+
+<p>Two datasets run through the chapter. The first is the four-point <strong>XOR</strong> problem, small enough to compute by hand and the classic proof that networks need hidden layers. The second is scikit-learn's <strong>two moons</strong>, two interleaving crescents that no straight line separates, on which we train a network from scratch. Neither is a "real" dataset; that is the point. By the end you will have seen every number that flows through a network and every number that flows back.</p>
+
+<!-- ============================================================ -->
+<h2 id="s1">1. The neuron: a weighted sum with a bend</h2>
+
+<p>An <strong>artificial neuron</strong> does three things to its inputs. It multiplies each input by a weight and adds them up. It adds a bias. It passes the result through a fixed nonlinear function, the <strong>activation</strong>. That's all. The biological name is marketing; mathematically it is a linear model with a bend at the end.</p>
+
+<div class="callout math"><div class="title">The math: one neuron</div>
+<div class="formula">z = w<sub>1</sub>x<sub>1</sub> + w<sub>2</sub>x<sub>2</sub> + … + w<sub>d</sub>x<sub>d</sub> + b = <span class="var">w</span>·<span class="var">x</span> + b &nbsp;&nbsp;&nbsp;&nbsp; a = σ(z)</div>
+<p><strong>x</strong> is the input vector (d features). <strong>w</strong> holds the d weights: how much each feature pushes the output up or down. <strong>b</strong> is the bias, the output when all inputs are zero. <strong>z</strong> is the <em>pre-activation</em>, a plain linear score. <strong>σ</strong> is the activation function, here the sigmoid σ(z) = 1/(1 + e<sup>−z</sup>), which squashes any real number into (0, 1). <strong>a</strong> is the neuron's output, its "activation". A neuron has d + 1 parameters.</p>
+</div>
+
+<figure class="fig">
+<svg viewBox="0 0 800 260" role="img" aria-label="Three inputs multiplied by weights flow into a summation node with a bias, then through a sigmoid activation to an output; a note says this is exactly logistic regression.">
+  <defs><marker id="arr-n1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+  <g>
+    <circle cx="80" cy="60" r="20" fill="var(--surface-2)" stroke="var(--s1)" stroke-width="2"/><text x="80" y="65" text-anchor="middle" class="lbl-strong">x<tspan font-size="9" dy="3">1</tspan></text>
+    <circle cx="80" cy="130" r="20" fill="var(--surface-2)" stroke="var(--s1)" stroke-width="2"/><text x="80" y="135" text-anchor="middle" class="lbl-strong">x<tspan font-size="9" dy="3">2</tspan></text>
+    <circle cx="80" cy="200" r="20" fill="var(--surface-2)" stroke="var(--s1)" stroke-width="2"/><text x="80" y="205" text-anchor="middle" class="lbl-strong">x<tspan font-size="9" dy="3">3</tspan></text>
+    <text x="80" y="245" text-anchor="middle" class="lbl">inputs (features)</text>
+  </g>
+  <line x1="100" y1="60" x2="300" y2="118" class="arrow" marker-end="url(#arr-n1)"/>
+  <line x1="100" y1="130" x2="300" y2="130" class="arrow" marker-end="url(#arr-n1)"/>
+  <line x1="100" y1="200" x2="300" y2="142" class="arrow" marker-end="url(#arr-n1)"/>
+  <text x="190" y="80" text-anchor="middle" class="lbl-strong" fill="var(--s2)">× w<tspan font-size="9" dy="3">1</tspan></text>
+  <text x="190" y="122" text-anchor="middle" class="lbl-strong" fill="var(--s2)">× w<tspan font-size="9" dy="3">2</tspan></text>
+  <text x="190" y="190" text-anchor="middle" class="lbl-strong" fill="var(--s2)">× w<tspan font-size="9" dy="3">3</tspan></text>
+  <circle cx="330" cy="130" r="30" fill="var(--accent-soft)" stroke="var(--accent)" stroke-width="2"/>
+  <text x="330" y="136" text-anchor="middle" class="lbl-strong" font-size="18">∑</text>
+  <line x1="330" y1="60" x2="330" y2="98" class="arrow" marker-end="url(#arr-n1)"/>
+  <text x="330" y="50" text-anchor="middle" class="lbl-strong" fill="var(--s2)">+ b (bias)</text>
+  <line x1="362" y1="130" x2="430" y2="130" class="arrow" marker-end="url(#arr-n1)"/>
+  <text x="396" y="120" text-anchor="middle" class="lbl">z</text>
+  <rect x="432" y="95" width="90" height="70" rx="8" fill="var(--surface-2)" stroke="var(--s7)" stroke-width="2"/>
+  <polyline points="442,155 452,154 462,151 470,145 477,135 484,124 492,113 500,106 510,103 520,102" fill="none" stroke="var(--s7)" stroke-width="2.5"/>
+  <text x="477" y="180" text-anchor="middle" class="lbl-strong" fill="var(--s7)">σ (activation)</text>
+  <line x1="524" y1="130" x2="600" y2="130" class="arrow" marker-end="url(#arr-n1)"/>
+  <text x="562" y="120" text-anchor="middle" class="lbl">a = σ(z)</text>
+  <circle cx="630" cy="130" r="24" fill="var(--surface-2)" stroke="var(--s3)" stroke-width="2"/><text x="630" y="135" text-anchor="middle" class="lbl-strong">ŷ</text>
+  <text x="630" y="175" text-anchor="middle" class="lbl">output</text>
+  <text x="630" y="191" text-anchor="middle" class="lbl">P(y = 1)</text>
+  <rect x="560" y="20" width="220" height="56" rx="8" fill="var(--s3)" fill-opacity=".12" stroke="var(--s3)"/>
+  <text x="670" y="42" text-anchor="middle" class="lbl-strong" font-size="12">With σ = sigmoid, this neuron</text>
+  <text x="670" y="60" text-anchor="middle" class="lbl-strong" font-size="12">is logistic regression (Chapter 6).</text>
+  <text x="400" y="235" text-anchor="middle" class="lbl">z = w<tspan font-size="9" dy="3">1</tspan><tspan dy="-3">x</tspan><tspan font-size="9" dy="3">1</tspan><tspan dy="-3"> + w</tspan><tspan font-size="9" dy="3">2</tspan><tspan dy="-3">x</tspan><tspan font-size="9" dy="3">2</tspan><tspan dy="-3"> + w</tspan><tspan font-size="9" dy="3">3</tspan><tspan dy="-3">x</tspan><tspan font-size="9" dy="3">3</tspan><tspan dy="-3"> + b</tspan>&nbsp;&nbsp;&nbsp;→&nbsp;&nbsp;&nbsp;a = 1 / (1 + e<tspan font-size="9" dy="-5">−z</tspan><tspan dy="5">)</tspan></text>
+</svg>
+<figcaption><strong>Figure 15.1 — The artificial neuron.</strong> Weighted sum, plus bias, through a squashing function. Nothing about it is new: with a sigmoid activation it is exactly the logistic-regression classifier of Chapter 6, and the weights are its coefficients.</figcaption>
+</figure>
+
+<div class="callout eli9"><div class="title">Explain it like I'm 9</div>
+<p>A neuron is a judge with a scorecard. Each input is a piece of evidence; each weight says how much that evidence counts (positive for "yes", negative for "no"). The judge adds it all up, adds their personal leaning (the bias), and then squashes the total into a verdict between 0 ("definitely no") and 1 ("definitely yes"). Training a neuron is just adjusting how much each piece of evidence counts.</p>
+</div>
+
+<p>Here is the punchline made concrete: take the logistic regression sklearn fits on the breast-cancer data, copy its coefficients into a hand-written neuron, and the outputs match to machine precision.</p>
+
+<pre class="code" data-lang="python"><code><span class="cm"># One sigmoid neuron with sklearn's logistic-regression weights == sklearn's predictions</span>
+<span class="kw">import</span> numpy <span class="kw">as</span> np
+<span class="kw">from</span> sklearn.datasets <span class="kw">import</span> load_breast_cancer
+<span class="kw">from</span> sklearn.linear_model <span class="kw">import</span> LogisticRegression
+<span class="kw">from</span> sklearn.preprocessing <span class="kw">import</span> StandardScaler
+X, y = load_breast_cancer(return_X_y=<span class="kw">True</span>)
+X = StandardScaler().fit_transform(X)                 <span class="cm"># 569 rows × 30 features</span>
+lr = LogisticRegression(max_iter=<span class="nu">1000</span>).fit(X, y)
+w, b = lr.coef_[<span class="nu">0</span>], lr.intercept_[<span class="nu">0</span>]                  <span class="cm"># 30 weights + 1 bias</span>
+<span class="kw">def</span> <span class="fn">sigmoid</span>(z): <span class="kw">return</span> <span class="nu">1</span> / (<span class="nu">1</span> + np.exp(-z))
+neuron = sigmoid(X @ w + b)                           <span class="cm"># weighted sum + bias → activation</span>
+rows = [<span class="nu">13</span>, <span class="nu">81</span>, <span class="nu">86</span>]
+<span class="fn">print</span>(<span class="st">"one neuron  :"</span>, neuron[rows].round(<span class="nu">3</span>))
+<span class="fn">print</span>(<span class="st">"sklearn     :"</span>, lr.predict_proba(X)[rows, <span class="nu">1</span>].round(<span class="nu">3</span>))
+<span class="fn">print</span>(<span class="st">"max |diff|  :"</span>, <span class="fn">float</span>(np.abs(neuron - lr.predict_proba(X)[:, <span class="nu">1</span>]).max()))
+<span class="out"># one neuron  : [0.329 0.659 0.202]</span>
+<span class="out"># sklearn     : [0.329 0.659 0.202]</span>
+<span class="out"># max |diff|  : 1.1102230246251565e-16</span></code></pre>
+
+<div class="callout key"><div class="title">Key idea</div>
+<p><strong>A neural network is logistic regression, stacked.</strong> If you understood Chapters 5 and 6 (a linear score, a squashing function, a loss, gradient descent), you already understand every ingredient. What the network adds is <em>composition</em>: the outputs of one layer of neurons become the inputs of the next, and that composition is what lets it draw curved boundaries.</p>
+</div>
+
+<div class="widget" id="w-neuron">
+  <div class="w-title">Interactive: one neuron's view of the plane</div>
+  <div class="controls">
+    <label>w<sub>1</sub> <input type="range" id="wn-w1" min="-5" max="5" step="0.25" value="2" data-out="wn-w1-out"> <output id="wn-w1-out"></output></label>
+    <label>w<sub>2</sub> <input type="range" id="wn-w2" min="-5" max="5" step="0.25" value="1.5" data-out="wn-w2-out"> <output id="wn-w2-out"></output></label>
+    <label>b <input type="range" id="wn-b" min="-5" max="5" step="0.25" value="-1" data-out="wn-b-out"> <output id="wn-b-out"></output></label>
+    <span>Line: <span class="readout" id="wn-line">–</span></span>
+  </div>
+  <svg viewBox="0 0 760 300" id="wn-svg" role="img" aria-label="Heat map of a sigmoid neuron's output over a two-dimensional input grid, with the decision line where the output equals one half"></svg>
+  <div class="note">Blue = output near 0, orange = near 1, the violet line is where σ(z) = 0.5, i.e. w<sub>1</sub>x<sub>1</sub> + w<sub>2</sub>x<sub>2</sub> + b = 0. The weights rotate the line and set how sharp the transition is (bigger |w| = steeper); the bias slides it. Notice what you <em>cannot</em> do with any setting: bend the line. One neuron carves the plane into two half-planes, full stop.</div>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s2">2. Why one neuron isn't enough: XOR</h2>
+
+<p>The widget's limitation is fatal for a lot of problems, and the smallest one that exposes it is <strong>XOR</strong> ("exclusive or"): the output is 1 when exactly one of two binary inputs is 1. Four points, two classes, and the two classes sit at opposite corners of a square. No single straight line puts (0,1) and (1,0) on one side and (0,0) and (1,1) on the other. Since a neuron <em>is</em> a straight line, a single neuron cannot learn XOR, ever. This observation (Minsky and Papert, 1969) stalled neural-network research for over a decade.</p>
+
+<figure class="fig">
+<svg viewBox="0 0 800 300" role="img" aria-label="Left: the four XOR points on a square; two candidate straight lines each fail to separate the classes. Right: a two-hidden-neuron network transforms the points so a line separates them.">
+  <defs><marker id="arr-n2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+  <text x="180" y="24" text-anchor="middle" class="lbl-strong" font-size="13">Input space: no line works</text>
+  <line x1="60" y1="240" x2="300" y2="240" class="axis"/><line x1="60" y1="240" x2="60" y2="50" class="axis"/>
+  <text x="180" y="262" text-anchor="middle" class="lbl">x<tspan font-size="9" dy="3">1</tspan></text>
+  <text x="42" y="150" text-anchor="middle" class="lbl">x<tspan font-size="9" dy="3">2</tspan></text>
+  <circle cx="100" cy="200" r="11" fill="var(--s1)"/><text x="100" y="204" text-anchor="middle" font-size="11" fill="#fff" font-weight="700">0</text><text x="100" y="228" text-anchor="middle" class="lbl" font-size="10">(0,0)</text>
+  <circle cx="260" cy="90" r="11" fill="var(--s1)"/><text x="260" y="94" text-anchor="middle" font-size="11" fill="#fff" font-weight="700">0</text><text x="260" y="70" text-anchor="middle" class="lbl" font-size="10">(1,1)</text>
+  <circle cx="100" cy="90" r="11" fill="var(--s2)"/><text x="100" y="94" text-anchor="middle" font-size="11" fill="#fff" font-weight="700">1</text><text x="100" y="70" text-anchor="middle" class="lbl" font-size="10">(0,1)</text>
+  <circle cx="260" cy="200" r="11" fill="var(--s2)"/><text x="260" y="204" text-anchor="middle" font-size="11" fill="#fff" font-weight="700">1</text><text x="260" y="228" text-anchor="middle" class="lbl" font-size="10">(1,0)</text>
+  <line x1="70" y1="120" x2="290" y2="180" stroke="var(--critical)" stroke-width="2" stroke-dasharray="6 4"/>
+  <line x1="180" y1="60" x2="180" y2="235" stroke="var(--critical)" stroke-width="2" stroke-dasharray="6 4"/>
+  <text x="235" y="125" class="lbl" fill="var(--critical)" font-size="11">✗ each line</text>
+  <text x="235" y="139" class="lbl" fill="var(--critical)" font-size="11">gets 2 of 4</text>
+  <text x="180" y="290" text-anchor="middle" class="lbl">Best any single line can do: 75% (3 of 4). Logistic regression scores 50%.</text>
+  <!-- arrow -->
+  <line x1="320" y1="150" x2="400" y2="150" class="arrow" stroke-width="2.5" marker-end="url(#arr-n2)"/>
+  <text x="360" y="135" text-anchor="middle" class="lbl-strong" fill="var(--s7)" font-size="11">hidden layer</text>
+  <text x="360" y="170" text-anchor="middle" class="lbl" font-size="10">2 tanh neurons</text>
+  <!-- right: hidden space -->
+  <text x="600" y="24" text-anchor="middle" class="lbl-strong" font-size="13">Hidden space (h<tspan font-size="9" dy="3">1</tspan><tspan dy="-3">, h</tspan><tspan font-size="9" dy="3">2</tspan><tspan dy="-3">): one line works</tspan></text>
+  <line x1="460" y1="240" x2="740" y2="240" class="axis"/><line x1="460" y1="240" x2="460" y2="50" class="axis"/>
+  <text x="600" y="262" text-anchor="middle" class="lbl">h<tspan font-size="9" dy="3">1</tspan><tspan dy="-3"> = tanh(w·x + b) of neuron 1</tspan></text>
+  <text x="442" y="150" text-anchor="middle" class="lbl">h<tspan font-size="9" dy="3">2</tspan></text>
+  <text x="470" y="246" class="lbl" font-size="9">−1</text><text x="732" y="252" class="lbl" font-size="9">+1</text><text x="452" y="58" text-anchor="end" class="lbl" font-size="9">+1</text>
+  <!-- points from mlp: (0,0)->(0.93,1.0) ; (0,1)->(-0.96,0.98); (1,0)->(-0.95,0.97); (1,1)->(-1,-0.92). map h in [-1,1] -> x 470..730, y 230..60 -->
+  <circle cx="721" cy="60" r="11" fill="var(--s1)"/><text x="721" y="64" text-anchor="middle" font-size="11" fill="#fff" font-weight="700">0</text><text x="700" y="88" text-anchor="middle" class="lbl" font-size="10">(0,0)</text>
+  <circle cx="470" cy="223" r="11" fill="var(--s1)"/><text x="470" y="227" text-anchor="middle" font-size="11" fill="#fff" font-weight="700">0</text><text x="500" y="228" class="lbl" font-size="10">(1,1)</text>
+  <circle cx="475" cy="62" r="11" fill="var(--s2)"/><text x="475" y="66" text-anchor="middle" font-size="11" fill="#fff" font-weight="700">1</text><text x="510" y="66" class="lbl" font-size="10">(0,1) and (1,0)</text>
+  <circle cx="477" cy="63" r="11" fill="none" stroke="var(--s2)" stroke-width="1.5" stroke-dasharray="2 2"/>
+  <text x="510" y="80" class="lbl" font-size="10">land almost on top of each other</text>
+  <line x1="480" y1="50" x2="740" y2="235" stroke="var(--s7)" stroke-width="2.5" stroke-dasharray="7 4"/>
+  <text x="640" y="160" class="lbl-strong" fill="var(--s7)" font-size="11">output neuron's line</text>
+  <text x="600" y="290" text-anchor="middle" class="lbl">The hidden layer folded the square so the two orange points coincide.</text>
+</svg>
+<figcaption><strong>Figure 15.2 — XOR and the hidden layer.</strong> Left: the classes sit on opposite diagonals, so every straight line misclassifies at least one point. Right: two hidden tanh neurons map the four inputs into a new 2-D space (these are the actual hidden activations from the code below) where the two "1" points collapse together and a single line, the output neuron, separates them. <strong>Hidden layers learn a coordinate system in which the problem is linear.</strong></figcaption>
+</figure>
+
+<pre class="code" data-lang="python"><code><span class="cm"># XOR: one neuron fails, a 2-2-1 network succeeds. Look at what the hidden layer computes.</span>
+<span class="kw">import</span> numpy <span class="kw">as</span> np
+<span class="kw">from</span> sklearn.linear_model <span class="kw">import</span> LogisticRegression
+<span class="kw">from</span> sklearn.neural_network <span class="kw">import</span> MLPClassifier
+X = np.array([[<span class="nu">0</span>, <span class="nu">0</span>], [<span class="nu">0</span>, <span class="nu">1</span>], [<span class="nu">1</span>, <span class="nu">0</span>], [<span class="nu">1</span>, <span class="nu">1</span>]]); y = np.array([<span class="nu">0</span>, <span class="nu">1</span>, <span class="nu">1</span>, <span class="nu">0</span>])   <span class="cm"># XOR</span>
+line = LogisticRegression().fit(X, y)
+<span class="fn">print</span>(<span class="st">"one neuron (logistic regression) accuracy:"</span>, line.score(X, y))
+mlp = MLPClassifier(hidden_layer_sizes=(<span class="nu">2</span>,), activation=<span class="st">"tanh"</span>, solver=<span class="st">"lbfgs"</span>,
+                    max_iter=<span class="nu">2000</span>, random_state=<span class="nu">1</span>).fit(X, y)                  <span class="cm"># 2-2-1 network</span>
+<span class="fn">print</span>(<span class="st">"2-2-1 network accuracy:"</span>, mlp.score(X, y))
+H = np.tanh(X @ mlp.coefs_[<span class="nu">0</span>] + mlp.intercepts_[<span class="nu">0</span>])   <span class="cm"># what the hidden layer sees</span>
+<span class="fn">print</span>(<span class="st">"hidden-layer coordinates of the 4 points:\n"</span>, H.round(<span class="nu">2</span>))
+<span class="out"># one neuron (logistic regression) accuracy: 0.5</span>
+<span class="out"># 2-2-1 network accuracy: 1.0</span>
+<span class="out"># hidden-layer coordinates of the 4 points:</span>
+<span class="out">#  [[ 0.93  1.  ]</span>
+<span class="out">#  [-0.96  0.98]</span>
+<span class="out">#  [-0.95  0.97]</span>
+<span class="out">#  [-1.   -0.92]]</span></code></pre>
+
+<p>Read the hidden coordinates: (0,1) and (1,0), the two "1" cases, both land near (−0.95, 0.98). The network has <em>invented a feature</em>, "exactly one input is on", that no human specified. Rows 1 and 4, the "0" cases, land far away in different corners. In this new space a straight line finishes the job. That is the entire deep-learning story in miniature: <strong>each layer re-describes the data so that the next layer's job is easier</strong>. Note also that the fit depends on the random seed: with <code>random_state=0</code> this tiny network gets stuck at 75%. Small networks have bad local minima; wider ones, as we'll see, rarely do.</p>
+
+<div class="callout eli9"><div class="title">Explain it like I'm 9</div>
+<p>Imagine four coins on a table, two heads at opposite corners, two tails at the other corners. You're told to separate heads from tails with one straight ruler. Impossible. Now you're allowed to <em>fold the table</em> first. Fold it along the diagonal so the two tails land on top of each other, and suddenly one ruler does it. The hidden layer is the fold.</p>
+</div>
+
+<div class="widget" id="w-xor">
+  <div class="w-title">Interactive: train a 2-2-1 network on XOR</div>
+  <div class="controls">
+    <button class="btn primary" id="wx-train">Train 50 steps</button>
+    <button class="btn" id="wx-reset">Reset (new random weights)</button>
+    <span>Steps: <span class="readout" id="wx-steps">0</span></span>
+    <span>Loss: <span class="readout" id="wx-loss">–</span></span>
+    <span>Correct: <span class="readout" id="wx-acc">–</span>/4</span>
+  </div>
+  <svg viewBox="0 0 760 300" id="wx-svg" role="img" aria-label="Decision surface of a small network on the XOR points, updated as training steps run, with a loss curve beside it"></svg>
+  <div class="note">Left: the network's output over the whole square (blue → 0, orange → 1) with the four XOR points. Right: the loss after each step. Click Train repeatedly. Sometimes it snaps into the two-diagonal solution within 200 steps; sometimes it flattens out at a loss of ≈0.35 and only 3 of 4 correct, a local minimum. Hit Reset for new random weights and try again. This is a 2-2-1 tanh network trained by plain gradient descent with learning rate 0.5, exactly the algorithm of Section 6.</div>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s3">3. Activation functions and why ReLU won</h2>
+
+<p>The "bend" is not optional. Stack ten layers of neurons <em>without</em> activations and the whole thing collapses into one linear map (a matrix times a matrix is a matrix). The activation is what makes depth mean anything. Several bends are in common use.</p>
+
+<figure class="fig">
+<svg viewBox="0 0 800 330" role="img" aria-label="Top row: curves of sigmoid, tanh, ReLU and leaky ReLU with GELU. Bottom row: their derivatives, showing sigmoid and tanh derivatives vanish away from zero while ReLU's is a constant 1 for positive inputs.">
+  <text x="110" y="24" text-anchor="middle" class="lbl-strong" font-size="12">sigmoid σ(z)</text>
+  <text x="290" y="24" text-anchor="middle" class="lbl-strong" font-size="12">tanh(z)</text>
+  <text x="470" y="24" text-anchor="middle" class="lbl-strong" font-size="12">ReLU = max(0, z)</text>
+  <text x="650" y="24" text-anchor="middle" class="lbl-strong" font-size="12">leaky ReLU · GELU</text>
+  <!-- axes row 1 -->
+  <g class="grid">
+    <line x1="40" y1="95" x2="180" y2="95"/><line x1="110" y1="40" x2="110" y2="150"/>
+    <line x1="220" y1="95" x2="360" y2="95"/><line x1="290" y1="40" x2="290" y2="150"/>
+    <line x1="400" y1="128" x2="540" y2="128"/><line x1="470" y1="40" x2="470" y2="150"/>
+    <line x1="580" y1="128" x2="720" y2="128"/><line x1="650" y1="40" x2="650" y2="150"/>
+  </g>
+  <polyline points="40,94 44,94 47,94 50,94 54,93 58,93 61,92 64,92 68,91 72,90 75,90 78,88 82,87 86,86 89,84 92,83 96,81 100,79 103,77 106,74 110,72 114,70 117,68 121,65 124,63 128,61 131,60 134,58 138,57 142,56 145,55 148,54 152,53 156,52 159,52 162,51 166,51 170,51 173,50 176,50 180,50" fill="none" stroke="var(--s1)" stroke-width="2.5"/>
+  <text x="184" y="54" class="lbl" font-size="9">1</text><text x="184" y="98" class="lbl" font-size="9">0</text>
+  <polyline points="220,141 224,141 227,141 230,141 234,141 238,141 241,140 244,140 248,140 252,140 255,139 258,138 262,137 266,136 269,133 272,130 276,125 280,120 283,112 286,104 290,95 294,86 297,78 300,70 304,65 308,60 311,57 314,54 318,53 322,52 325,51 328,50 332,50 336,50 339,50 342,49 346,49 350,49 353,49 356,49 360,49" fill="none" stroke="var(--s2)" stroke-width="2.5"/>
+  <text x="364" y="53" class="lbl" font-size="9">+1</text><text x="364" y="144" class="lbl" font-size="9">−1</text>
+  <polyline points="400,128 404,128 407,128 410,128 414,128 418,128 421,128 424,128 428,128 432,128 435,128 438,128 442,128 446,128 449,128 452,128 456,128 460,128 463,128 466,128 470,128 474,124 477,119 480,115 484,110 488,106 491,102 494,97 498,93 502,88 505,84 508,80 512,75 516,71 519,66 522,62 526,58 530,53 533,49 536,44 540,40" fill="none" stroke="var(--s3)" stroke-width="2.5"/>
+  <polyline points="580,137 584,136 587,136 590,135 594,135 598,135 601,134 604,134 608,133 612,133 615,132 618,132 622,132 626,131 629,131 632,130 636,130 640,129 643,129 646,128 650,128 654,124 657,119 660,115 664,110 668,106 671,102 674,97 678,93 682,88 685,84 688,80 692,75 696,71 699,66 702,62 706,58 710,53 713,49 716,44 720,40" fill="none" stroke="var(--s4)" stroke-width="2.5"/>
+  <polyline points="580,128 584,128 587,128 590,128 594,128 598,128 601,128 604,128 608,128 612,129 615,129 618,129 622,130 626,130 629,131 632,131 636,132 640,132 643,131 646,130 650,128 654,125 657,122 660,118 664,114 668,109 671,105 674,100 678,95 682,90 685,85 688,80 692,76 696,71 699,67 702,62 706,58 710,53 713,49 716,44 720,40" fill="none" stroke="var(--s7)" stroke-width="2" stroke-dasharray="4 3"/>
+  <text x="586" y="52" class="lbl" font-size="10" fill="var(--s4)">leaky (slope 0.1)</text>
+  <text x="586" y="66" class="lbl" font-size="10" fill="var(--s7)">GELU (smooth)</text>
+  <text x="400" y="165" class="lbl" font-size="10">−4</text><text x="540" y="165" text-anchor="end" class="lbl" font-size="10">+4</text>
+  <!-- row 2: derivatives -->
+  <text x="20" y="188" class="lbl-strong" font-size="12">Derivatives (what backprop multiplies by):</text>
+  <g class="grid">
+    <line x1="40" y1="290" x2="180" y2="290"/><line x1="220" y1="290" x2="360" y2="290"/><line x1="400" y1="290" x2="540" y2="290"/><line x1="580" y1="290" x2="720" y2="290"/>
+    <line x1="110" y1="200" x2="110" y2="290"/><line x1="290" y1="200" x2="290" y2="290"/><line x1="470" y1="200" x2="470" y2="290"/><line x1="650" y1="200" x2="650" y2="290"/>
+  </g>
+  <polyline points="40,289 44,288 47,288 50,287 54,287 58,286 61,286 64,285 68,284 72,283 75,281 78,280 82,279 86,277 89,275 92,274 96,272 100,271 103,270 106,270 110,270 114,270 117,270 121,271 124,272 128,274 131,275 134,277 138,279 142,280 145,281 148,283 152,284 156,285 159,286 162,286 166,287 170,287 173,288 176,288 180,289" fill="none" stroke="var(--s1)" stroke-width="2.5"/>
+  <text x="110" y="262" text-anchor="middle" class="lbl" font-size="10" fill="var(--s1)">max 0.25</text>
+  <polyline points="220,290 224,290 227,290 230,290 234,289 238,289 241,289 244,288 248,287 252,286 255,284 258,282 262,278 266,272 269,265 272,256 276,244 280,232 283,220 286,211 290,208 294,211 297,220 300,232 304,244 308,256 311,265 314,272 318,278 322,282 325,284 328,286 332,287 336,288 339,289 342,289 346,289 350,290 353,290 356,290 360,290" fill="none" stroke="var(--s2)" stroke-width="2.5"/>
+  <text x="330" y="222" class="lbl" font-size="10" fill="var(--s2)">max 1</text>
+  <polyline points="400,290 404,290 407,290 410,290 414,290 418,290 421,290 424,290 428,290 432,290 435,290 438,290 442,290 446,290 449,290 452,290 456,290 460,290 463,290 466,290 470,290 474,208 477,208 480,208 484,208 488,208 491,208 494,208 498,208 502,208 505,208 508,208 512,208 516,208 519,208 522,208 526,208 530,208 533,208 536,208 540,208" fill="none" stroke="var(--s3)" stroke-width="2.5"/>
+  <text x="505" y="222" text-anchor="middle" class="lbl" font-size="10" fill="var(--s3)">exactly 1</text>
+  <text x="435" y="280" text-anchor="middle" class="lbl" font-size="10" fill="var(--s3)">exactly 0</text>
+  <polyline points="580,282 584,282 587,282 590,282 594,282 598,282 601,282 604,282 608,282 612,282 615,282 618,282 622,282 626,282 629,282 632,282 636,282 640,282 643,282 646,282 650,282 654,208 657,208 660,208 664,208 668,208 671,208 674,208 678,208 682,208 685,208 688,208 692,208 696,208 699,208 702,208 706,208 710,208 713,208 716,208 720,208" fill="none" stroke="var(--s4)" stroke-width="2.5"/>
+  <text x="615" y="275" text-anchor="middle" class="lbl" font-size="10" fill="var(--s4)">0.1, never 0</text>
+  <text x="400" y="318" text-anchor="middle" class="lbl">Sigmoid and tanh derivatives fade to 0 away from the centre ("saturation"); ReLU's is 1 or 0. Multiply twenty 0.25s and you get nothing.</text>
+</svg>
+<figcaption><strong>Figure 15.3 — Activations and their derivatives.</strong> Top: the shapes. Bottom: the derivatives that backpropagation multiplies together, layer after layer. The sigmoid's derivative never exceeds 0.25, so gradients shrink by at least 4× per layer; ReLU passes gradients through unchanged (×1) wherever the neuron is active. That single fact is most of why ReLU won.</figcaption>
+</figure>
+
+<div class="tbl-wrap">
+<table class="tbl">
+<thead><tr><th>Activation</th><th>Formula</th><th>Range</th><th>Use it for</th><th>Trouble</th></tr></thead>
+<tbody>
+<tr><td><strong>Sigmoid</strong></td><td>1/(1+e<sup>−z</sup>)</td><td>(0, 1)</td><td>Output layer of a binary classifier (it's a probability).</td><td>Saturates; derivative ≤ 0.25; not zero-centred. Avoid in hidden layers.</td></tr>
+<tr><td><strong>tanh</strong></td><td>(e<sup>z</sup>−e<sup>−z</sup>)/(e<sup>z</sup>+e<sup>−z</sup>)</td><td>(−1, 1)</td><td>Small networks, recurrent cells (Chapter 18).</td><td>Still saturates, derivative ≤ 1.</td></tr>
+<tr><td><strong>ReLU</strong></td><td>max(0, z)</td><td>[0, ∞)</td><td>Default for hidden layers. Cheap, no saturation for z &gt; 0.</td><td>"Dead" neurons: if z &lt; 0 for every input, gradient is 0 forever.</td></tr>
+<tr><td><strong>Leaky ReLU</strong></td><td>z if z &gt; 0 else 0.01z</td><td>(−∞, ∞)</td><td>When dead ReLUs are a problem.</td><td>One more hyperparameter (the slope).</td></tr>
+<tr><td><strong>GELU / SiLU (Swish)</strong></td><td>z·Φ(z) / z·σ(z)</td><td>≈(−0.17, ∞)</td><td>Transformers and modern vision models (Chapters 17–19). Smooth ReLU.</td><td>Slightly more compute; benefit is small outside large models.</td></tr>
+<tr><td><strong>Softmax</strong></td><td>e<sup>z<sub>i</sub></sup> / ∑<sub>j</sub> e<sup>z<sub>j</sub></sup></td><td>probabilities summing to 1</td><td>Output layer of a multi-class classifier.</td><td>Output only; never in hidden layers.</td></tr>
+<tr><td><strong>None (linear)</strong></td><td>z</td><td>(−∞, ∞)</td><td>Output layer of a regressor.</td><td>Useless in hidden layers: the network collapses to a linear model.</td></tr>
+</tbody>
+</table>
+</div>
+
+<p><strong>Why ReLU won.</strong> Through the 1990s and 2000s, hidden layers used sigmoid or tanh, and networks deeper than three or four layers simply would not train. Section 8 shows why: the derivative of a sigmoid is at most 0.25, and backpropagation multiplies one such derivative per layer, so the learning signal reaching early layers shrank geometrically (the <em>vanishing gradient</em>). ReLU (Nair and Hinton, 2010; Glorot et al., 2011) has derivative exactly 1 for any positive input, so gradients pass through intact. It is also nearly free to compute (a comparison, no exponentials), and it produces sparse activations (many exact zeros) that help optimisation. The 2012 AlexNet result that started the deep-learning era used ReLU. The modern variants, GELU and SiLU, are smooth versions of the same shape and matter mostly at transformer scale; at work, on a tabular MLP, ReLU is the right default.</p>
+
+<div class="callout warn"><div class="title">Common mistake</div>
+<p>Putting a sigmoid or softmax on a <em>hidden</em> layer "because the values should be probabilities", or forgetting the activation on the output layer of a classifier. Hidden layers want ReLU-family activations; the output layer's activation is dictated by the task: sigmoid for binary, softmax for multi-class, nothing for regression. And in PyTorch (Chapter 16) the loss function usually applies the output activation for you (<code>BCEWithLogitsLoss</code>, <code>CrossEntropyLoss</code>), so you feed it raw <em>logits</em>: applying sigmoid twice is a silent, common bug.</p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s4">4. The multi-layer perceptron in matrix form</h2>
+
+<p>A <strong>multi-layer perceptron (MLP)</strong> is neurons arranged in layers, every neuron in one layer connected to every neuron in the next ("fully connected" or "dense"). The input layer is just the features. Each <strong>hidden layer</strong> is a set of neurons whose outputs feed the next layer. The <strong>output layer</strong> produces the prediction. The number of layers with weights is the <em>depth</em>; the number of neurons in a layer is its <em>width</em>.</p>
+
+<p>Writing it neuron by neuron is hopeless; the whole point of the matrix form is that <em>one layer is one matrix multiplication</em>. Stack the n examples as rows of X (n × d). Put the weights of all h neurons in the first layer side by side as the columns of W<sup>(1)</sup> (d × h). Then X W<sup>(1)</sup> computes every neuron's weighted sum for every example at once.</p>
+
+<div class="callout math"><div class="title">The math: the forward pass of a 2-layer MLP</div>
+<div class="formula">Z<sup>(1)</sup> = X W<sup>(1)</sup> + b<sup>(1)</sup> &nbsp;&nbsp; (n×d)(d×h) → (n×h)</div>
+<div class="formula">A<sup>(1)</sup> = ReLU(Z<sup>(1)</sup>) &nbsp;&nbsp; (n×h), applied element-wise</div>
+<div class="formula">Z<sup>(2)</sup> = A<sup>(1)</sup> W<sup>(2)</sup> + b<sup>(2)</sup> &nbsp;&nbsp; (n×h)(h×k) → (n×k) &nbsp; "logits"</div>
+<div class="formula">Ŷ = softmax(Z<sup>(2)</sup>) row-wise &nbsp;&nbsp; (n×k), each row sums to 1</div>
+<p><strong>X</strong>: n examples × d features. <strong>W<sup>(1)</sup></strong>: one column per hidden neuron, so d × h; <strong>b<sup>(1)</sup></strong>: h biases, added to every row (numpy broadcasting). <strong>Z</strong> are pre-activations, <strong>A</strong> are activations. <strong>W<sup>(2)</sup></strong>: h × k for k output classes. <strong>Z<sup>(2)</sup></strong> are the <em>logits</em>, raw scores before the final squash. The shape rule to memorise: <em>the inner dimensions must match, and the output of every layer has one row per example</em>. Parameter count: d·h + h + h·k + k.</p>
+</div>
+
+<figure class="fig">
+<svg viewBox="0 0 800 300" role="img" aria-label="The forward pass drawn as rectangles with their dimensions: X is n by d, times W1 d by h gives Z1 n by h, ReLU keeps the shape, times W2 h by k gives logits n by k, softmax gives probabilities n by k.">
+  <defs><marker id="arr-n4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+  <!-- X -->
+  <rect x="30" y="80" width="70" height="120" class="box"/><text x="65" y="145" text-anchor="middle" class="lbl-strong" font-size="16">X</text>
+  <text x="65" y="70" text-anchor="middle" class="lbl">n × d</text>
+  <text x="65" y="220" text-anchor="middle" class="lbl" font-size="11">5 × 4</text>
+  <text x="115" y="145" text-anchor="middle" class="lbl-strong" font-size="16">·</text>
+  <!-- W1 -->
+  <rect x="130" y="100" width="60" height="80" rx="6" fill="var(--s2)" fill-opacity=".2" stroke="var(--s2)" stroke-width="1.5"/><text x="160" y="145" text-anchor="middle" class="lbl-strong" font-size="14">W<tspan font-size="9" dy="-6">(1)</tspan></text>
+  <text x="160" y="90" text-anchor="middle" class="lbl">d × h</text>
+  <text x="160" y="220" text-anchor="middle" class="lbl" font-size="11">4 × 3</text>
+  <text x="160" y="236" text-anchor="middle" class="lbl" font-size="10" fill="var(--s2)">+ b<tspan font-size="8" dy="-5">(1)</tspan><tspan dy="5"> (h)</tspan></text>
+  <line x1="200" y1="140" x2="240" y2="140" class="arrow" marker-end="url(#arr-n4)"/>
+  <!-- Z1 -->
+  <rect x="245" y="80" width="55" height="120" class="box"/><text x="272" y="145" text-anchor="middle" class="lbl-strong" font-size="14">Z<tspan font-size="9" dy="-6">(1)</tspan></text>
+  <text x="272" y="70" text-anchor="middle" class="lbl">n × h</text>
+  <text x="272" y="220" text-anchor="middle" class="lbl" font-size="11">5 × 3</text>
+  <line x1="305" y1="140" x2="345" y2="140" class="arrow" marker-end="url(#arr-n4)"/>
+  <text x="325" y="128" text-anchor="middle" class="lbl-strong" fill="var(--s7)" font-size="11">ReLU</text>
+  <!-- A1 -->
+  <rect x="350" y="80" width="55" height="120" class="box-accent"/><text x="377" y="145" text-anchor="middle" class="lbl-strong" font-size="14">A<tspan font-size="9" dy="-6">(1)</tspan></text>
+  <text x="377" y="70" text-anchor="middle" class="lbl">n × h</text>
+  <text x="377" y="220" text-anchor="middle" class="lbl" font-size="11">5 × 3</text>
+  <text x="420" y="145" text-anchor="middle" class="lbl-strong" font-size="16">·</text>
+  <!-- W2 -->
+  <rect x="435" y="110" width="45" height="60" rx="6" fill="var(--s2)" fill-opacity=".2" stroke="var(--s2)" stroke-width="1.5"/><text x="457" y="145" text-anchor="middle" class="lbl-strong" font-size="14">W<tspan font-size="9" dy="-6">(2)</tspan></text>
+  <text x="457" y="100" text-anchor="middle" class="lbl">h × k</text>
+  <text x="457" y="220" text-anchor="middle" class="lbl" font-size="11">3 × 2</text>
+  <text x="457" y="236" text-anchor="middle" class="lbl" font-size="10" fill="var(--s2)">+ b<tspan font-size="8" dy="-5">(2)</tspan><tspan dy="5"> (k)</tspan></text>
+  <line x1="490" y1="140" x2="530" y2="140" class="arrow" marker-end="url(#arr-n4)"/>
+  <!-- Z2 -->
+  <rect x="535" y="80" width="45" height="120" class="box"/><text x="557" y="145" text-anchor="middle" class="lbl-strong" font-size="14">Z<tspan font-size="9" dy="-6">(2)</tspan></text>
+  <text x="557" y="70" text-anchor="middle" class="lbl">n × k</text>
+  <text x="557" y="220" text-anchor="middle" class="lbl" font-size="11">5 × 2</text>
+  <text x="557" y="236" text-anchor="middle" class="lbl" font-size="10">logits</text>
+  <line x1="585" y1="140" x2="640" y2="140" class="arrow" marker-end="url(#arr-n4)"/>
+  <text x="612" y="128" text-anchor="middle" class="lbl-strong" fill="var(--s7)" font-size="11">softmax</text>
+  <!-- Yhat -->
+  <rect x="645" y="80" width="45" height="120" rx="6" fill="var(--s3)" fill-opacity=".2" stroke="var(--s3)" stroke-width="1.5"/><text x="667" y="145" text-anchor="middle" class="lbl-strong" font-size="14">Ŷ</text>
+  <text x="667" y="70" text-anchor="middle" class="lbl">n × k</text>
+  <text x="667" y="220" text-anchor="middle" class="lbl" font-size="11">5 × 2</text>
+  <text x="667" y="236" text-anchor="middle" class="lbl" font-size="10">rows sum to 1</text>
+  <text x="740" y="145" text-anchor="middle" class="lbl">→ loss</text>
+  <text x="400" y="30" text-anchor="middle" class="lbl-strong" font-size="13">One layer = one matrix multiply. Rows stay "one per example" all the way through.</text>
+  <text x="400" y="272" text-anchor="middle" class="lbl">Orange = learned parameters (23 numbers here). Grey = computed from data. Inner dimensions must match: (n×d)(d×h), (n×h)(h×k).</text>
+  <text x="400" y="290" text-anchor="middle" class="lbl">Add a layer = insert another (·W, +b, ReLU) block in the middle. Widen a layer = change h.</text>
+</svg>
+<figcaption><strong>Figure 15.4 — The forward pass with shapes.</strong> Data flows left to right; each block is one line of numpy. Get the shapes right and the code writes itself; get them wrong and numpy tells you at the first multiply.</figcaption>
+</figure>
+
+<pre class="code" data-lang="python"><code><span class="cm"># Forward pass of a 4 → 3 → 2 MLP in five lines, with every shape printed</span>
+<span class="kw">import</span> numpy <span class="kw">as</span> np
+rng = np.random.default_rng(<span class="nu">0</span>)
+n, d, h, k = <span class="nu">5</span>, <span class="nu">4</span>, <span class="nu">3</span>, <span class="nu">2</span>                      <span class="cm"># 5 examples, 4 features, 3 hidden units, 2 classes</span>
+X  = rng.normal(size=(n, d))
+W1 = rng.normal(size=(d, h)) * np.sqrt(<span class="nu">2</span> / d); b1 = np.zeros(h)
+W2 = rng.normal(size=(h, k)) * np.sqrt(<span class="nu">1</span> / h); b2 = np.zeros(k)
+Z1 = X @ W1 + b1                             <span class="cm"># (n×d)(d×h) + (h,)  → (n×h)</span>
+A1 = np.maximum(<span class="nu">0</span>, Z1)                       <span class="cm"># ReLU, same shape</span>
+Z2 = A1 @ W2 + b2                            <span class="cm"># (n×h)(h×k) + (k,)  → (n×k)   "logits"</span>
+P  = np.exp(Z2 - Z2.max(axis=<span class="nu">1</span>, keepdims=<span class="kw">True</span>)); P /= P.sum(axis=<span class="nu">1</span>, keepdims=<span class="kw">True</span>)   <span class="cm"># softmax</span>
+<span class="fn">print</span>(<span class="st">"X"</span>, X.shape, <span class="st">"→ Z1"</span>, Z1.shape, <span class="st">"→ Z2"</span>, Z2.shape, <span class="st">"→ P"</span>, P.shape)
+<span class="fn">print</span>(<span class="st">"each row of P sums to 1:"</span>, P.sum(axis=<span class="nu">1</span>).round(<span class="nu">6</span>))
+<span class="fn">print</span>(<span class="st">"parameters:"</span>, W1.size + b1.size + W2.size + b2.size)
+<span class="fn">print</span>(<span class="st">"MNIST-style 784→128→10 would have"</span>, <span class="nu">784</span>*<span class="nu">128</span> + <span class="nu">128</span> + <span class="nu">128</span>*<span class="nu">10</span> + <span class="nu">10</span>, <span class="st">"parameters"</span>)
+<span class="out"># X (5, 4) → Z1 (5, 3) → Z2 (5, 2) → P (5, 2)</span>
+<span class="out"># each row of P sums to 1: [1. 1. 1. 1. 1.]</span>
+<span class="out"># parameters: 23</span>
+<span class="out"># MNIST-style 784→128→10 would have 101770 parameters</span></code></pre>
+
+<h3>Counting parameters: a worked example</h3>
+<p>Interviewers love this and it builds intuition for model size. A layer from width <em>in</em> to width <em>out</em> has <em>in × out</em> weights plus <em>out</em> biases. For a 784 → 128 → 10 network (a flattened 28×28 image, one hidden layer, ten digit classes): first layer 784 × 128 + 128 = 100,480; second layer 128 × 10 + 10 = 1,290; total <strong>101,770</strong>. Note where the parameters live: 99% of them are in the first layer, because the input is wide. Add a second hidden layer of 128 and you add only 128 × 128 + 128 = 16,512. Depth is cheap; width at the input is expensive. (Two sanity checks for later chapters: the <code>(x - max)</code> inside softmax is not a trick, it is numerical hygiene, preventing <code>exp</code> from overflowing; and the √(2/d) scale on the weights is <em>He initialisation</em>, explained in Section 8.)</p>
+
+<!-- ============================================================ -->
+<h2 id="s5">5. Loss functions</h2>
+
+<p>A network's output is compared to the truth by a <strong>loss function</strong>, and training is nothing but making that number small. The two you'll use cover almost everything.</p>
+
+<div class="callout math"><div class="title">The math: MSE and cross-entropy</div>
+<div class="formula">Regression: L<sub>MSE</sub> = (1/n) ∑<sub>i</sub> (ŷ<sub>i</sub> − y<sub>i</sub>)<sup>2</sup></div>
+<div class="formula">Binary classification: L<sub>BCE</sub> = −(1/n) ∑<sub>i</sub> [ y<sub>i</sub> log ŷ<sub>i</sub> + (1 − y<sub>i</sub>) log(1 − ŷ<sub>i</sub>) ]</div>
+<div class="formula">Multi-class: L<sub>CE</sub> = −(1/n) ∑<sub>i</sub> log ŷ<sub>i,c<sub>i</sub></sub> &nbsp;&nbsp; where ŷ = softmax(z) and c<sub>i</sub> is the true class</div>
+<p><strong>MSE</strong> (mean squared error): the average squared miss; big misses hurt quadratically. Use with a linear output. <strong>Binary cross-entropy</strong>: ŷ<sub>i</sub> is the sigmoid output, the predicted probability of class 1. When y = 1 only the first term survives and the loss is −log ŷ: tiny if ŷ ≈ 1, enormous if ŷ ≈ 0. It punishes confident wrong answers brutally, which is what you want. <strong>Multi-class cross-entropy</strong>: only the probability the network assigned to the <em>true</em> class matters; −log of it. Both cross-entropies are the negative log-likelihood from Chapter 6, and both have a beautiful property: paired with their matching output activation, the gradient of the loss with respect to the logits is simply <strong>ŷ − y</strong>, the prediction minus the truth. That is the first equation of backpropagation, and it is why sigmoid+BCE and softmax+CE are always used together.</p>
+</div>
+
+<div class="callout eli9"><div class="title">Explain it like I'm 9</div>
+<p>MSE is like a teacher who takes off points equal to (how far off you were)². Cross-entropy is a teacher who asks "how sure were you?" If you said "I'm 99% sure it's a cat" and it was a dog, you lose a huge number of points. If you said "60% cat", you lose a few. It rewards honesty about uncertainty, which is exactly what we want from a probability.</p>
+</div>
+
+<div class="callout pro"><div class="title">At work</div>
+<p>Match the loss to the output and the metric to the business, and don't confuse the two. You train with cross-entropy (smooth, differentiable) and you <em>report</em> accuracy, F1, or AUC (Chapter 6). For regression, MSE is the default but it chases outliers; if your target has heavy tails (revenue, durations), train with Huber loss or MAE, or predict log(y). And for imbalanced classes, weight the loss terms (<code>pos_weight</code> in PyTorch) before you reach for anything fancier.</p>
+</div>
+
+</div></main>
+</div>
+<script src="../assets/chapters.js"></script>
+<script src="../assets/app.js"></script>
+</body>
+</html>

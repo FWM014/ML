@@ -1,0 +1,1143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>23 · The End-to-End Project Playbook — ML: Zero to Expert</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body data-chapter="23">
+<header class="topbar"></header>
+<div class="progress-track"><div></div></div>
+<div class="shell">
+<nav class="sidebar"></nav>
+<main class="content"><div class="container">
+
+<header class="ch-header">
+  <div class="kicker">Part IV · Expert &amp; Production · Chapter 23</div>
+  <h1>The End-to-End Project Playbook</h1>
+  <p class="lede">This is the chapter you keep open at work. Everything before it taught a technique; this one turns the techniques into an operating manual: how to scope a project, which model to try first, a complete worked churn project in eight runnable blocks, how to talk about results in money, the twenty ways projects die, and a 90-day plan to become the ML person at your company.</p>
+  <div class="meta"><span class="level expert">Expert</span> <span>⏱ 100 min read</span> <span>·</span> <span>Prereqs: all previous chapters</span></div>
+</header>
+
+<div class="objectives">
+  <h3>By the end of this chapter you will be able to</h3>
+  <ul>
+    <li>Fill in a one-page project canvas that forces the target, the decision, the metric and the baseline to be written down before any code.</li>
+    <li>Run a project through scoping, data audit, baseline, iteration, validation and productionization with a definition of done for each phase.</li>
+    <li>Pick the first and second model to try for any data type, size and interpretability need, and the metric to judge it by.</li>
+    <li>Execute a complete tabular project end to end: EDA, leakage check, split, baseline, pipeline, comparison, tuning, cost-based threshold, bootstrap confidence intervals, explanation, and a saved, reloadable artifact.</li>
+    <li>Translate precision and recall into money and present results in five slides that a director can act on.</li>
+    <li>Recognize the failure modes that kill ML projects and prevent them in advance.</li>
+  </ul>
+</div>
+
+<div class="toc-inline"><strong>In this chapter</strong>
+<ol>
+  <li><a href="#s1">The project canvas</a></li>
+  <li><a href="#s2">Phases, timeboxes and definitions of done</a></li>
+  <li><a href="#s3">Which model when, which metric when</a></li>
+  <li><a href="#s4">The worked project: customer churn in eight blocks</a></li>
+  <li><a href="#s5">The experiment log and "one change at a time"</a></li>
+  <li><a href="#s6">Communicating results in money</a></li>
+  <li><a href="#s7">The failure-mode catalogue</a></li>
+  <li><a href="#s8">Handoff to production and the model card</a></li>
+  <li><a href="#s9">Your 30-60-90-day plan</a></li>
+  <li><a href="#quiz">Quiz &amp; exercises</a></li>
+</ol></div>
+
+<!-- ============================================================ -->
+<h2 id="s1">1. The project canvas</h2>
+
+<p>Every ML project that failed in my experience failed for a reason that was knowable on day one: the target did not match the decision, nobody had agreed what "good" meant, the data did not exist at prediction time, or nobody was going to act on the output. The <strong>project canvas</strong> is a one-page form that makes those reasons visible before you spend a month. Fill it in with the stakeholder in the room; the arguments it provokes are the point.</p>
+
+<div class="callout eli9"><div class="title">Explain it like I'm 9</div>
+<p>Before you build a treehouse you draw a picture, decide which tree, check you have wood and nails, and agree with your friends what "done" looks like (a floor? a roof? a rope ladder?). Otherwise you spend all summer sawing and end up with something nobody wants to climb. The canvas is the drawing.</p>
+</div>
+
+<h3>A filled example: churn at a subscription company</h3>
+<div class="tbl-wrap">
+<table class="tbl">
+<thead><tr><th style="width:24%">Field</th><th>Filled in (the worked project of Section 4)</th></tr></thead>
+<tbody>
+<tr><td><strong>Problem</strong></td><td>About 21% of subscribers cancel each year; the retention team contacts customers by gut feel and spends its offer budget on people who were never going to leave.</td></tr>
+<tr><td><strong>Decision the prediction drives</strong></td><td>Each month, which customers get a retention call plus a $20 offer. Capacity: ~1,000 contacts per month.</td></tr>
+<tr><td><strong>Target definition</strong></td><td><code>churned = 1</code> if the account cancels within 90 days of the scoring date. Computed monthly. Involuntary churn (card failure) excluded.</td></tr>
+<tr><td><strong>Unit of analysis</strong></td><td>One row per customer per scoring month; features use only data up to the scoring date.</td></tr>
+<tr><td><strong>Metric &amp; business translation</strong></td><td>Primary: PR-AUC (positives are rare). Decision metric: expected profit at the chosen threshold = 0.4 × TP × $150 − contacts × $20. Report precision/recall at that threshold.</td></tr>
+<tr><td><strong>Baseline</strong></td><td>(a) Contact nobody: $0. (b) Current heuristic "tenure &lt; 6 months". (c) Logistic regression on numeric columns.</td></tr>
+<tr><td><strong>Constraints</strong></td><td>Batch scoring, monthly; latency irrelevant. Must produce a top-5 reason list per customer for the call script (interpretability). No use of protected attributes; check recall parity across regions (fairness).</td></tr>
+<tr><td><strong>Data sources</strong></td><td>CRM (plan, region, signup date), billing (charges, late payments), product analytics (logins, session time), support (tickets, NPS). Joined on <code>customer_id</code>; 24 months of history.</td></tr>
+<tr><td><strong>Success criteria</strong></td><td>Ship if expected profit at the chosen threshold beats the current heuristic by ≥ $10k/month on the holdout and the A/B test confirms ≥ 2-point retention lift in the contacted group after 90 days.</td></tr>
+<tr><td><strong>Risks</strong></td><td>Leakage from post-cancellation fields (cancellation reason); label delay of 90 days; retention offers change behaviour (feedback loop: next year's data is contaminated); "sleeping dogs" (Chapter 22).</td></tr>
+<tr><td><strong>Owner / consumers</strong></td><td>Owner: you. Consumer: retention team lead (weekly sync). Executive sponsor: VP Customer.</td></tr>
+</tbody>
+</table>
+</div>
+
+<h3>The blank template</h3>
+<div class="tbl-wrap">
+<table class="tbl">
+<thead><tr><th style="width:24%">Field</th><th>Question it answers</th><th style="width:30%">Your answer</th></tr></thead>
+<tbody>
+<tr><td><strong>Problem</strong></td><td>What hurts today, in one sentence, with a number?</td><td></td></tr>
+<tr><td><strong>Decision</strong></td><td>Who will do what differently because of the prediction, and how often?</td><td></td></tr>
+<tr><td><strong>Target definition</strong></td><td>Exact label, time window, exclusions. Could two analysts compute it identically?</td><td></td></tr>
+<tr><td><strong>Unit of analysis</strong></td><td>One row = one … ? At what moment is it scored?</td><td></td></tr>
+<tr><td><strong>Metric &amp; translation</strong></td><td>Which ML metric, and what does one point of it mean in money or hours?</td><td></td></tr>
+<tr><td><strong>Baseline</strong></td><td>What happens today? What does the simplest rule achieve?</td><td></td></tr>
+<tr><td><strong>Constraints</strong></td><td>Latency, batch vs real-time, interpretability, fairness, regulation, cost.</td><td></td></tr>
+<tr><td><strong>Data sources</strong></td><td>Which systems, which join keys, how much history, who owns them?</td><td></td></tr>
+<tr><td><strong>Success criteria</strong></td><td>The number that, if reached on the holdout and confirmed live, means "ship".</td><td></td></tr>
+<tr><td><strong>Risks</strong></td><td>Leakage, label delay, drift, feedback loops, adoption.</td><td></td></tr>
+<tr><td><strong>Owner / consumers</strong></td><td>Who maintains it after launch? Who uses it? Who sponsors it?</td><td></td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="callout key"><div class="title">Key idea</div>
+<p>The two hardest rows are <strong>target definition</strong> and <strong>decision</strong>, and they must agree. "Predict churn" is not a target; "cancels within 90 days of the scoring date, excluding card failures" is. "Reduce churn" is not a decision; "call these 1,000 people this month" is. A model that predicts the wrong target perfectly is worth less than a rule that predicts the right one badly.</p>
+</div>
+
+<div class="callout warn"><div class="title">Common mistake</div>
+<p>Writing the canvas after the model. Teams that start in the notebook discover in month three that the "label" was computed from a field that only exists after the customer has left, that the prediction is needed on day 1 but the best features arrive on day 30, or that legal forbids the top feature. The canvas costs two hours. Fill it in first, and revise it when reality disagrees.</p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s2">2. Phases, timeboxes and definitions of done</h2>
+
+<p>An ML project is a sequence of phases, each with a <strong>timebox</strong> (a deadline that forces a decision) and a <strong>definition of done</strong> (the artifact that lets you move on). The timeboxes below are for a typical tabular project with existing data; scale them, but keep the proportions. The most important property is that the <em>baseline</em> arrives in the first two weeks: it tells you whether the problem is easy, hard, or impossible before you have invested a quarter.</p>
+
+<figure class="fig">
+<svg viewBox="0 0 800 330" role="img" aria-label="Gantt-style chart of the seven project phases over about ten weeks: scoping one week, data audit one week, baseline two days, iteration two to four weeks, validation one week, productionization two weeks, monitoring ongoing; with the definition of done written under each bar">
+  <defs><marker id="arr-f23-1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+  <text x="20" y="24" class="lbl-strong" font-size="14">A ten-week tabular project (week grid; bars are timeboxes, not estimates)</text>
+  <!-- week grid: x from 200 to 780, 10 weeks → 58px/week -->
+  <g class="grid">
+    <line x1="200" y1="40" x2="200" y2="290"/><line x1="258" y1="40" x2="258" y2="290"/><line x1="316" y1="40" x2="316" y2="290"/><line x1="374" y1="40" x2="374" y2="290"/><line x1="432" y1="40" x2="432" y2="290"/><line x1="490" y1="40" x2="490" y2="290"/><line x1="548" y1="40" x2="548" y2="290"/><line x1="606" y1="40" x2="606" y2="290"/><line x1="664" y1="40" x2="664" y2="290"/><line x1="722" y1="40" x2="722" y2="290"/><line x1="780" y1="40" x2="780" y2="290"/>
+  </g>
+  <g class="lbl" font-size="11" text-anchor="middle">
+    <text x="229" y="52">wk 1</text><text x="287" y="52">wk 2</text><text x="345" y="52">wk 3</text><text x="403" y="52">wk 4</text><text x="461" y="52">wk 5</text><text x="519" y="52">wk 6</text><text x="577" y="52">wk 7</text><text x="635" y="52">wk 8</text><text x="693" y="52">wk 9</text><text x="751" y="52">wk 10</text>
+  </g>
+  <!-- bars -->
+  <g font-size="12">
+    <text x="20" y="78" class="lbl-strong">1 Scoping</text><rect x="200" y="64" width="58" height="20" rx="4" fill="var(--s1)"/>
+    <text x="20" y="108" class="lbl-strong">2 Data audit</text><rect x="258" y="94" width="58" height="20" rx="4" fill="var(--s2)"/>
+    <text x="20" y="138" class="lbl-strong">3 Baseline</text><rect x="316" y="124" width="24" height="20" rx="4" fill="var(--s3)"/>
+    <text x="20" y="168" class="lbl-strong">4 Iteration</text><rect x="340" y="154" width="174" height="20" rx="4" fill="var(--s4)"/><rect x="514" y="154" width="58" height="20" rx="4" fill="var(--s4)" fill-opacity=".35" stroke="var(--s4)" stroke-dasharray="4 3"/>
+    <text x="20" y="198" class="lbl-strong">5 Validation</text><rect x="514" y="184" width="58" height="20" rx="4" fill="var(--s5)"/>
+    <text x="20" y="228" class="lbl-strong">6 Production</text><rect x="572" y="214" width="116" height="20" rx="4" fill="var(--s7)"/>
+    <text x="20" y="258" class="lbl-strong">7 Monitoring</text><rect x="688" y="244" width="92" height="20" rx="4" fill="var(--s6)"/><text x="735" y="258" text-anchor="middle" font-size="10" fill="#fff" font-weight="700">ongoing →</text>
+  </g>
+  <!-- DoD annotations -->
+  <g class="lbl" font-size="10">
+    <text x="262" y="78">done = signed canvas</text>
+    <text x="320" y="108">done = data report + leakage list</text>
+    <text x="344" y="138">done = dummy + linear beat/not</text>
+    <text x="344" y="150">2 days</text>
+    <text x="576" y="168">done = frozen model + log</text>
+    <text x="576" y="198">done = one test-set look + CIs</text>
+    <text x="692" y="228">done = deployed + rollback</text>
+  </g>
+  <!-- kill gate -->
+  <line x1="340" y1="60" x2="340" y2="290" stroke="var(--critical)" stroke-width="2" stroke-dasharray="6 3"/>
+  <text x="340" y="304" text-anchor="middle" class="lbl-strong" fill="var(--critical)" font-size="11">kill gate: no signal above baseline → stop or re-scope</text>
+  <line x1="572" y1="60" x2="572" y2="290" stroke="var(--s7)" stroke-width="2" stroke-dasharray="6 3"/>
+  <text x="572" y="322" text-anchor="middle" class="lbl-strong" fill="var(--s7)" font-size="11">ship gate: success criterion met on holdout</text>
+</svg>
+<figcaption><strong>Figure 23.1 — The phases as timeboxes.</strong> The baseline lands by the end of week 3 and is the first kill gate; iteration is capped (the dashed extension is the only extension allowed); validation looks at the test set exactly once; production and monitoring take as long as modeling and are planned from the start. The planner widget below rescales this to your project's length.</figcaption>
+</figure>
+
+<div class="widget" id="w-plan">
+  <div class="w-title">Interactive: project timeline planner</div>
+  <div class="controls">
+    <label>Total weeks <input type="range" id="pl-weeks" min="4" max="26" value="10" data-out="pl-weeks-out"> <output id="pl-weeks-out"></output></label>
+    <span>Baseline due: <span class="readout" id="pl-base">–</span></span>
+    <span>Ship gate: <span class="readout" id="pl-ship">–</span></span>
+  </div>
+  <svg viewBox="0 0 760 250" id="pl-svg" role="img" aria-label="Gantt chart of project phases whose durations scale proportionally with the chosen total number of weeks"></svg>
+  <div class="note">Phases scale proportionally, but two things do not: scoping never drops below a week (the canvas takes real conversations) and the baseline never takes more than three days. Notice that in a 4-week project, production and monitoring are still a third of the time; teams that plan only the modeling half ship late by exactly that half.</div>
+</div>
+
+<ol class="steps">
+  <li><strong>Scoping (1 week).</strong> Fill the canvas. Interview the decision owner and the data owner. Write the target definition as SQL. <em>Done:</em> canvas signed by the sponsor; success criterion is a number.</li>
+  <li><strong>Data audit (1 week).</strong> Pull the data, profile every column (Chapter 2), reconstruct the label, check volumes over time, list columns that could leak (Chapter 8). <em>Done:</em> a data report with row counts by month, missingness, the leakage list, and a go/no-go on data sufficiency.</li>
+  <li><strong>Baseline (2 days).</strong> Dummy model, current business rule, one linear model on the obvious features, all evaluated with the project metric on a proper split. <em>Done:</em> a table of three numbers. If the linear model does not beat the dummy meaningfully, stop and revisit the target or the data before building anything else.</li>
+  <li><strong>Iteration (2–4 weeks, hard cap).</strong> Feature engineering, model comparison, tuning, error analysis, one change at a time with an experiment log (Section 5). <em>Done:</em> a frozen pipeline, its cross-validated score, and a log that explains every decision.</li>
+  <li><strong>Validation (1 week).</strong> One look at the test set with confidence intervals, threshold chosen on validation data with the cost matrix, slice analysis (regions, plans, tenure buckets), fairness checks, explanations reviewed by the domain expert. <em>Done:</em> the model report (Section 8) and a ship/no-ship recommendation.</li>
+  <li><strong>Productionization (1–2 weeks).</strong> Package the pipeline, batch job or endpoint, input validation, shadow run against the current process, rollback plan (Chapter 21). <em>Done:</em> predictions flowing to the consumer, with an owner on call.</li>
+  <li><strong>Monitoring (ongoing).</strong> Drift, performance once labels arrive, business metric, alert thresholds and a retraining trigger. <em>Done:</em> never; it has a dashboard and a review cadence.</li>
+</ol>
+
+<div class="callout pro"><div class="title">At work</div>
+<p>Announce the timeboxes at the kickoff and put the kill gate in the calendar. A project that is allowed to iterate indefinitely will; a project with a "baseline review on the 14th" produces a baseline. Stakeholders respect a team that says "we will know by week three whether this is worth continuing" far more than one that promises a model in a quarter.</p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s3">3. Which model when, which metric when</h2>
+
+<p>Every chapter in Parts II and III ended with a "which one at work" table. This section is the master version: one flowchart that routes any problem to a first and a second model, and one that routes it to a metric. The first model is always the one you can build and explain in a day; the second is the one that usually wins the leaderboard. Build both; the gap between them tells you how much the problem rewards complexity.</p>
+
+<figure class="fig">
+<svg viewBox="0 0 800 640" role="img" aria-label="Master decision flowchart: start from the data type; tabular splits by size and interpretability need into linear models, gradient boosting, random forests; image goes to pretrained CNN fine-tuning; text goes to TF-IDF plus linear then transformer embeddings; time series to seasonal baselines then gradient boosting on lag features; recommendations, anomaly and causal branch to Chapter 22; deep learning only with large data">
+  <defs><marker id="arr-f23-2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+  <rect x="300" y="16" width="200" height="44" class="box-accent"/><text x="400" y="43" text-anchor="middle" class="lbl-strong">What does one row look like?</text>
+  <!-- branches from root -->
+  <line x1="400" y1="60" x2="400" y2="96" class="arrow" marker-end="url(#arr-f23-2)"/>
+  <line x1="300" y1="38" x2="118" y2="38" class="arrow"/><line x1="118" y1="38" x2="118" y2="96" class="arrow" marker-end="url(#arr-f23-2)"/>
+  <line x1="500" y1="38" x2="682" y2="38" class="arrow"/><line x1="682" y1="38" x2="682" y2="96" class="arrow" marker-end="url(#arr-f23-2)"/>
+  <!-- image / text column (left) -->
+  <rect x="20" y="98" width="196" height="40" class="box"/><text x="118" y="116" text-anchor="middle" class="lbl-strong">Image / audio / video</text><text x="118" y="131" text-anchor="middle" class="lbl" font-size="11">(Chapter 17)</text>
+  <line x1="118" y1="138" x2="118" y2="158" class="arrow" marker-end="url(#arr-f23-2)"/>
+  <rect x="20" y="160" width="196" height="66" rx="6" fill="var(--s3)" fill-opacity=".14" stroke="var(--s3)" stroke-width="1.5"/>
+  <text x="118" y="178" text-anchor="middle" class="lbl-strong" font-size="11">1st: pretrained CNN/ViT, fine-tune</text>
+  <text x="118" y="194" text-anchor="middle" class="lbl" font-size="11">2nd: larger backbone + augmentation</text>
+  <text x="118" y="210" text-anchor="middle" class="lbl" font-size="11">never from scratch under 100k images</text>
+  <rect x="20" y="246" width="196" height="40" class="box"/><text x="118" y="264" text-anchor="middle" class="lbl-strong">Free text</text><text x="118" y="279" text-anchor="middle" class="lbl" font-size="11">(Chapters 18–19)</text>
+  <line x1="118" y1="286" x2="118" y2="306" class="arrow" marker-end="url(#arr-f23-2)"/>
+  <rect x="20" y="308" width="196" height="66" rx="6" fill="var(--s3)" fill-opacity=".14" stroke="var(--s3)" stroke-width="1.5"/>
+  <text x="118" y="326" text-anchor="middle" class="lbl-strong" font-size="11">1st: TF-IDF + logistic regression</text>
+  <text x="118" y="342" text-anchor="middle" class="lbl" font-size="11">2nd: sentence embeddings + GBM,</text>
+  <text x="118" y="358" text-anchor="middle" class="lbl" font-size="11">or fine-tuned small transformer / LLM</text>
+  <!-- tabular column (centre) -->
+  <rect x="300" y="98" width="200" height="40" class="box"/><text x="400" y="116" text-anchor="middle" class="lbl-strong">Tabular (rows × columns)</text><text x="400" y="131" text-anchor="middle" class="lbl" font-size="11">~80% of business ML</text>
+  <line x1="400" y1="138" x2="400" y2="158" class="arrow" marker-end="url(#arr-f23-2)"/>
+  <rect x="300" y="160" width="200" height="40" class="box-accent"/><text x="400" y="178" text-anchor="middle" class="lbl-strong">How many rows?</text><text x="400" y="193" text-anchor="middle" class="lbl" font-size="11">and must every prediction be explained?</text>
+  <!-- three tabular outcomes -->
+  <line x1="300" y1="180" x2="262" y2="180" class="arrow"/><line x1="262" y1="180" x2="262" y2="224" class="arrow" marker-end="url(#arr-f23-2)"/>
+  <text x="256" y="205" text-anchor="end" class="lbl" font-size="10">&lt; 1k rows, or</text><text x="256" y="217" text-anchor="end" class="lbl" font-size="10">coefficients required</text>
+  <line x1="400" y1="200" x2="400" y2="224" class="arrow" marker-end="url(#arr-f23-2)"/>
+  <text x="408" y="216" class="lbl" font-size="10">1k – 10M rows</text>
+  <line x1="500" y1="180" x2="538" y2="180" class="arrow"/><line x1="538" y1="180" x2="538" y2="224" class="arrow" marker-end="url(#arr-f23-2)"/>
+  <text x="544" y="205" class="lbl" font-size="10">&gt; 1M rows and</text><text x="544" y="217" class="lbl" font-size="10">raw signals / sequences</text>
+  <rect x="236" y="226" width="150" height="80" rx="6" fill="var(--s1)" fill-opacity=".14" stroke="var(--s1)" stroke-width="1.5"/>
+  <text x="311" y="244" text-anchor="middle" class="lbl-strong" font-size="11">1st: regularized linear /</text>
+  <text x="311" y="258" text-anchor="middle" class="lbl-strong" font-size="11">logistic (Ch 5–6)</text>
+  <text x="311" y="274" text-anchor="middle" class="lbl" font-size="11">2nd: shallow tree or GAM</text>
+  <text x="311" y="290" text-anchor="middle" class="lbl" font-size="11">+ SHAP for reasons (Ch 20)</text>
+  <rect x="400" y="226" width="150" height="80" rx="6" fill="var(--s2)" fill-opacity=".14" stroke="var(--s2)" stroke-width="1.5"/>
+  <text x="475" y="244" text-anchor="middle" class="lbl-strong" font-size="11">1st: logistic / linear</text>
+  <text x="475" y="258" text-anchor="middle" class="lbl-strong" font-size="11">2nd: gradient boosting</text>
+  <text x="475" y="274" text-anchor="middle" class="lbl" font-size="11">(HistGB / LightGBM / XGBoost)</text>
+  <text x="475" y="290" text-anchor="middle" class="lbl" font-size="11">RF if no time to tune (Ch 10)</text>
+  <rect x="564" y="226" width="150" height="80" rx="6" fill="var(--s7)" fill-opacity=".14" stroke="var(--s7)" stroke-width="1.5"/>
+  <text x="639" y="244" text-anchor="middle" class="lbl-strong" font-size="11">1st: still gradient boosting</text>
+  <text x="639" y="258" text-anchor="middle" class="lbl" font-size="11">2nd: neural net (Ch 15–16)</text>
+  <text x="639" y="274" text-anchor="middle" class="lbl" font-size="11">only if it beats GBM on CV</text>
+  <text x="639" y="290" text-anchor="middle" class="lbl" font-size="11">and latency allows</text>
+  <!-- time series column (right) -->
+  <rect x="584" y="98" width="196" height="40" class="box"/><text x="682" y="116" text-anchor="middle" class="lbl-strong">Time series / forecast</text><text x="682" y="131" text-anchor="middle" class="lbl" font-size="11">(Chapter 14)</text>
+  <line x1="682" y1="138" x2="682" y2="158" class="arrow" marker-end="url(#arr-f23-2)"/>
+  <rect x="584" y="160" width="196" height="50" rx="6" fill="var(--s3)" fill-opacity=".14" stroke="var(--s3)" stroke-width="1.5"/>
+  <text x="682" y="178" text-anchor="middle" class="lbl-strong" font-size="11">1st: seasonal naive / ETS</text>
+  <text x="682" y="194" text-anchor="middle" class="lbl" font-size="11">2nd: GBM on lag + calendar features</text>
+  <!-- special problem shapes row -->
+  <text x="20" y="410" class="lbl-strong" font-size="13">Not a plain "predict y from X"? Route by question (Chapter 22):</text>
+  <rect x="20" y="422" width="180" height="58" class="box"/><text x="110" y="442" text-anchor="middle" class="lbl-strong" font-size="11">"What to show each user?"</text><text x="110" y="458" text-anchor="middle" class="lbl" font-size="11">item-item CF → MF / two-tower</text><text x="110" y="472" text-anchor="middle" class="lbl" font-size="11">judge by online A/B lift</text>
+  <rect x="212" y="422" width="180" height="58" class="box"/><text x="302" y="442" text-anchor="middle" class="lbl-strong" font-size="11">"Which rows are weird?" no labels</text><text x="302" y="458" text-anchor="middle" class="lbl" font-size="11">robust z → Isolation Forest</text><text x="302" y="472" text-anchor="middle" class="lbl" font-size="11">judge by reviewed top-k</text>
+  <rect x="404" y="422" width="180" height="58" class="box"/><text x="494" y="442" text-anchor="middle" class="lbl-strong" font-size="11">"Did / will X cause Y?"</text><text x="494" y="458" text-anchor="middle" class="lbl" font-size="11">A/B test → adjustment → uplift</text><text x="494" y="472" text-anchor="middle" class="lbl" font-size="11">judge by effect + CI, Qini</text>
+  <rect x="596" y="422" width="184" height="58" class="box"/><text x="688" y="442" text-anchor="middle" class="lbl-strong" font-size="11">"Group these" / "compress"</text><text x="688" y="458" text-anchor="middle" class="lbl" font-size="11">k-means / HDBSCAN, PCA/UMAP</text><text x="688" y="472" text-anchor="middle" class="lbl" font-size="11">judge by usefulness (Ch 12)</text>
+  <!-- universal rules -->
+  <rect x="20" y="500" width="760" height="122" rx="8" fill="var(--accent-soft)" stroke="var(--accent)" stroke-width="1.5"/>
+  <text x="36" y="522" class="lbl-strong" font-size="13">Rules that override the chart</text>
+  <text x="36" y="544" class="lbl" font-size="12">• Always run the dummy baseline and the linear model first; report every later model as "lift over baseline".</text>
+  <text x="36" y="564" class="lbl" font-size="12">• Under ~500 labeled rows: linear models, strong regularization, cross-validation with many repeats; consider TabPFN; do not tune a GBM.</text>
+  <text x="36" y="584" class="lbl" font-size="12">• If the top feature is suspicious (AUC &gt; 0.95 alone), it is leakage until proven otherwise (Section 4, Block 2).</text>
+  <text x="36" y="604" class="lbl" font-size="12">• Deep learning earns its cost only on images, text, audio, or very large raw-signal tables; on ordinary tables gradient boosting wins ~90% of the time.</text>
+</svg>
+<figcaption><strong>Figure 23.2 — The master "which model when" chart.</strong> Route by data type, then by size and interpretability. The first model is the one you can build and explain in a day; the second is the one that usually wins. On tabular data the answer is gradient boosting so often that any other choice needs a stated reason.</figcaption>
+</figure>
+
+<figure class="fig">
+<svg viewBox="0 0 800 400" role="img" aria-label="Which metric when flowchart: regression splits into RMSE for symmetric costs, MAE for robustness, MAPE or WAPE for relative business reporting, pinball loss for quantiles; classification splits by class balance and decision type into accuracy, ROC-AUC, PR-AUC, precision/recall at a threshold, log loss or Brier for calibrated probabilities, expected cost from a cost matrix; ranking to NDCG and precision@k">
+  <defs><marker id="arr-f23-3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+  <rect x="310" y="14" width="180" height="40" class="box-accent"/><text x="400" y="39" text-anchor="middle" class="lbl-strong">What is the output?</text>
+  <line x1="310" y1="34" x2="140" y2="34" class="arrow"/><line x1="140" y1="34" x2="140" y2="72" class="arrow" marker-end="url(#arr-f23-3)"/>
+  <line x1="400" y1="54" x2="400" y2="72" class="arrow" marker-end="url(#arr-f23-3)"/>
+  <line x1="490" y1="34" x2="670" y2="34" class="arrow"/><line x1="670" y1="34" x2="670" y2="72" class="arrow" marker-end="url(#arr-f23-3)"/>
+  <!-- regression -->
+  <rect x="50" y="74" width="180" height="36" class="box"/><text x="140" y="97" text-anchor="middle" class="lbl-strong">A number (regression)</text>
+  <g class="lbl" font-size="11">
+    <rect x="30" y="128" width="220" height="150" rx="6" fill="var(--s1)" fill-opacity=".12" stroke="var(--s1)"/>
+    <text x="40" y="146" class="lbl-strong" font-size="11">big errors hurt disproportionately →</text><text x="40" y="160">RMSE (also the default for tuning)</text>
+    <text x="40" y="180" class="lbl-strong" font-size="11">outliers in y, want typical error →</text><text x="40" y="194">MAE (median-like, robust)</text>
+    <text x="40" y="214" class="lbl-strong" font-size="11">stakeholders think in % →</text><text x="40" y="228">WAPE (not MAPE: divides by zero, biased)</text>
+    <text x="40" y="248" class="lbl-strong" font-size="11">need a range, not a point →</text><text x="40" y="262">pinball loss on quantiles; coverage of PI</text>
+  </g>
+  <!-- classification -->
+  <rect x="310" y="74" width="180" height="36" class="box"/><text x="400" y="97" text-anchor="middle" class="lbl-strong">A class (classification)</text>
+  <line x1="400" y1="110" x2="400" y2="126" class="arrow" marker-end="url(#arr-f23-3)"/>
+  <rect x="290" y="128" width="220" height="36" class="box-accent"/><text x="400" y="151" text-anchor="middle" class="lbl-strong" font-size="12">Is the positive class rare (&lt; 10%)?</text>
+  <line x1="290" y1="146" x2="270" y2="146" class="arrow"/><line x1="270" y1="146" x2="270" y2="184" class="arrow" marker-end="url(#arr-f23-3)"/>
+  <text x="266" y="170" text-anchor="end" class="lbl" font-size="10">no</text>
+  <line x1="510" y1="146" x2="530" y2="146" class="arrow"/><line x1="530" y1="146" x2="530" y2="184" class="arrow" marker-end="url(#arr-f23-3)"/>
+  <text x="536" y="170" class="lbl" font-size="10">yes</text>
+  <rect x="210" y="186" width="150" height="56" rx="6" fill="var(--s2)" fill-opacity=".12" stroke="var(--s2)"/>
+  <text x="285" y="204" text-anchor="middle" class="lbl-strong" font-size="11">balanced</text>
+  <text x="285" y="219" text-anchor="middle" class="lbl" font-size="11">ROC-AUC to compare models;</text>
+  <text x="285" y="233" text-anchor="middle" class="lbl" font-size="11">accuracy only with a baseline</text>
+  <rect x="440" y="186" width="150" height="56" rx="6" fill="var(--s2)" fill-opacity=".12" stroke="var(--s2)"/>
+  <text x="515" y="204" text-anchor="middle" class="lbl-strong" font-size="11">imbalanced</text>
+  <text x="515" y="219" text-anchor="middle" class="lbl" font-size="11">PR-AUC to compare models;</text>
+  <text x="515" y="233" text-anchor="middle" class="lbl" font-size="11">never accuracy (Ch 6, 13)</text>
+  <line x1="285" y1="242" x2="285" y2="262" class="arrow" marker-end="url(#arr-f23-3)"/><line x1="515" y1="242" x2="515" y2="262" class="arrow" marker-end="url(#arr-f23-3)"/>
+  <rect x="290" y="264" width="220" height="36" class="box-accent"/><text x="400" y="287" text-anchor="middle" class="lbl-strong" font-size="12">Then: what will the decision use?</text>
+  <line x1="285" y1="262" x2="285" y2="264"/><line x1="515" y1="262" x2="515" y2="264"/>
+  <g class="lbl" font-size="11">
+    <rect x="200" y="316" width="130" height="66" rx="6" fill="var(--s3)" fill-opacity=".12" stroke="var(--s3)"/>
+    <text x="265" y="334" text-anchor="middle" class="lbl-strong" font-size="11">a yes/no action</text>
+    <text x="265" y="349" text-anchor="middle">precision &amp; recall at</text>
+    <text x="265" y="363" text-anchor="middle">a cost-chosen threshold;</text>
+    <text x="265" y="377" text-anchor="middle">expected cost/profit</text>
+    <rect x="340" y="316" width="130" height="66" rx="6" fill="var(--s3)" fill-opacity=".12" stroke="var(--s3)"/>
+    <text x="405" y="334" text-anchor="middle" class="lbl-strong" font-size="11">a probability</text>
+    <text x="405" y="349" text-anchor="middle">log loss / Brier score</text>
+    <text x="405" y="363" text-anchor="middle">+ calibration curve;</text>
+    <text x="405" y="377" text-anchor="middle">calibrate if needed (Ch 13)</text>
+    <rect x="480" y="316" width="130" height="66" rx="6" fill="var(--s3)" fill-opacity=".12" stroke="var(--s3)"/>
+    <text x="545" y="334" text-anchor="middle" class="lbl-strong" font-size="11">a top-k list</text>
+    <text x="545" y="349" text-anchor="middle">precision@k, recall@k,</text>
+    <text x="545" y="363" text-anchor="middle">lift in the top decile;</text>
+    <text x="545" y="377" text-anchor="middle">NDCG if order matters</text>
+  </g>
+  <line x1="400" y1="300" x2="400" y2="314" class="arrow"/><line x1="265" y1="314" x2="545" y2="314" class="arrow"/>
+  <!-- ranking / other -->
+  <rect x="580" y="74" width="180" height="36" class="box"/><text x="670" y="97" text-anchor="middle" class="lbl-strong">An ordering / a set</text>
+  <g class="lbl" font-size="11">
+    <rect x="620" y="128" width="170" height="150" rx="6" fill="var(--s7)" fill-opacity=".12" stroke="var(--s7)"/>
+    <text x="630" y="146" class="lbl-strong" font-size="11">ranking / recommendation →</text><text x="630" y="160">NDCG@k, MAP, hit rate; then</text><text x="630" y="174">online CTR / conversion</text>
+    <text x="630" y="196" class="lbl-strong" font-size="11">clusters →</text><text x="630" y="210">silhouette as a hint; the real</text><text x="630" y="224">test is "do the segments act</text><text x="630" y="238">differently?"</text>
+    <text x="630" y="258" class="lbl-strong" font-size="11">forecast →</text><text x="630" y="272">WAPE / MASE vs seasonal naive</text>
+  </g>
+</svg>
+<figcaption><strong>Figure 23.3 — The "which metric when" chart.</strong> The comparison metric (to choose between models) and the decision metric (to set a threshold and report to the business) are different things; you need both. For rare positives, PR-AUC compares and expected profit decides.</figcaption>
+</figure>
+
+<div class="callout key"><div class="title">Key idea</div>
+<p>Two metrics per project, never one: a <strong>ranking metric</strong> that is threshold-free (ROC-AUC, PR-AUC, RMSE) to compare models during iteration, and a <strong>decision metric</strong> (profit at the chosen threshold, cost-weighted error, precision at the review budget) to choose the operating point and to talk to the business. Tuning on the decision metric alone is noisy; reporting only the ranking metric is meaningless to everyone outside the team.</p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s4">4. The worked project: customer churn in eight blocks</h2>
+
+<p>Everything above becomes concrete here. We build the churn project from the canvas in Section 1 on a synthetic dataset with named features, a couple of categorical and date columns, realistic missing values, and one deliberately leaky column. Every block is self-contained (re-reads the data, re-does the split with the same seed) so you can run any one of them alone; together they run in about a minute. The pattern (<code>ColumnTransformer</code> + <code>Pipeline</code> + cross-validation + one test-set look) is the pattern you will reuse for every tabular project.</p>
+
+<h3>Block 1 — Build the dataset and look at it</h3>
+<p>In real life this block is a SQL query and a week of profiling (Chapter 2). Here we generate 5,000 customers whose churn depends on six informative signals, then add a plan derived from charges, a region, two dates, some missing NPS scores, and the trap: <code>cancellation_reason</code>, which is only ever filled in <em>after</em> a customer has churned.</p>
+
+<pre class="code" data-lang="python"><code><span class="cm"># Block 1 — build the synthetic churn dataset once, save it, and do a first EDA pass</span>
+<span class="kw">import</span> numpy <span class="kw">as</span> np, pandas <span class="kw">as</span> pd
+<span class="kw">from</span> sklearn.datasets <span class="kw">import</span> make_classification
+
+X, y = <span class="fn">make_classification</span>(n_samples=<span class="nu">5000</span>, n_features=<span class="nu">10</span>, n_informative=<span class="nu">6</span>, n_redundant=<span class="nu">2</span>,
+                           weights=[<span class="nu">0.8</span>, <span class="nu">0.2</span>], flip_y=<span class="nu">0.03</span>, class_sep=<span class="nu">0.9</span>, random_state=<span class="nu">42</span>)
+num_cols = [<span class="st">&quot;tenure_months&quot;</span>, <span class="st">&quot;monthly_charges&quot;</span>, <span class="st">&quot;support_tickets&quot;</span>, <span class="st">&quot;logins_30d&quot;</span>, <span class="st">&quot;avg_session_min&quot;</span>,
+            <span class="st">&quot;late_payments&quot;</span>, <span class="st">&quot;discount_pct&quot;</span>, <span class="st">&quot;products_held&quot;</span>, <span class="st">&quot;nps_score&quot;</span>, <span class="st">&quot;days_since_contact&quot;</span>]
+df = pd.DataFrame(X, columns=num_cols)
+rng = np.random.<span class="fn">default_rng</span>(<span class="nu">42</span>)
+<span class="cm"># engineered categoricals / dates, some correlated with the target so they matter</span>
+df[<span class="st">&quot;plan&quot;</span>] = np.<span class="fn">where</span>(df[<span class="st">&quot;monthly_charges&quot;</span>] &gt; <span class="nu">0.5</span>, <span class="st">&quot;premium&quot;</span>, np.<span class="fn">where</span>(df[<span class="st">&quot;monthly_charges&quot;</span>] &gt; -<span class="nu">0.5</span>, <span class="st">&quot;standard&quot;</span>, <span class="st">&quot;basic&quot;</span>))
+df[<span class="st">&quot;region&quot;</span>] = rng.<span class="fn">choice</span>([<span class="st">&quot;north&quot;</span>, <span class="st">&quot;south&quot;</span>, <span class="st">&quot;east&quot;</span>, <span class="st">&quot;west&quot;</span>], size=<span class="fn">len</span>(df))
+df[<span class="st">&quot;signup_date&quot;</span>] = pd.Timestamp(<span class="st">&quot;2022-01-01&quot;</span>) + pd.<span class="fn">to_timedelta</span>(rng.<span class="fn">integers</span>(<span class="nu">0</span>, <span class="nu">900</span>, <span class="fn">len</span>(df)), unit=<span class="st">&quot;D&quot;</span>)
+df[<span class="st">&quot;last_login&quot;</span>] = df[<span class="st">&quot;signup_date&quot;</span>] + pd.<span class="fn">to_timedelta</span>(rng.<span class="fn">integers</span>(<span class="nu">30</span>, <span class="nu">900</span>, <span class="fn">len</span>(df)), unit=<span class="st">&quot;D&quot;</span>)
+df[<span class="st">&quot;churned&quot;</span>] = y
+<span class="cm"># a leaky column that would not exist at prediction time</span>
+df[<span class="st">&quot;cancellation_reason&quot;</span>] = np.<span class="fn">where</span>(df[<span class="st">&quot;churned&quot;</span>] == <span class="nu">1</span>, rng.<span class="fn">choice</span>([<span class="st">&quot;price&quot;</span>, <span class="st">&quot;service&quot;</span>, <span class="st">&quot;moved&quot;</span>], <span class="fn">len</span>(df)), <span class="st">&quot;n/a&quot;</span>)
+df.loc[rng.<span class="fn">random</span>(<span class="fn">len</span>(df)) &lt; <span class="nu">0.05</span>, <span class="st">&quot;nps_score&quot;</span>] = np.nan   <span class="cm"># some missing values, as in real life</span>
+df.<span class="fn">to_csv</span>(<span class="st">&quot;churn.csv&quot;</span>, index=<span class="kw">False</span>)
+
+<span class="fn">print</span>(df.shape)
+<span class="fn">print</span>(df[<span class="st">&quot;churned&quot;</span>].<span class="fn">value_counts</span>(normalize=<span class="kw">True</span>).<span class="fn">round</span>(<span class="nu">3</span>).<span class="fn">to_dict</span>())
+<span class="fn">print</span>(df.<span class="fn">isna</span>().<span class="fn">sum</span>()[df.<span class="fn">isna</span>().<span class="fn">sum</span>() &gt; <span class="nu">0</span>].<span class="fn">to_dict</span>())
+<span class="fn">print</span>(df.<span class="fn">groupby</span>(<span class="st">&quot;plan&quot;</span>)[<span class="st">&quot;churned&quot;</span>].<span class="fn">mean</span>().<span class="fn">round</span>(<span class="nu">3</span>).<span class="fn">to_dict</span>())
+<span class="out"># (5000, 16)</span>
+<span class="out"># {0: 0.791, 1: 0.209}</span>
+<span class="out"># {&#x27;nps_score&#x27;: 225}</span>
+<span class="out"># {&#x27;basic&#x27;: 0.435, &#x27;premium&#x27;: 0.124, &#x27;standard&#x27;: 0.212}</span></code></pre>
+
+<p>Three facts to record in the data report: 21% positive rate (imbalanced but not extreme, so stratified splits and PR-AUC), 4.5% missing NPS (impute inside the pipeline, never before the split), and churn varies strongly by plan (basic 44%, premium 12%), a categorical feature that clearly belongs in the model.</p>
+
+<h3>Block 2 — Hunt for leakage</h3>
+<p>The cheapest leakage detector: fit a tiny model on <em>each column alone</em> and rank by cross-validated AUC. Anything that predicts the target almost perfectly by itself either is the target in disguise or is recorded after the fact.</p>
+
+<pre class="code" data-lang="python"><code><span class="cm"># Block 2 — leakage check: any single column that predicts the target &quot;too well&quot; is suspicious</span>
+<span class="kw">import</span> pandas <span class="kw">as</span> pd
+<span class="kw">from</span> sklearn.model_selection <span class="kw">import</span> cross_val_score
+<span class="kw">from</span> sklearn.tree <span class="kw">import</span> DecisionTreeClassifier
+<span class="kw">from</span> sklearn.preprocessing <span class="kw">import</span> OrdinalEncoder
+
+df = pd.<span class="fn">read_csv</span>(<span class="st">&quot;churn.csv&quot;</span>, parse_dates=[<span class="st">&quot;signup_date&quot;</span>, <span class="st">&quot;last_login&quot;</span>])
+y = df[<span class="st">&quot;churned&quot;</span>]
+scores = {}
+<span class="kw">for</span> col <span class="kw">in</span> df.columns.<span class="fn">drop</span>(<span class="st">&quot;churned&quot;</span>):
+    x = df[[col]]
+    <span class="kw">if</span> pd.api.types.<span class="fn">is_datetime64_any_dtype</span>(x[col]):
+        x = (x[col].<span class="fn">astype</span>(<span class="st">&quot;int64&quot;</span>) // <span class="nu">10</span>**<span class="nu">9</span>).<span class="fn">to_frame</span>()        <span class="cm"># seconds since epoch</span>
+    <span class="kw">elif</span> <span class="kw">not</span> pd.api.types.<span class="fn">is_numeric_dtype</span>(x[col]):
+        x = pd.DataFrame(OrdinalEncoder().<span class="fn">fit_transform</span>(x))
+    x = x.<span class="fn">fillna</span>(-<span class="nu">999</span>)
+    scores[col] = <span class="fn">cross_val_score</span>(DecisionTreeClassifier(max_depth=<span class="nu">3</span>, random_state=<span class="nu">0</span>), x, y, cv=<span class="nu">5</span>, scoring=<span class="st">&quot;roc_auc&quot;</span>).<span class="fn">mean</span>()
+ranked = pd.Series(scores).<span class="fn">sort_values</span>(ascending=<span class="kw">False</span>)
+<span class="fn">print</span>(ranked.<span class="fn">round</span>(<span class="nu">3</span>).<span class="fn">head</span>(<span class="nu">6</span>))
+<span class="fn">print</span>(<span class="st">&quot;SUSPICIOUS (AUC &gt; 0.95):&quot;</span>, <span class="fn">list</span>(ranked[ranked &gt; <span class="nu">0.95</span>].index))
+<span class="out"># cancellation_reason    1.000</span>
+<span class="out"># late_payments          0.781</span>
+<span class="out"># monthly_charges        0.705</span>
+<span class="out"># products_held          0.683</span>
+<span class="out"># plan                   0.682</span>
+<span class="out"># nps_score              0.643</span>
+<span class="out"># dtype: float64</span>
+<span class="out"># SUSPICIOUS (AUC &gt; 0.95): [&#x27;cancellation_reason&#x27;]</span></code></pre>
+
+<p><code>cancellation_reason</code> scores a perfect 1.000: it is the label wearing a hat. It would have produced a spectacular model that is useless at prediction time, because on the scoring date no live customer has a cancellation reason yet. The next columns (late payments, charges) score 0.70–0.78, which is what a genuine strong signal looks like. Drop the leak and write down why in the log.</p>
+
+<div class="callout warn"><div class="title">Common mistake</div>
+<p>Leakage that is not a single column: a feature computed over a window that extends past the scoring date (logins in the "last 30 days" measured from today rather than from the scoring date), a row duplicated across train and test (the same customer in several months), or a target encoding fitted on the full data. The single-column check catches the first family only; for the rest, the discipline is "every feature is computed as of the scoring timestamp" and "split by customer, not by row" (Chapter 8).</p>
+</div>
+
+<h3>Block 3 — Split once, and beat the dummies</h3>
+<p>Stratified 80/20 split with a fixed seed; the test set is now sealed until Block 7. Two baselines: the prior (predict the base rate for everyone) and a logistic regression on the numeric columns with median imputation and scaling in a pipeline.</p>
+
+<pre class="code" data-lang="python"><code><span class="cm"># Block 3 — drop the leak, split once (stratified), and fit two baselines</span>
+<span class="kw">import</span> pandas <span class="kw">as</span> pd
+<span class="kw">from</span> sklearn.model_selection <span class="kw">import</span> train_test_split
+<span class="kw">from</span> sklearn.dummy <span class="kw">import</span> DummyClassifier
+<span class="kw">from</span> sklearn.pipeline <span class="kw">import</span> make_pipeline
+<span class="kw">from</span> sklearn.preprocessing <span class="kw">import</span> StandardScaler
+<span class="kw">from</span> sklearn.impute <span class="kw">import</span> SimpleImputer
+<span class="kw">from</span> sklearn.linear_model <span class="kw">import</span> LogisticRegression
+<span class="kw">from</span> sklearn.metrics <span class="kw">import</span> roc_auc_score, average_precision_score
+
+df = pd.<span class="fn">read_csv</span>(<span class="st">&quot;churn.csv&quot;</span>).<span class="fn">drop</span>(columns=[<span class="st">&quot;cancellation_reason&quot;</span>])   <span class="cm"># the leak goes first</span>
+num = [<span class="st">&quot;tenure_months&quot;</span>, <span class="st">&quot;monthly_charges&quot;</span>, <span class="st">&quot;support_tickets&quot;</span>, <span class="st">&quot;logins_30d&quot;</span>, <span class="st">&quot;avg_session_min&quot;</span>,
+       <span class="st">&quot;late_payments&quot;</span>, <span class="st">&quot;discount_pct&quot;</span>, <span class="st">&quot;products_held&quot;</span>, <span class="st">&quot;nps_score&quot;</span>, <span class="st">&quot;days_since_contact&quot;</span>]
+X, y = df.<span class="fn">drop</span>(columns=[<span class="st">&quot;churned&quot;</span>]), df[<span class="st">&quot;churned&quot;</span>]
+X_tr, X_te, y_tr, y_te = <span class="fn">train_test_split</span>(X, y, test_size=<span class="nu">0.2</span>, stratify=y, random_state=<span class="nu">42</span>)
+<span class="fn">print</span>(<span class="st">&quot;train&quot;</span>, X_tr.shape, <span class="st">&quot;test&quot;</span>, X_te.shape, <span class="st">&quot;churn rate&quot;</span>, <span class="fn">round</span>(y_tr.<span class="fn">mean</span>(), <span class="nu">3</span>), <span class="fn">round</span>(y_te.<span class="fn">mean</span>(), <span class="nu">3</span>))
+
+dummy = DummyClassifier(strategy=<span class="st">&quot;prior&quot;</span>).<span class="fn">fit</span>(X_tr[num], y_tr)
+logreg = <span class="fn">make_pipeline</span>(SimpleImputer(strategy=<span class="st">&quot;median&quot;</span>), StandardScaler(), LogisticRegression(max_iter=<span class="nu">1000</span>)).<span class="fn">fit</span>(X_tr[num], y_tr)
+<span class="kw">for</span> name, m <span class="kw">in</span> [(<span class="st">&quot;dummy (prior)&quot;</span>, dummy), (<span class="st">&quot;logistic (numeric only)&quot;</span>, logreg)]:
+    p = m.<span class="fn">predict_proba</span>(X_te[num])[:, <span class="nu">1</span>]
+    <span class="fn">print</span>(<span class="st">f&quot;{name:&lt;24} AUC={roc_auc_score(y_te, p):.3f}  PR-AUC={average_precision_score(y_te, p):.3f}&quot;</span>)
+<span class="out"># train (4000, 14) test (1000, 14) churn rate 0.209 0.209</span>
+<span class="out"># dummy (prior)            AUC=0.500  PR-AUC=0.209</span>
+<span class="out"># logistic (numeric only)  AUC=0.775  PR-AUC=0.485</span></code></pre>
+
+<p>The dummy's PR-AUC equals the positive rate (0.209), which is the number every later PR-AUC must be compared against. The plain logistic model reaches 0.485, so the signal is real and the kill gate is passed. From here on, every model is reported as lift over these two lines.</p>
+
+<h3>Block 4 — Feature engineering in a ColumnTransformer, then compare three models</h3>
+<p>Numeric columns: impute and scale. Categoricals: one-hot with <code>handle_unknown="ignore"</code> so a new region does not crash production. Dates: a <code>FunctionTransformer</code> that turns two timestamps into account age and signup month. All of it lives inside the pipeline, so cross-validation fits the imputer and the encoder on each training fold only. Then the three candidates from Figure 23.2 by 5-fold stratified CV on the training set.</p>
+
+<pre class="code" data-lang="python"><code><span class="cm"># Block 4 — feature engineering inside a ColumnTransformer, then compare three models by cross-validation</span>
+<span class="kw">import</span> numpy <span class="kw">as</span> np, pandas <span class="kw">as</span> pd
+<span class="kw">from</span> sklearn.model_selection <span class="kw">import</span> train_test_split, StratifiedKFold, cross_validate
+<span class="kw">from</span> sklearn.compose <span class="kw">import</span> ColumnTransformer
+<span class="kw">from</span> sklearn.pipeline <span class="kw">import</span> Pipeline
+<span class="kw">from</span> sklearn.preprocessing <span class="kw">import</span> StandardScaler, OneHotEncoder, FunctionTransformer
+<span class="kw">from</span> sklearn.impute <span class="kw">import</span> SimpleImputer
+<span class="kw">from</span> sklearn.linear_model <span class="kw">import</span> LogisticRegression
+<span class="kw">from</span> sklearn.ensemble <span class="kw">import</span> RandomForestClassifier, GradientBoostingClassifier
+
+df = pd.<span class="fn">read_csv</span>(<span class="st">&quot;churn.csv&quot;</span>).<span class="fn">drop</span>(columns=[<span class="st">&quot;cancellation_reason&quot;</span>])
+num = [<span class="st">&quot;tenure_months&quot;</span>, <span class="st">&quot;monthly_charges&quot;</span>, <span class="st">&quot;support_tickets&quot;</span>, <span class="st">&quot;logins_30d&quot;</span>, <span class="st">&quot;avg_session_min&quot;</span>,
+       <span class="st">&quot;late_payments&quot;</span>, <span class="st">&quot;discount_pct&quot;</span>, <span class="st">&quot;products_held&quot;</span>, <span class="st">&quot;nps_score&quot;</span>, <span class="st">&quot;days_since_contact&quot;</span>]
+cat = [<span class="st">&quot;plan&quot;</span>, <span class="st">&quot;region&quot;</span>]
+
+<span class="kw">def</span> <span class="fn">date_features</span>(d):                       <span class="cm"># dates → numbers the model can use</span>
+    d = d.<span class="fn">apply</span>(pd.to_datetime)
+    <span class="kw">return</span> pd.DataFrame({<span class="st">&quot;account_age_days&quot;</span>: (d[<span class="st">&quot;last_login&quot;</span>] - d[<span class="st">&quot;signup_date&quot;</span>]).dt.days,
+                         <span class="st">&quot;signup_month&quot;</span>: d[<span class="st">&quot;signup_date&quot;</span>].dt.month})
+<span class="kw">def</span> <span class="fn">date_feature_names</span>(transformer, input_cols):   <span class="cm"># a named function: lambdas cannot be pickled later</span>
+    <span class="kw">return</span> [<span class="st">&quot;account_age_days&quot;</span>, <span class="st">&quot;signup_month&quot;</span>]
+
+prep = ColumnTransformer([
+    (<span class="st">&quot;num&quot;</span>,  Pipeline([(<span class="st">&quot;imp&quot;</span>, SimpleImputer(strategy=<span class="st">&quot;median&quot;</span>)), (<span class="st">&quot;sc&quot;</span>, StandardScaler())]), num),
+    (<span class="st">&quot;cat&quot;</span>,  OneHotEncoder(handle_unknown=<span class="st">&quot;ignore&quot;</span>), cat),
+    (<span class="st">&quot;date&quot;</span>, Pipeline([(<span class="st">&quot;fx&quot;</span>, FunctionTransformer(date_features, feature_names_out=date_feature_names)), (<span class="st">&quot;sc&quot;</span>, StandardScaler())]), [<span class="st">&quot;signup_date&quot;</span>, <span class="st">&quot;last_login&quot;</span>]),
+])
+X, y = df.<span class="fn">drop</span>(columns=[<span class="st">&quot;churned&quot;</span>]), df[<span class="st">&quot;churned&quot;</span>]
+X_tr, X_te, y_tr, y_te = <span class="fn">train_test_split</span>(X, y, test_size=<span class="nu">0.2</span>, stratify=y, random_state=<span class="nu">42</span>)
+
+models = {
+    <span class="st">&quot;logreg&quot;</span>: LogisticRegression(max_iter=<span class="nu">1000</span>),
+    <span class="st">&quot;rf&quot;</span>:     RandomForestClassifier(n_estimators=<span class="nu">100</span>, min_samples_leaf=<span class="nu">5</span>, random_state=<span class="nu">0</span>, n_jobs=<span class="nu">1</span>),
+    <span class="st">&quot;gbm&quot;</span>:    GradientBoostingClassifier(n_estimators=<span class="nu">100</span>, max_depth=<span class="nu">3</span>, random_state=<span class="nu">0</span>),
+}
+cv = StratifiedKFold(<span class="nu">5</span>, shuffle=<span class="kw">True</span>, random_state=<span class="nu">0</span>)
+<span class="fn">print</span>(<span class="st">f&quot;{&#x27;model&#x27;:&lt;8}{&#x27;ROC-AUC&#x27;:&gt;14}{&#x27;PR-AUC&#x27;:&gt;14}{&#x27;fit s&#x27;:&gt;8}&quot;</span>)
+<span class="kw">for</span> name, m <span class="kw">in</span> models.<span class="fn">items</span>():
+    r = <span class="fn">cross_validate</span>(Pipeline([(<span class="st">&quot;prep&quot;</span>, prep), (<span class="st">&quot;model&quot;</span>, m)]), X_tr, y_tr, cv=cv,
+                       scoring=[<span class="st">&quot;roc_auc&quot;</span>, <span class="st">&quot;average_precision&quot;</span>])
+    <span class="fn">print</span>(<span class="st">f&quot;{name:&lt;8}{r[&#x27;test_roc_auc&#x27;].mean():&gt;8.3f} ±{r[&#x27;test_roc_auc&#x27;].std():.3f}&quot;</span>
+          <span class="st">f&quot;{r[&#x27;test_average_precision&#x27;].mean():&gt;8.3f} ±{r[&#x27;test_average_precision&#x27;].std():.3f}{r[&#x27;fit_time&#x27;].mean():&gt;8.1f}&quot;</span>)
+<span class="out"># model          ROC-AUC        PR-AUC   fit s</span>
+<span class="out"># logreg     0.812 ±0.020   0.515 ±0.030     0.0</span>
+<span class="out"># rf         0.907 ±0.015   0.789 ±0.027     0.5</span>
+<span class="out"># gbm        0.912 ±0.019   0.794 ±0.043     1.0</span></code></pre>
+
+<p>The engineered categoricals and dates lift logistic regression from 0.485 to 0.515 PR-AUC; the tree ensembles jump to about 0.79. That gap (0.28 of PR-AUC) says the signal is non-linear and interactive, which is typical of behavioural data. RF and GBM tie within noise (the ± is the fold standard deviation; with five folds, differences under one standard deviation are not real). We pick the GBM because it is faster to score and tunes better, and we would say exactly that in the log.</p>
+
+<div class="callout pro"><div class="title">At work</div>
+<p>We use scikit-learn's classic <code>GradientBoostingClassifier</code> here because it runs identically on every machine; on a table above ~50k rows switch to <code>HistGradientBoostingClassifier</code> or LightGBM (Chapter 10), which are 10–100× faster and support categorical features natively. The pipeline code around them does not change, which is the whole point of the pipeline pattern.</p>
+</div>
+
+<h3>Block 5 — Tune the winner with a small random search</h3>
+<p>Random search, 6 configurations, 3 folds, scored on PR-AUC: 18 fits, about 20 seconds. This is deliberately modest. Tuning usually buys a few points; feature work usually buys more; and a huge search on a small dataset finds noise (Chapter 13). Note that the search space includes <code>subsample</code>, which regularizes, and that <code>n_jobs</code> is explicit so the run is reproducible on a shared machine.</p>
+
+<pre class="code" data-lang="python"><code><span class="cm"># Block 5 — tune the winner with RandomizedSearchCV (small budget, 3 folds, PR-AUC as the objective)</span>
+<span class="kw">import</span> numpy <span class="kw">as</span> np, pandas <span class="kw">as</span> pd
+<span class="kw">from</span> scipy.stats <span class="kw">import</span> randint, uniform
+<span class="kw">from</span> sklearn.model_selection <span class="kw">import</span> train_test_split, StratifiedKFold, RandomizedSearchCV
+<span class="kw">from</span> sklearn.compose <span class="kw">import</span> ColumnTransformer
+<span class="kw">from</span> sklearn.pipeline <span class="kw">import</span> Pipeline
+<span class="kw">from</span> sklearn.preprocessing <span class="kw">import</span> StandardScaler, OneHotEncoder, FunctionTransformer
+<span class="kw">from</span> sklearn.impute <span class="kw">import</span> SimpleImputer
+<span class="kw">from</span> sklearn.ensemble <span class="kw">import</span> GradientBoostingClassifier
+
+df = pd.<span class="fn">read_csv</span>(<span class="st">&quot;churn.csv&quot;</span>).<span class="fn">drop</span>(columns=[<span class="st">&quot;cancellation_reason&quot;</span>])
+num = [<span class="st">&quot;tenure_months&quot;</span>, <span class="st">&quot;monthly_charges&quot;</span>, <span class="st">&quot;support_tickets&quot;</span>, <span class="st">&quot;logins_30d&quot;</span>, <span class="st">&quot;avg_session_min&quot;</span>,
+       <span class="st">&quot;late_payments&quot;</span>, <span class="st">&quot;discount_pct&quot;</span>, <span class="st">&quot;products_held&quot;</span>, <span class="st">&quot;nps_score&quot;</span>, <span class="st">&quot;days_since_contact&quot;</span>]
+cat = [<span class="st">&quot;plan&quot;</span>, <span class="st">&quot;region&quot;</span>]
+<span class="kw">def</span> <span class="fn">date_features</span>(d):
+    d = d.<span class="fn">apply</span>(pd.to_datetime)
+    <span class="kw">return</span> pd.DataFrame({<span class="st">&quot;account_age_days&quot;</span>: (d[<span class="st">&quot;last_login&quot;</span>] - d[<span class="st">&quot;signup_date&quot;</span>]).dt.days,
+                         <span class="st">&quot;signup_month&quot;</span>: d[<span class="st">&quot;signup_date&quot;</span>].dt.month})
+<span class="kw">def</span> <span class="fn">date_feature_names</span>(transformer, input_cols):   <span class="cm"># a named function: lambdas cannot be pickled later</span>
+    <span class="kw">return</span> [<span class="st">&quot;account_age_days&quot;</span>, <span class="st">&quot;signup_month&quot;</span>]
+prep = ColumnTransformer([
+    (<span class="st">&quot;num&quot;</span>,  Pipeline([(<span class="st">&quot;imp&quot;</span>, SimpleImputer(strategy=<span class="st">&quot;median&quot;</span>)), (<span class="st">&quot;sc&quot;</span>, StandardScaler())]), num),
+    (<span class="st">&quot;cat&quot;</span>,  OneHotEncoder(handle_unknown=<span class="st">&quot;ignore&quot;</span>), cat),
+    (<span class="st">&quot;date&quot;</span>, Pipeline([(<span class="st">&quot;fx&quot;</span>, FunctionTransformer(date_features, feature_names_out=date_feature_names)), (<span class="st">&quot;sc&quot;</span>, StandardScaler())]), [<span class="st">&quot;signup_date&quot;</span>, <span class="st">&quot;last_login&quot;</span>]),
+])
+X, y = df.<span class="fn">drop</span>(columns=[<span class="st">&quot;churned&quot;</span>]), df[<span class="st">&quot;churned&quot;</span>]
+X_tr, X_te, y_tr, y_te = <span class="fn">train_test_split</span>(X, y, test_size=<span class="nu">0.2</span>, stratify=y, random_state=<span class="nu">42</span>)
+
+pipe = Pipeline([(<span class="st">&quot;prep&quot;</span>, prep), (<span class="st">&quot;model&quot;</span>, GradientBoostingClassifier(random_state=<span class="nu">0</span>))])
+space = {<span class="st">&quot;model__n_estimators&quot;</span>: <span class="fn">randint</span>(<span class="nu">60</span>, <span class="nu">200</span>), <span class="st">&quot;model__max_depth&quot;</span>: <span class="fn">randint</span>(<span class="nu">2</span>, <span class="nu">5</span>),
+         <span class="st">&quot;model__learning_rate&quot;</span>: <span class="fn">uniform</span>(<span class="nu">0.03</span>, <span class="nu">0.15</span>), <span class="st">&quot;model__subsample&quot;</span>: <span class="fn">uniform</span>(<span class="nu">0.6</span>, <span class="nu">0.4</span>)}
+search = RandomizedSearchCV(pipe, space, n_iter=<span class="nu">6</span>, cv=StratifiedKFold(<span class="nu">3</span>, shuffle=<span class="kw">True</span>, random_state=<span class="nu">0</span>),
+                            scoring=<span class="st">&quot;average_precision&quot;</span>, random_state=<span class="nu">0</span>, n_jobs=<span class="nu">1</span>).<span class="fn">fit</span>(X_tr, y_tr)
+<span class="fn">print</span>(<span class="st">&quot;best PR-AUC (cv):&quot;</span>, <span class="fn">round</span>(search.best_score_, <span class="nu">3</span>))
+<span class="fn">print</span>(<span class="st">&quot;best params:&quot;</span>, {k.<span class="fn">replace</span>(<span class="st">&quot;model__&quot;</span>, <span class="st">&quot;&quot;</span>): <span class="fn">round</span>(<span class="fn">float</span>(v), <span class="nu">3</span>) <span class="kw">for</span> k, v <span class="kw">in</span> search.best_params_.<span class="fn">items</span>()})
+<span class="out"># best PR-AUC (cv): 0.811</span>
+<span class="out"># best params: {&#x27;learning_rate&#x27;: 0.152, &#x27;max_depth&#x27;: 4.0, &#x27;n_estimators&#x27;: 148.0, &#x27;subsample&#x27;: 0.757}</span></code></pre>
+
+<p>Tuning lifts CV PR-AUC from 0.794 to 0.811, about two points, with a modest tree depth and a slightly aggressive learning rate. Write those parameters into the code as a named constant (next block) rather than re-running the search: the frozen model should be reproducible from the file alone.</p>
+
+<h3>Block 6 — Choose the threshold with the cost matrix, on out-of-fold predictions</h3>
+<p>A probability is not a decision. The retention team needs a list, and the length of the list is set by economics: an offer costs $20; a saved churner is worth $150; historically, an offer saves about 40% of the churners it reaches. That gives a profit for every threshold. We compute it on <strong>out-of-fold</strong> predictions from the training set (<code>cross_val_predict</code>) so the test set stays sealed and the probabilities are honest.</p>
+
+<pre class="code" data-lang="python"><code><span class="cm"># Block 6 — pick the decision threshold with a cost matrix, using out-of-fold probabilities (never the test set)</span>
+<span class="kw">import</span> numpy <span class="kw">as</span> np, pandas <span class="kw">as</span> pd
+<span class="kw">from</span> sklearn.model_selection <span class="kw">import</span> train_test_split, StratifiedKFold, cross_val_predict
+<span class="kw">from</span> sklearn.compose <span class="kw">import</span> ColumnTransformer
+<span class="kw">from</span> sklearn.pipeline <span class="kw">import</span> Pipeline
+<span class="kw">from</span> sklearn.preprocessing <span class="kw">import</span> StandardScaler, OneHotEncoder, FunctionTransformer
+<span class="kw">from</span> sklearn.impute <span class="kw">import</span> SimpleImputer
+<span class="kw">from</span> sklearn.ensemble <span class="kw">import</span> GradientBoostingClassifier
+
+df = pd.<span class="fn">read_csv</span>(<span class="st">&quot;churn.csv&quot;</span>).<span class="fn">drop</span>(columns=[<span class="st">&quot;cancellation_reason&quot;</span>])
+num = [<span class="st">&quot;tenure_months&quot;</span>, <span class="st">&quot;monthly_charges&quot;</span>, <span class="st">&quot;support_tickets&quot;</span>, <span class="st">&quot;logins_30d&quot;</span>, <span class="st">&quot;avg_session_min&quot;</span>,
+       <span class="st">&quot;late_payments&quot;</span>, <span class="st">&quot;discount_pct&quot;</span>, <span class="st">&quot;products_held&quot;</span>, <span class="st">&quot;nps_score&quot;</span>, <span class="st">&quot;days_since_contact&quot;</span>]
+cat = [<span class="st">&quot;plan&quot;</span>, <span class="st">&quot;region&quot;</span>]
+<span class="kw">def</span> <span class="fn">date_features</span>(d):
+    d = d.<span class="fn">apply</span>(pd.to_datetime)
+    <span class="kw">return</span> pd.DataFrame({<span class="st">&quot;account_age_days&quot;</span>: (d[<span class="st">&quot;last_login&quot;</span>] - d[<span class="st">&quot;signup_date&quot;</span>]).dt.days,
+                         <span class="st">&quot;signup_month&quot;</span>: d[<span class="st">&quot;signup_date&quot;</span>].dt.month})
+<span class="kw">def</span> <span class="fn">date_feature_names</span>(transformer, input_cols):   <span class="cm"># a named function: lambdas cannot be pickled later</span>
+    <span class="kw">return</span> [<span class="st">&quot;account_age_days&quot;</span>, <span class="st">&quot;signup_month&quot;</span>]
+prep = ColumnTransformer([
+    (<span class="st">&quot;num&quot;</span>,  Pipeline([(<span class="st">&quot;imp&quot;</span>, SimpleImputer(strategy=<span class="st">&quot;median&quot;</span>)), (<span class="st">&quot;sc&quot;</span>, StandardScaler())]), num),
+    (<span class="st">&quot;cat&quot;</span>,  OneHotEncoder(handle_unknown=<span class="st">&quot;ignore&quot;</span>), cat),
+    (<span class="st">&quot;date&quot;</span>, Pipeline([(<span class="st">&quot;fx&quot;</span>, FunctionTransformer(date_features, feature_names_out=date_feature_names)), (<span class="st">&quot;sc&quot;</span>, StandardScaler())]), [<span class="st">&quot;signup_date&quot;</span>, <span class="st">&quot;last_login&quot;</span>]),
+])
+X, y = df.<span class="fn">drop</span>(columns=[<span class="st">&quot;churned&quot;</span>]), df[<span class="st">&quot;churned&quot;</span>]
+X_tr, X_te, y_tr, y_te = <span class="fn">train_test_split</span>(X, y, test_size=<span class="nu">0.2</span>, stratify=y, random_state=<span class="nu">42</span>)
+BEST = <span class="fn">dict</span>(n_estimators=<span class="nu">148</span>, max_depth=<span class="nu">4</span>, learning_rate=<span class="nu">0.152</span>, subsample=<span class="nu">0.757</span>)   <span class="cm"># from Block 5</span>
+pipe = Pipeline([(<span class="st">&quot;prep&quot;</span>, prep), (<span class="st">&quot;model&quot;</span>, GradientBoostingClassifier(random_state=<span class="nu">0</span>, **BEST))])
+
+p_oof = <span class="fn">cross_val_predict</span>(pipe, X_tr, y_tr, cv=StratifiedKFold(<span class="nu">5</span>, shuffle=<span class="kw">True</span>, random_state=<span class="nu">0</span>), method=<span class="st">&quot;predict_proba&quot;</span>)[:, <span class="nu">1</span>]
+
+<span class="cm"># business numbers: an offer costs $20; a saved churner is worth $150; the offer saves 40% of true churners</span>
+COST_OFFER, VALUE_SAVED, SAVE_RATE = <span class="nu">20</span>, <span class="nu">150</span>, <span class="nu">0.40</span>
+<span class="kw">def</span> <span class="fn">profit</span>(threshold):
+    flagged = p_oof &gt;= threshold
+    tp = (flagged &amp; (y_tr == <span class="nu">1</span>)).<span class="fn">sum</span>()
+    <span class="kw">return</span> SAVE_RATE * tp * VALUE_SAVED - flagged.<span class="fn">sum</span>() * COST_OFFER
+
+grid = np.<span class="fn">arange</span>(<span class="nu">0.05</span>, <span class="nu">0.95</span>, <span class="nu">0.05</span>)
+prof = np.<span class="fn">array</span>([<span class="fn">profit</span>(t) <span class="kw">for</span> t <span class="kw">in</span> grid])
+best_t = grid[prof.<span class="fn">argmax</span>()]
+<span class="fn">print</span>(<span class="st">f&quot;{&#x27;thr&#x27;:&gt;5}{&#x27;flagged&#x27;:&gt;9}{&#x27;profit $&#x27;:&gt;10}&quot;</span>)
+<span class="kw">for</span> t, pr <span class="kw">in</span> <span class="fn">zip</span>(grid[<span class="nu">1</span>::<span class="nu">3</span>], prof[<span class="nu">1</span>::<span class="nu">3</span>]):
+    <span class="fn">print</span>(<span class="st">f&quot;{t:&gt;5.2f}{(p_oof &gt;= t).sum():&gt;9}{pr:&gt;10.0f}&quot;</span>)
+<span class="fn">print</span>(<span class="st">f&quot;best threshold = {best_t:.2f}  (profit ${prof.max():.0f} per {len(y_tr)} customers)&quot;</span>)
+<span class="fn">print</span>(<span class="st">f&quot;contact everyone: ${profit(0.0):.0f}   contact no one: $0&quot;</span>)
+<span class="out">#   thr  flagged  profit $</span>
+<span class="out">#  0.10     1377     16620</span>
+<span class="out">#  0.25      920     20600</span>
+<span class="out">#  0.40      754     20800</span>
+<span class="out">#  0.55      624     19560</span>
+<span class="out">#  0.70      509     17720</span>
+<span class="out">#  0.85      370     13540</span>
+<span class="out"># best threshold = 0.30  (profit $20900 per 4000 customers)</span>
+<span class="out"># contact everyone: $-29780   contact no one: $0</span></code></pre>
+
+<p>Contacting everyone loses $29,780 per 4,000 customers; contacting nobody makes $0; the model at threshold 0.30 makes about $20,900. The profit curve is flat between 0.25 and 0.45, which is good news: the decision is robust to the exact threshold. That flatness, and the three numbers, go on slide two (Section 6). The widget in Section 6 lets you move the business assumptions and watch the threshold move.</p>
+
+<h3>Block 7 — One look at the test set, with confidence intervals, then explain</h3>
+<p>Fit the frozen pipeline on the full training set, score the test set <em>once</em>, and bootstrap the test set (resample its rows 300 times) to get 95% confidence intervals for every reported number. Then two views of what drives predictions: permutation importance on the raw columns through the full pipeline (which respects the imputation and encoding), and mean |SHAP| on the transformed features (Chapter 20).</p>
+
+<pre class="code" data-lang="python"><code><span class="cm"># Block 7 — final fit, ONE look at the test set with bootstrap confidence intervals, then explain the model</span>
+<span class="kw">import</span> numpy <span class="kw">as</span> np, pandas <span class="kw">as</span> pd
+<span class="kw">from</span> sklearn.model_selection <span class="kw">import</span> train_test_split
+<span class="kw">from</span> sklearn.compose <span class="kw">import</span> ColumnTransformer
+<span class="kw">from</span> sklearn.pipeline <span class="kw">import</span> Pipeline
+<span class="kw">from</span> sklearn.preprocessing <span class="kw">import</span> StandardScaler, OneHotEncoder, FunctionTransformer
+<span class="kw">from</span> sklearn.impute <span class="kw">import</span> SimpleImputer
+<span class="kw">from</span> sklearn.ensemble <span class="kw">import</span> GradientBoostingClassifier
+<span class="kw">from</span> sklearn.metrics <span class="kw">import</span> roc_auc_score, average_precision_score, precision_score, recall_score
+<span class="kw">from</span> sklearn.inspection <span class="kw">import</span> permutation_importance
+<span class="kw">import</span> shap
+
+df = pd.<span class="fn">read_csv</span>(<span class="st">&quot;churn.csv&quot;</span>).<span class="fn">drop</span>(columns=[<span class="st">&quot;cancellation_reason&quot;</span>])
+num = [<span class="st">&quot;tenure_months&quot;</span>, <span class="st">&quot;monthly_charges&quot;</span>, <span class="st">&quot;support_tickets&quot;</span>, <span class="st">&quot;logins_30d&quot;</span>, <span class="st">&quot;avg_session_min&quot;</span>,
+       <span class="st">&quot;late_payments&quot;</span>, <span class="st">&quot;discount_pct&quot;</span>, <span class="st">&quot;products_held&quot;</span>, <span class="st">&quot;nps_score&quot;</span>, <span class="st">&quot;days_since_contact&quot;</span>]
+cat = [<span class="st">&quot;plan&quot;</span>, <span class="st">&quot;region&quot;</span>]
+<span class="kw">def</span> <span class="fn">date_features</span>(d):
+    d = d.<span class="fn">apply</span>(pd.to_datetime)
+    <span class="kw">return</span> pd.DataFrame({<span class="st">&quot;account_age_days&quot;</span>: (d[<span class="st">&quot;last_login&quot;</span>] - d[<span class="st">&quot;signup_date&quot;</span>]).dt.days,
+                         <span class="st">&quot;signup_month&quot;</span>: d[<span class="st">&quot;signup_date&quot;</span>].dt.month})
+<span class="kw">def</span> <span class="fn">date_feature_names</span>(transformer, input_cols):   <span class="cm"># a named function: lambdas cannot be pickled later</span>
+    <span class="kw">return</span> [<span class="st">&quot;account_age_days&quot;</span>, <span class="st">&quot;signup_month&quot;</span>]
+prep = ColumnTransformer([
+    (<span class="st">&quot;num&quot;</span>,  Pipeline([(<span class="st">&quot;imp&quot;</span>, SimpleImputer(strategy=<span class="st">&quot;median&quot;</span>)), (<span class="st">&quot;sc&quot;</span>, StandardScaler())]), num),
+    (<span class="st">&quot;cat&quot;</span>,  OneHotEncoder(handle_unknown=<span class="st">&quot;ignore&quot;</span>), cat),
+    (<span class="st">&quot;date&quot;</span>, Pipeline([(<span class="st">&quot;fx&quot;</span>, FunctionTransformer(date_features, feature_names_out=date_feature_names)), (<span class="st">&quot;sc&quot;</span>, StandardScaler())]), [<span class="st">&quot;signup_date&quot;</span>, <span class="st">&quot;last_login&quot;</span>]),
+])
+X, y = df.<span class="fn">drop</span>(columns=[<span class="st">&quot;churned&quot;</span>]), df[<span class="st">&quot;churned&quot;</span>]
+X_tr, X_te, y_tr, y_te = <span class="fn">train_test_split</span>(X, y, test_size=<span class="nu">0.2</span>, stratify=y, random_state=<span class="nu">42</span>)
+BEST = <span class="fn">dict</span>(n_estimators=<span class="nu">148</span>, max_depth=<span class="nu">4</span>, learning_rate=<span class="nu">0.152</span>, subsample=<span class="nu">0.757</span>)
+THRESHOLD = <span class="nu">0.30</span>                                                  <span class="cm"># from Block 6</span>
+pipe = Pipeline([(<span class="st">&quot;prep&quot;</span>, prep), (<span class="st">&quot;model&quot;</span>, GradientBoostingClassifier(random_state=<span class="nu">0</span>, **BEST))]).<span class="fn">fit</span>(X_tr, y_tr)
+
+p = pipe.<span class="fn">predict_proba</span>(X_te)[:, <span class="nu">1</span>]
+yhat = (p &gt;= THRESHOLD).<span class="fn">astype</span>(<span class="fn">int</span>)
+rng = np.random.<span class="fn">default_rng</span>(<span class="nu">0</span>)
+boot = {<span class="st">&quot;AUC&quot;</span>: [], <span class="st">&quot;PR-AUC&quot;</span>: [], <span class="st">&quot;precision&quot;</span>: [], <span class="st">&quot;recall&quot;</span>: []}
+<span class="kw">for</span> _ <span class="kw">in</span> <span class="fn">range</span>(<span class="nu">300</span>):                                              <span class="cm"># bootstrap the test set</span>
+    i = rng.<span class="fn">integers</span>(<span class="nu">0</span>, <span class="fn">len</span>(y_te), <span class="fn">len</span>(y_te))
+    yt, pt, ht = y_te.values[i], p[i], yhat[i]
+    boot[<span class="st">&quot;AUC&quot;</span>].<span class="fn">append</span>(<span class="fn">roc_auc_score</span>(yt, pt)); boot[<span class="st">&quot;PR-AUC&quot;</span>].<span class="fn">append</span>(<span class="fn">average_precision_score</span>(yt, pt))
+    boot[<span class="st">&quot;precision&quot;</span>].<span class="fn">append</span>(<span class="fn">precision_score</span>(yt, ht)); boot[<span class="st">&quot;recall&quot;</span>].<span class="fn">append</span>(<span class="fn">recall_score</span>(yt, ht))
+<span class="kw">for</span> k, v <span class="kw">in</span> boot.<span class="fn">items</span>():
+    lo, hi = np.<span class="fn">percentile</span>(v, [<span class="nu">2.5</span>, <span class="nu">97.5</span>])
+    <span class="fn">print</span>(<span class="st">f&quot;{k:&lt;10} {np.mean(v):.3f}   95% CI [{lo:.3f}, {hi:.3f}]&quot;</span>)
+
+<span class="cm"># explain: permutation importance on the raw columns (respects the pipeline) …</span>
+pi = <span class="fn">permutation_importance</span>(pipe, X_te, y_te, scoring=<span class="st">&quot;average_precision&quot;</span>, n_repeats=<span class="nu">5</span>, random_state=<span class="nu">0</span>)
+top = pd.Series(pi.importances_mean, index=X_te.columns).<span class="fn">sort_values</span>(ascending=<span class="kw">False</span>).<span class="fn">head</span>(<span class="nu">5</span>)
+<span class="fn">print</span>(<span class="st">&quot;permutation importance (drop in PR-AUC):&quot;</span>, top.<span class="fn">round</span>(<span class="nu">3</span>).<span class="fn">to_dict</span>())
+<span class="cm"># … and SHAP on the transformed features</span>
+Xt = pipe[<span class="st">&quot;prep&quot;</span>].<span class="fn">transform</span>(X_te)
+names = pipe[<span class="st">&quot;prep&quot;</span>].<span class="fn">get_feature_names_out</span>()
+sv = shap.TreeExplainer(pipe[<span class="st">&quot;model&quot;</span>]).<span class="fn">shap_values</span>(Xt)
+top_shap = pd.Series(np.<span class="fn">abs</span>(sv).<span class="fn">mean</span>(axis=<span class="nu">0</span>), index=names).<span class="fn">sort_values</span>(ascending=<span class="kw">False</span>).<span class="fn">head</span>(<span class="nu">5</span>)
+<span class="fn">print</span>(<span class="st">&quot;mean |SHAP|:&quot;</span>, top_shap.<span class="fn">round</span>(<span class="nu">3</span>).<span class="fn">to_dict</span>())
+<span class="out"># AUC        0.930   95% CI [0.907, 0.950]</span>
+<span class="out"># PR-AUC     0.834   95% CI [0.785, 0.877]</span>
+<span class="out"># precision  0.720   95% CI [0.669, 0.772]</span>
+<span class="out"># recall     0.807   95% CI [0.754, 0.865]</span>
+<span class="out"># permutation importance (drop in PR-AUC): {&#x27;nps_score&#x27;: 0.292, &#x27;late_payments&#x27;: 0.282, &#x27;discount_pct&#x27;: 0.183, &#x27;tenure_months&#x27;: 0.159, &#x27;avg_session_min&#x27;: 0.068}</span>
+<span class="out"># mean |SHAP|: {&#x27;num__late_payments&#x27;: 1.07, &#x27;num__nps_score&#x27;: 0.581, &#x27;num__discount_pct&#x27;: 0.501, &#x27;num__avg_session_min&#x27;: 0.481, &#x27;num__monthly_charges&#x27;: 0.312}</span></code></pre>
+
+<p>Test PR-AUC is 0.834 with a CI of roughly [0.79, 0.88]; the CV estimate (0.811) sits inside it, so nothing was over-tuned. At the 0.30 threshold, precision 0.72 and recall 0.81: of the customers we contact, 72% would have churned, and we reach 81% of all churners. Both views of importance agree on the drivers (late payments, NPS, discount, session time, tenure), which is what the call script needs. The widths of the intervals are the honest part: with 209 positives in the test set, ± 4–5 points is the resolution we have, and a colleague's model that scores 0.845 is not better than this one.</p>
+
+<h3>Block 8 — Save the artifact and prove the reload</h3>
+<p>The deliverable is not a notebook; it is a file that turns a raw customer row into a decision, plus a metadata record of what it is. <code>joblib</code> serializes the whole pipeline (imputer statistics, encoder categories, trees). The JSON sidecar holds the threshold, the training snapshot, the library version and the feature list, everything a reviewer or a monitoring job needs (Chapter 21).</p>
+
+<pre class="code" data-lang="python"><code><span class="cm"># Block 8 — save the whole pipeline (preprocessing + model + threshold) and prove the reload works</span>
+<span class="kw">import</span> json, numpy <span class="kw">as</span> np, pandas <span class="kw">as</span> pd, joblib, sklearn
+<span class="kw">from</span> sklearn.model_selection <span class="kw">import</span> train_test_split
+<span class="kw">from</span> sklearn.compose <span class="kw">import</span> ColumnTransformer
+<span class="kw">from</span> sklearn.pipeline <span class="kw">import</span> Pipeline
+<span class="kw">from</span> sklearn.preprocessing <span class="kw">import</span> StandardScaler, OneHotEncoder, FunctionTransformer
+<span class="kw">from</span> sklearn.impute <span class="kw">import</span> SimpleImputer
+<span class="kw">from</span> sklearn.ensemble <span class="kw">import</span> GradientBoostingClassifier
+
+df = pd.<span class="fn">read_csv</span>(<span class="st">&quot;churn.csv&quot;</span>).<span class="fn">drop</span>(columns=[<span class="st">&quot;cancellation_reason&quot;</span>])
+num = [<span class="st">&quot;tenure_months&quot;</span>, <span class="st">&quot;monthly_charges&quot;</span>, <span class="st">&quot;support_tickets&quot;</span>, <span class="st">&quot;logins_30d&quot;</span>, <span class="st">&quot;avg_session_min&quot;</span>,
+       <span class="st">&quot;late_payments&quot;</span>, <span class="st">&quot;discount_pct&quot;</span>, <span class="st">&quot;products_held&quot;</span>, <span class="st">&quot;nps_score&quot;</span>, <span class="st">&quot;days_since_contact&quot;</span>]
+cat = [<span class="st">&quot;plan&quot;</span>, <span class="st">&quot;region&quot;</span>]
+<span class="kw">def</span> <span class="fn">date_features</span>(d):
+    d = d.<span class="fn">apply</span>(pd.to_datetime)
+    <span class="kw">return</span> pd.DataFrame({<span class="st">&quot;account_age_days&quot;</span>: (d[<span class="st">&quot;last_login&quot;</span>] - d[<span class="st">&quot;signup_date&quot;</span>]).dt.days,
+                         <span class="st">&quot;signup_month&quot;</span>: d[<span class="st">&quot;signup_date&quot;</span>].dt.month})
+<span class="kw">def</span> <span class="fn">date_feature_names</span>(transformer, input_cols):   <span class="cm"># a named function: lambdas cannot be pickled later</span>
+    <span class="kw">return</span> [<span class="st">&quot;account_age_days&quot;</span>, <span class="st">&quot;signup_month&quot;</span>]
+prep = ColumnTransformer([
+    (<span class="st">&quot;num&quot;</span>,  Pipeline([(<span class="st">&quot;imp&quot;</span>, SimpleImputer(strategy=<span class="st">&quot;median&quot;</span>)), (<span class="st">&quot;sc&quot;</span>, StandardScaler())]), num),
+    (<span class="st">&quot;cat&quot;</span>,  OneHotEncoder(handle_unknown=<span class="st">&quot;ignore&quot;</span>), cat),
+    (<span class="st">&quot;date&quot;</span>, Pipeline([(<span class="st">&quot;fx&quot;</span>, FunctionTransformer(date_features, feature_names_out=date_feature_names)), (<span class="st">&quot;sc&quot;</span>, StandardScaler())]), [<span class="st">&quot;signup_date&quot;</span>, <span class="st">&quot;last_login&quot;</span>]),
+])
+X, y = df.<span class="fn">drop</span>(columns=[<span class="st">&quot;churned&quot;</span>]), df[<span class="st">&quot;churned&quot;</span>]
+X_tr, X_te, y_tr, y_te = <span class="fn">train_test_split</span>(X, y, test_size=<span class="nu">0.2</span>, stratify=y, random_state=<span class="nu">42</span>)
+BEST = <span class="fn">dict</span>(n_estimators=<span class="nu">148</span>, max_depth=<span class="nu">4</span>, learning_rate=<span class="nu">0.152</span>, subsample=<span class="nu">0.757</span>)
+pipe = Pipeline([(<span class="st">&quot;prep&quot;</span>, prep), (<span class="st">&quot;model&quot;</span>, GradientBoostingClassifier(random_state=<span class="nu">0</span>, **BEST))]).<span class="fn">fit</span>(X_tr, y_tr)
+
+joblib.<span class="fn">dump</span>(pipe, <span class="st">&quot;churn_model_v1.joblib&quot;</span>)
+meta = {<span class="st">&quot;model&quot;</span>: <span class="st">&quot;GradientBoosting&quot;</span>, <span class="st">&quot;params&quot;</span>: BEST, <span class="st">&quot;threshold&quot;</span>: <span class="nu">0.30</span>, <span class="st">&quot;sklearn&quot;</span>: sklearn.__version__,
+        <span class="st">&quot;features&quot;</span>: <span class="fn">list</span>(X_tr.columns), <span class="st">&quot;train_rows&quot;</span>: <span class="fn">int</span>(<span class="fn">len</span>(X_tr)), <span class="st">&quot;trained_on&quot;</span>: <span class="st">&quot;churn.csv&quot;</span>}
+json.<span class="fn">dump</span>(meta, <span class="fn">open</span>(<span class="st">&quot;churn_model_v1.json&quot;</span>, <span class="st">&quot;w&quot;</span>), indent=<span class="nu">2</span>)
+
+loaded = joblib.<span class="fn">load</span>(<span class="st">&quot;churn_model_v1.joblib&quot;</span>)
+meta2 = json.<span class="fn">load</span>(<span class="fn">open</span>(<span class="st">&quot;churn_model_v1.json&quot;</span>))
+new_customer = X_te.iloc[[<span class="nu">0</span>]]                                 <span class="cm"># one raw row, exactly as production would send it</span>
+prob = loaded.<span class="fn">predict_proba</span>(new_customer)[<span class="nu">0</span>, <span class="nu">1</span>]
+<span class="fn">print</span>(<span class="st">&quot;reloaded OK:&quot;</span>, np.<span class="fn">allclose</span>(loaded.<span class="fn">predict_proba</span>(X_te), pipe.<span class="fn">predict_proba</span>(X_te)))
+<span class="fn">print</span>(<span class="st">f&quot;p(churn) = {prob:.3f} → {&#x27;CONTACT&#x27; if prob &gt;= meta2[&#x27;threshold&#x27;] else &#x27;no action&#x27;}&quot;</span>)
+<span class="fn">print</span>(<span class="st">&quot;saved with sklearn&quot;</span>, meta2[<span class="st">&quot;sklearn&quot;</span>], <span class="st">&quot;| features:&quot;</span>, <span class="fn">len</span>(meta2[<span class="st">&quot;features&quot;</span>]))
+<span class="out"># reloaded OK: True</span>
+<span class="out"># p(churn) = 0.043 → no action</span>
+<span class="out"># saved with sklearn 1.9.1 | features: 14</span></code></pre>
+
+<p>The reload check (<code>allclose</code> on the full test set) is not paranoia; it catches the two classic failures: a custom function that cannot be pickled (a <code>lambda</code> in a transformer, which is why <code>date_feature_names</code> is a named function) and a version mismatch between the training and serving environments. In production, custom functions like <code>date_features</code> live in an importable module, not in the training script, so the unpickler can find them.</p>
+
+<div class="callout eli9"><div class="title">Explain it like I'm 9</div>
+<p>The eight blocks are a recipe: check the ingredients (1), throw out the one that is secretly the answer key (2), set aside a plate you will not taste until the end (3), cook the simple version and the fancy version (4), adjust the seasoning a little (5), decide how big a portion to serve based on what it costs (6), taste the set-aside plate once and be honest about it (7), and write the recipe down so someone else can cook it (8).</p>
+</div>
+
+
+<!-- ============================================================ -->
+<h2 id="s5">5. The experiment log and "one change at a time"</h2>
+
+<p>Iteration without a log is a random walk with a good memory for wins and a bad memory for losses. The <strong>experiment log</strong> is a table with one row per run; it takes thirty seconds per run and saves days of "did we already try that?". The discipline that makes it useful is <strong>one change at a time</strong>: if a run changes the features <em>and</em> the model <em>and</em> the seed, and the score goes up, you have learned nothing you can reuse.</p>
+
+<div class="tbl-wrap">
+<table class="tbl">
+<thead><tr><th>#</th><th>Date</th><th>Change (exactly one)</th><th>Data snapshot</th><th>CV metric (± sd)</th><th>Δ vs parent</th><th>Keep?</th><th>Note</th></tr></thead>
+<tbody>
+<tr><td>1</td><td>03-02</td><td>Dummy (prior)</td><td>churn_v1</td><td>PR-AUC 0.209</td><td>—</td><td>ref</td><td>positive rate</td></tr>
+<tr><td>2</td><td>03-02</td><td>LogReg, numeric only</td><td>churn_v1</td><td>0.485 ± 0.03</td><td>+0.276</td><td>yes</td><td>kill gate passed</td></tr>
+<tr><td>3</td><td>03-03</td><td>+ plan, region one-hot</td><td>churn_v1</td><td>0.503 ± 0.03</td><td>+0.018</td><td>yes</td><td>plan matters, region ≈ noise</td></tr>
+<tr><td>4</td><td>03-03</td><td>+ date features</td><td>churn_v1</td><td>0.515 ± 0.03</td><td>+0.012</td><td>yes</td><td>account_age weak</td></tr>
+<tr><td>5</td><td>03-04</td><td>RF 100 trees (same features)</td><td>churn_v1</td><td>0.789 ± 0.03</td><td>+0.274</td><td>yes</td><td>non-linear signal</td></tr>
+<tr><td>6</td><td>03-04</td><td>GBM 100 trees depth 3</td><td>churn_v1</td><td>0.794 ± 0.04</td><td>+0.005</td><td>yes</td><td>tie with RF; faster</td></tr>
+<tr><td>7</td><td>03-05</td><td>+ cancellation_reason</td><td>churn_v1</td><td>1.000 ± 0.00</td><td>+0.206</td><td><strong>NO</strong></td><td>leak, dropped for good</td></tr>
+<tr><td>8</td><td>03-05</td><td>Random search (6 × 3-fold)</td><td>churn_v1</td><td>0.811 ± 0.03</td><td>+0.017</td><td>yes</td><td>frozen: run 8</td></tr>
+<tr><td>9</td><td>03-06</td><td>+ ratio charges/tenure</td><td>churn_v1</td><td>0.809 ± 0.03</td><td>−0.002</td><td>no</td><td>within noise</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>Three conventions make this table work. Every row names its <strong>parent</strong> (the run it modifies) so the Δ column is meaningful. The <strong>data snapshot</strong> column is a version, not a filename, so a result can be reproduced after the table is refreshed. And <strong>"no" rows stay in the table</strong>: the failed ideas are the most valuable part, because they stop the next person from repeating them. Row 7 is deliberately in the log; a jump of 0.2 in one step is not a discovery, it is an alarm.</p>
+
+<div class="callout pro"><div class="title">At work</div>
+<p>Keep the log in the repository next to the code, as a Markdown table or a CSV, and reference its run number in commit messages ("run 8: random search, frozen"). Tools like MLflow do this automatically once the team is bigger than two; for a first project, a table you actually fill in beats a tracking server you do not. When someone asks in six months why the threshold is 0.30, the answer is one <code>grep</code> away.</p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s6">6. Communicating results in money</h2>
+
+<p>A model is adopted or ignored at a meeting, and the meeting is decided by whether the audience can see the decision in units they own. Nobody owns AUC. Everybody owns dollars, hours, customers and risk. The translation is mechanical once you have a threshold and a cost matrix, and it is the most valuable slide you will ever make.</p>
+
+<figure class="fig">
+<svg viewBox="0 0 800 330" role="img" aria-label="Expected-value translation: a confusion matrix at the chosen threshold on the left with counts of true positives, false positives, false negatives and true negatives; arrows carry each cell to a money value using the cost of an offer, the value of a saved customer and the save rate; on the right a bar chart compares monthly profit for contact nobody, contact everyone, the current rule and the model">
+  <defs><marker id="arr-f23-4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+  <text x="20" y="24" class="lbl-strong" font-size="14">From confusion matrix to profit (per 1,000 customers scored, threshold 0.30)</text>
+  <!-- confusion matrix -->
+  <text x="150" y="60" text-anchor="middle" class="lbl">predicted churn → contacted</text>
+  <text x="95" y="82" text-anchor="middle" class="lbl" font-size="11">yes</text><text x="205" y="82" text-anchor="middle" class="lbl" font-size="11">no</text>
+  <text x="30" y="118" text-anchor="end" class="lbl" font-size="11">churns</text><text x="30" y="178" text-anchor="end" class="lbl" font-size="11">stays</text>
+  <rect x="40" y="90" width="110" height="56" rx="6" fill="var(--good)" fill-opacity=".25" stroke="var(--good)"/><text x="95" y="112" text-anchor="middle" class="lbl-strong">TP = 169</text><text x="95" y="130" text-anchor="middle" class="lbl" font-size="11">caught churners</text>
+  <rect x="150" y="90" width="110" height="56" rx="6" fill="var(--critical)" fill-opacity=".18" stroke="var(--critical)"/><text x="205" y="112" text-anchor="middle" class="lbl-strong">FN = 40</text><text x="205" y="130" text-anchor="middle" class="lbl" font-size="11">missed churners</text>
+  <rect x="40" y="150" width="110" height="56" rx="6" fill="var(--warn)" fill-opacity=".25" stroke="var(--warn)"/><text x="95" y="172" text-anchor="middle" class="lbl-strong">FP = 66</text><text x="95" y="190" text-anchor="middle" class="lbl" font-size="11">wasted offers</text>
+  <rect x="150" y="150" width="110" height="56" rx="6" class="box"/><text x="205" y="172" text-anchor="middle" class="lbl-strong">TN = 725</text><text x="205" y="190" text-anchor="middle" class="lbl" font-size="11">left alone, stayed</text>
+  <text x="150" y="228" text-anchor="middle" class="lbl" font-size="11">precision = 169 / 235 = 0.72   recall = 169 / 209 = 0.81</text>
+  <!-- translation box -->
+  <line x1="262" y1="148" x2="298" y2="148" class="arrow" marker-end="url(#arr-f23-4)"/>
+  <rect x="300" y="70" width="210" height="170" rx="8" class="box-accent"/>
+  <text x="405" y="92" text-anchor="middle" class="lbl-strong">Business assumptions</text>
+  <text x="312" y="114" class="lbl" font-size="11">offer cost = $20 per contact</text>
+  <text x="312" y="132" class="lbl" font-size="11">saved customer = $150 (12-mo margin)</text>
+  <text x="312" y="150" class="lbl" font-size="11">save rate = 40% of contacted churners</text>
+  <line x1="312" y1="160" x2="498" y2="160" class="grid"/>
+  <text x="312" y="180" class="lbl" font-size="11">revenue = 0.4 × 169 × $150 = $10,140</text>
+  <text x="312" y="198" class="lbl" font-size="11">cost = (169 + 66) × $20 = $4,700</text>
+  <text x="312" y="222" class="lbl-strong" font-size="12" fill="var(--s1)">profit ≈ $5,400 per 1,000 scored</text>
+  <!-- bar chart -->
+  <line x1="560" y1="200" x2="780" y2="200" class="axis"/>
+  <text x="670" y="60" text-anchor="middle" class="lbl-strong">Monthly profit, 1,000 customers</text>
+  <!-- scale: 1px = $50, baseline y=200 -->
+  <rect x="575" y="200" width="40" height="0" fill="var(--ink-3)"/><text x="595" y="216" text-anchor="middle" class="lbl" font-size="10">nobody</text><text x="595" y="194" text-anchor="middle" class="lbl" font-size="10">$0</text>
+  <rect x="625" y="200" width="40" height="149" fill="var(--critical)" fill-opacity=".7"/><text x="645" y="216" text-anchor="middle" class="lbl" font-size="10">everyone</text><text x="645" y="222" text-anchor="middle" class="lbl" font-size="10"> </text>
+  <text x="645" y="235" text-anchor="middle" class="lbl" font-size="10" fill="var(--critical)">−$7,460</text>
+  <rect x="675" y="156" width="40" height="44" fill="var(--s2)" fill-opacity=".8"/><text x="695" y="216" text-anchor="middle" class="lbl" font-size="10">current rule</text><text x="695" y="150" text-anchor="middle" class="lbl" font-size="10">$2,200</text>
+  <rect x="725" y="92" width="40" height="108" fill="var(--s1)"/><text x="745" y="216" text-anchor="middle" class="lbl" font-size="10">model</text><text x="745" y="86" text-anchor="middle" class="lbl-strong" font-size="11">$5,400</text>
+  <text x="670" y="262" text-anchor="middle" class="lbl" font-size="11">"everyone" clipped: bar continues to −$7,460</text>
+  <text x="400" y="300" text-anchor="middle" class="lbl">The headline is "+$3,200 per 1,000 customers per month vs. today's rule", not "PR-AUC 0.83".</text>
+  <text x="400" y="318" text-anchor="middle" class="lbl" font-size="11">Show the assumptions on the same slide so the audience can argue with them, not with the model.</text>
+</svg>
+<figcaption><strong>Figure 23.4 — The expected-value translation.</strong> Every cell of the confusion matrix has a price. Multiply, add, and compare with the alternatives the business already understands: do nothing, do everything, keep the current rule. The assumptions are stated on the slide because they, not the model, are what the audience will want to change.</figcaption>
+</figure>
+
+<div class="widget" id="w-ev">
+  <div class="w-title">Interactive: expected-value calculator</div>
+  <div class="controls">
+    <label>Precision <input type="range" id="ev-p" min="10" max="95" value="72" data-out="ev-p-out"> <output id="ev-p-out"></output>%</label>
+    <label>Recall <input type="range" id="ev-r" min="10" max="99" value="81" data-out="ev-r-out"> <output id="ev-r-out"></output>%</label>
+    <label>Customers <input type="range" id="ev-n" min="1000" max="50000" step="1000" value="10000" data-out="ev-n-out"> <output id="ev-n-out"></output></label>
+    <label>Churn rate <input type="range" id="ev-c" min="2" max="50" value="21" data-out="ev-c-out"> <output id="ev-c-out"></output>%</label>
+    <label>Value of saved customer $<input type="range" id="ev-v" min="20" max="1000" step="10" value="150" data-out="ev-v-out"> <output id="ev-v-out"></output></label>
+    <label>Offer cost $<input type="range" id="ev-o" min="1" max="200" value="20" data-out="ev-o-out"> <output id="ev-o-out"></output></label>
+    <label>Save rate <input type="range" id="ev-s" min="5" max="100" value="40" data-out="ev-s-out"> <output id="ev-s-out"></output>%</label>
+  </div>
+  <div class="tbl-wrap">
+  <table class="tbl" id="ev-table">
+    <thead><tr><th>Strategy</th><th class="num">Contacted</th><th class="num">Churners reached</th><th class="num">Saved</th><th class="num">Revenue</th><th class="num">Cost</th><th class="num">Profit</th></tr></thead>
+    <tbody></tbody>
+  </table>
+  </div>
+  <svg viewBox="0 0 760 200" id="ev-svg" role="img" aria-label="Bar chart of profit for the model, contacting everyone, and contacting no one"></svg>
+  <div class="note">Precision and recall come from Block 7; the rest are business inputs. Move <em>offer cost</em> up to $60 and watch "contact everyone" collapse while the model still profits; move <em>save rate</em> down to 15% and the model's profit goes negative too, which is the honest signal that no targeting can rescue an offer that does not work. This is the conversation the widget exists to start.</div>
+</div>
+
+<h3>The five-slide structure</h3>
+<ol class="steps">
+  <li><strong>The problem and the decision (1 slide).</strong> "21% of customers churn per year; the retention team contacts 1,000 per month by gut feel." One number, one decision, one owner.</li>
+  <li><strong>Baseline vs model, in business units (1 slide).</strong> Figure 23.4's bar chart: nobody / everyone / current rule / model, in dollars per month, with confidence intervals. Below it, in small type, the ML metrics for the technical reader.</li>
+  <li><strong>What drives the predictions (1 slide).</strong> Top five drivers in plain words ("customers with two or more late payments are 3× more likely to leave"), one partial-dependence or SHAP plot, and the sentence "these are associations the model uses, not causes" (Chapter 22).</li>
+  <li><strong>Risks and limitations (1 slide).</strong> Where the model is weak (new customers with &lt; 2 months of history), what it cannot see, the fairness check result, how fast it will decay, and what happens if it is wrong (a wasted $20, not a denied loan).</li>
+  <li><strong>Rollout plan (1 slide).</strong> Shadow mode for a month, A/B test with a 10% holdout, the metric that decides, the owner, the retraining cadence, and the kill criterion. End with the ask: "approve the A/B test".</li>
+</ol>
+
+<h3>What not to show</h3>
+<p>Raw AUC or PR-AUC without translation ("0.83" means nothing to a director and invites the question "is that good?"). A ROC curve (it is a research plot). Hyperparameters. The list of models you tried (that goes in the appendix). Any number without a confidence interval, because the first challenge will be "how sure are you?" and "quite" is not an answer. And never a slide of code.</p>
+
+<div class="callout eli9"><div class="title">Explain it like I'm 9</div>
+<p>If you tell your parents "my model has an AUC of 0.83" they will nod politely and change nothing. If you say "this list of 235 people will save us about $5,000 a month compared to what we do now, and here is what would make that number wrong", they will ask you to start on Monday. Same model; different sentence.</p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s7">7. The failure-mode catalogue</h2>
+
+<p>Twenty ways projects die, collected from post-mortems. Most of them are preventable in scoping or in the first two weeks; the prevention column is where the canvas, the timeboxes and the eight blocks pay for themselves.</p>
+
+<div class="tbl-wrap">
+<table class="tbl">
+<thead><tr><th>#</th><th>Failure mode</th><th>How it looks</th><th>How to prevent it</th></tr></thead>
+<tbody>
+<tr><td>1</td><td><strong>Wrong target</strong></td><td>The model predicts something adjacent to the decision (e.g. "opened the email" instead of "renewed").</td><td>Canvas rows "decision" and "target" must agree; write the target as SQL and get it signed.</td></tr>
+<tr><td>2</td><td><strong>Leakage</strong></td><td>Spectacular validation scores; nothing works live.</td><td>Single-column AUC check (Block 2); features "as of scoring date"; split by entity and time.</td></tr>
+<tr><td>3</td><td><strong>Test-set reuse</strong></td><td>Dozens of "final" evaluations; the test score drifts up.</td><td>Seal the test set at split time; tune on CV; one look, with CIs (Block 7).</td></tr>
+<tr><td>4</td><td><strong>No baseline</strong></td><td>A GBM with 0.71 AUC celebrated; nobody knows the rule of thumb gets 0.70.</td><td>Dummy + business rule + linear model in week 2, reported on every slide.</td></tr>
+<tr><td>5</td><td><strong>Over-tuning</strong></td><td>500-run search on 3,000 rows; CV score up, test score down.</td><td>Small budgets, repeated CV, treat gains under one fold-sd as noise.</td></tr>
+<tr><td>6</td><td><strong>Ignoring drift</strong></td><td>Model launched, never retrained; performance quietly decays; nobody notices for a year.</td><td>Monitoring with alerts from day one; retraining trigger; label pipeline (Chapter 21).</td></tr>
+<tr><td>7</td><td><strong>No owner</strong></td><td>The author leaves; the batch job fails; nobody knows how to fix it.</td><td>Owner on the canvas; runbook; model card (Section 8).</td></tr>
+<tr><td>8</td><td><strong>Nobody acts on it</strong></td><td>Predictions land in a dashboard nobody opens.</td><td>Canvas "decision" row; ship into the consumer's existing tool; measure adoption.</td></tr>
+<tr><td>9</td><td><strong>Label delay ignored</strong></td><td>"Churn within 90 days" evaluated on customers who signed up last month.</td><td>Exclude rows whose label window has not closed; note the lag in the model card.</td></tr>
+<tr><td>10</td><td><strong>Train/serve skew</strong></td><td>Feature computed one way in the notebook, another way in production.</td><td>Feature logic inside the pipeline; shadow run; input validation.</td></tr>
+<tr><td>11</td><td><strong>Wrong metric</strong></td><td>Accuracy on a 2% positive class; RMSE when the business thinks in %.</td><td>Figure 23.3; two metrics per project.</td></tr>
+<tr><td>12</td><td><strong>Threshold by default</strong></td><td>0.5 used because it is the default; the review team is flooded or starved.</td><td>Cost matrix and out-of-fold threshold selection (Block 6).</td></tr>
+<tr><td>13</td><td><strong>Feedback loop</strong></td><td>Next year's training data only contains outcomes for people the model chose to contact.</td><td>Keep a random holdout in production forever; log the decision, not just the score.</td></tr>
+<tr><td>14</td><td><strong>Scope creep</strong></td><td>"While you're at it, can it also predict upsell?"</td><td>Timeboxes; one target per model; a parking lot for later.</td></tr>
+<tr><td>15</td><td><strong>Data not available at prediction time</strong></td><td>Best feature arrives 30 days after the scoring date.</td><td>Canvas "unit of analysis"; simulate scoring-date availability in the data audit.</td></tr>
+<tr><td>16</td><td><strong>Silent data changes</strong></td><td>An upstream team renames a column or changes units; predictions go wrong for weeks.</td><td>Schema and range validation on every batch; alert on distribution shift.</td></tr>
+<tr><td>17</td><td><strong>Unfair or unlawful features</strong></td><td>A proxy for a protected attribute drives predictions; the project is halted by legal.</td><td>Feature review in the data audit; slice metrics by group; document in the model card.</td></tr>
+<tr><td>18</td><td><strong>Correlation sold as causation</strong></td><td>"Customers with the discount churn less, so give everyone a discount."</td><td>The words "associated with"; an experiment before a policy (Chapter 22).</td></tr>
+<tr><td>19</td><td><strong>Irreproducible result</strong></td><td>The 0.85 from March cannot be rebuilt; the data changed and the seed was random.</td><td>Data snapshots, fixed seeds, experiment log, frozen artifact + metadata.</td></tr>
+<tr><td>20</td><td><strong>Premature complexity</strong></td><td>Six months on a deep model for a table of 8,000 rows.</td><td>Figure 23.2; the two-model rule; kill gate at the baseline.</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="callout key"><div class="title">Key idea</div>
+<p>Projects rarely die of a bad algorithm. They die of a wrong target, a leak, a missing baseline, a missing owner, or a prediction nobody acts on, and every one of those is visible in week one if you look. The catalogue is a pre-mortem checklist: read it at kickoff and ask "which of these will kill us?"</p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s8">8. Handoff to production and the model card</h2>
+
+<p>Chapter 21 covers the engineering of deployment and monitoring; this section is the handoff checklist from the modeling side and the document that travels with the model. A model without a card is a liability the moment its author is on holiday.</p>
+
+<div class="grid2">
+  <div class="card good"><h4>Handoff checklist (before "done")</h4>
+    <ul>
+      <li>Pipeline artifact + metadata JSON committed and versioned (Block 8); reload test passes in a clean environment.</li>
+      <li>Inference code takes a raw row and returns score + decision + top reasons; no notebook dependencies.</li>
+      <li>Input validation: schema, ranges, category sets, missing-rate limits, with alerts.</li>
+      <li>Shadow run for at least one cycle: predictions logged next to the current process, compared.</li>
+      <li>Monitoring dashboard: score distribution, feature drift, business metric, label-based performance once labels arrive.</li>
+      <li>Retraining trigger defined (calendar or drift); retraining is a script, not a person.</li>
+      <li>Rollback: the previous artifact is one command away; the consumer knows what "model off" looks like.</li>
+      <li>Random holdout in production for the feedback-loop problem and for future uplift work.</li>
+      <li>Owner, on-call, and a runbook with the three most likely failures.</li>
+    </ul>
+  </div>
+  <div class="card accent"><h4>Model card template</h4>
+    <ul>
+      <li><strong>Name / version / date / owner</strong> and the run number in the experiment log.</li>
+      <li><strong>Intended use:</strong> the decision, the unit, the cadence; explicit non-uses ("not for credit decisions").</li>
+      <li><strong>Training data:</strong> source systems, snapshot id, date range, row counts, exclusions, known gaps.</li>
+      <li><strong>Target definition:</strong> the SQL, the window, the label delay.</li>
+      <li><strong>Features:</strong> list with availability-at-scoring-time notes; excluded features and why (leaks, legal).</li>
+      <li><strong>Model:</strong> algorithm, frozen hyperparameters, preprocessing, threshold and the cost matrix behind it.</li>
+      <li><strong>Evaluation:</strong> CV and test metrics with CIs; slice metrics (region, plan, tenure); fairness checks; calibration.</li>
+      <li><strong>Explanations:</strong> global drivers and how per-customer reasons are produced.</li>
+      <li><strong>Limitations &amp; risks:</strong> where it is weak, expected decay, feedback loop, misuse scenarios.</li>
+      <li><strong>Operations:</strong> serving mode, latency, monitoring links, retraining policy, rollback, contacts.</li>
+    </ul>
+  </div>
+</div>
+
+<div class="callout pro"><div class="title">At work</div>
+<p>Write the model card <em>while</em> you build, not after; Blocks 1–8 each produce one section of it. A one-page card that exists beats a ten-page one that is promised. Reviewers, auditors and your future self all read the same three lines first: what it is for, what it was trained on, and how good it is with error bars.</p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s9">9. Your 30-60-90-day plan</h2>
+
+<p>You do not become the ML person at a company by knowing the most algorithms. You become it by delivering one small thing that works, visibly, and then another. This plan assumes a day job and about five focused hours a week, and it uses this book as the reference shelf.</p>
+
+<h3>Days 1–30: one baseline, in public</h3>
+<ul>
+  <li><strong>Week 1.</strong> Pick the problem: recurring, decision-driving, with data you can already reach. Fill the canvas (Section 1) with the decision owner. Re-read Chapters 1 and 2.</li>
+  <li><strong>Week 2.</strong> Data audit: profile every column, reconstruct the label, run the leakage check (Block 2). Write the one-page data report and send it to the owner. Most projects reveal their fate here.</li>
+  <li><strong>Week 3.</strong> Baseline: dummy, business rule, logistic regression in a pipeline (Block 3). Report three numbers with the metric from Figure 23.3. Start the experiment log.</li>
+  <li><strong>Week 4.</strong> One improvement (features or a GBM, Block 4), then the expected-value translation (Section 6). Present two slides to the owner: problem/decision and baseline-vs-model in money. Ask for the A/B test.</li>
+</ul>
+
+<h3>Days 31–60: ship it, and start the second</h3>
+<ul>
+  <li><strong>Week 5.</strong> Tune modestly (Block 5), pick the threshold with the cost matrix (Block 6), one test-set look with CIs (Block 7). Draft the model card.</li>
+  <li><strong>Week 6.</strong> Package and shadow-run (Block 8, Chapter 21). Set up the monitoring dashboard even if it is a scheduled notebook that emails a chart.</li>
+  <li><strong>Week 7.</strong> Launch the A/B test with a random holdout. Write the five slides. Present to the sponsor.</li>
+  <li><strong>Week 8.</strong> Start the second canvas, ideally in a different family: an anomaly queue, a forecast, or a recommendation list (Chapters 14, 22). Reuse the pipeline skeleton.</li>
+</ul>
+
+<h3>Days 61–90: results, and a habit</h3>
+<ul>
+  <li><strong>Week 9.</strong> Read the first A/B results honestly (Chapter 22 rules: no peeking, one metric, CI). If it worked, write it up in money; if it did not, write up what you learned. Both are wins for credibility.</li>
+  <li><strong>Week 10.</strong> Second project's baseline. Teach a 30-minute session to colleagues on the canvas and the leakage check; the people who explain a method own it.</li>
+  <li><strong>Week 11.</strong> Retrain the first model on the new month of data; check drift; update the card. This is the unglamorous step that separates people who ship models from people who demo them.</li>
+  <li><strong>Week 12.</strong> Write your own failure-mode entries (there will be new ones). Propose the next quarter: two projects, one experiment, one piece of infrastructure (a feature table, a holdout policy, a label pipeline).</li>
+</ul>
+
+<h3>Keeping the edge</h3>
+<p><strong>Read papers selectively:</strong> one a week, chosen from the citations of tools you already use, and read the experiments section first; if the baselines are weak the result is weak. <strong>Kaggle</strong> is the best free source of tabular technique (feature engineering, validation schemes, ensembling); read winning solution write-ups rather than competing, unless competing is the only way you will practise. <strong>Read code:</strong> scikit-learn's source for the estimators you use, one library internals walkthrough per month; understanding what <code>fit</code> actually does is what makes you fast at debugging. <strong>Keep a personal failure log.</strong> The catalogue in Section 7 was built from one. Yours will be more useful to you than any course.</p>
+
+<div class="callout key"><div class="title">Key idea</div>
+<p>Expertise at work is a portfolio of shipped, measured, documented decisions. The canvas makes the decision explicit, the timeboxes make the baseline early, the eight blocks make the model honest, the expected-value slide makes it adopted, and the card makes it survive you. Repeat quarterly.</p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="quiz">Quiz</h2>
+<div class="quiz">
+  <h3>Check your understanding</h3>
+
+  <div class="q">
+    <p class="question">1. Which pair of canvas fields must be checked against each other before any modeling?</p>
+    <ul class="opts">
+      <li><button>Data sources and constraints</button></li>
+      <li><button data-correct>Target definition and the decision the prediction drives</button></li>
+      <li><button>Owner and risks</button></li>
+      <li><button>Metric and baseline</button></li>
+    </ul>
+    <div class="explain">A target that does not match the decision produces a perfect answer to the wrong question. "Cancels within 90 days of scoring" matches "who to call this month"; "ever cancelled" does not.</div>
+  </div>
+
+  <div class="q">
+    <p class="question">2. In Block 2, a column scores a cross-validated AUC of 1.000 on its own. The right response is…</p>
+    <ul class="opts">
+      <li><button>Make it the model's main feature</button></li>
+      <li><button data-correct>Treat it as leakage: find out when it is recorded, and drop it if it is not available at scoring time</button></li>
+      <li><button>Increase the tree depth to use it better</button></li>
+      <li><button>Nothing; strong features are good</button></li>
+    </ul>
+    <div class="explain">Real signals score 0.6–0.8 alone. A perfect single column is the label in disguise (here, cancellation reason, recorded after churn).</div>
+  </div>
+
+  <div class="q">
+    <p class="question">3. Why is the decision threshold chosen on out-of-fold predictions rather than on the test set?</p>
+    <ul class="opts">
+      <li><button>Out-of-fold predictions are more optimistic</button></li>
+      <li><button data-correct>The test set must stay untouched so the final evaluation is honest; out-of-fold predictions are honest probabilities from the training data</button></li>
+      <li><button>The test set is too small for thresholds</button></li>
+      <li><button>cross_val_predict is faster</button></li>
+    </ul>
+    <div class="explain">Every choice made using the test set (threshold, features, model) leaks into it and inflates the final number. Out-of-fold predictions give each training row a prediction from a model that never saw it.</div>
+  </div>
+
+  <div class="q">
+    <p class="question">4. Model A has test PR-AUC 0.834 with 95% CI [0.79, 0.88]; a colleague's model B scores 0.845 on the same test set. What can you conclude?</p>
+    <ul class="opts">
+      <li><button>B is better and should be shipped</button></li>
+      <li><button data-correct>The difference is well inside the uncertainty; you cannot tell them apart on this test set</button></li>
+      <li><button>A is better because it was tuned</button></li>
+      <li><button>The test set is leaking</button></li>
+    </ul>
+    <div class="explain">With ~200 positives the resolution is ± 4–5 points. Choose between A and B on other grounds (simplicity, speed, explainability) or collect more evaluation data.</div>
+  </div>
+
+  <div class="q">
+    <p class="question">5. Which slide belongs in the five-slide stakeholder deck?</p>
+    <ul class="opts">
+      <li><button>The ROC curve of every model tried</button></li>
+      <li><button>The hyperparameter search space</button></li>
+      <li><button data-correct>Baseline vs model in dollars per month, with confidence intervals and the assumptions stated</button></li>
+      <li><button>The notebook code for the pipeline</button></li>
+    </ul>
+    <div class="explain">The audience owns money, customers and risk, not AUC. Show the expected-value comparison and let them argue with the assumptions.</div>
+  </div>
+
+  <div class="q">
+    <p class="question">6. A retention model is launched and, from then on, only the customers it flags receive offers. What failure mode is being set up, and what prevents it?</p>
+    <ul class="opts">
+      <li><button>Over-tuning; prevent with fewer search iterations</button></li>
+      <li><button data-correct>A feedback loop: future training data only shows outcomes for flagged customers; prevent it with a permanent random holdout</button></li>
+      <li><button>Train/serve skew; prevent with input validation</button></li>
+      <li><button>Wrong metric; prevent with PR-AUC</button></li>
+    </ul>
+    <div class="explain">Without a random holdout you never again observe what un-contacted high-risk customers do, so you cannot retrain honestly or measure uplift (Chapter 22).</div>
+  </div>
+</div>
+
+<h2 id="exercises">Exercises</h2>
+
+<div class="exercise"><div class="title">Exercise 23.1 — Change one assumption</div>
+<p>In Block 6, the save rate is 40%. Re-run with save rates of 20% and 60% and record the best threshold and profit for each. Then set the offer cost to $60 with the original save rate. Which assumption moves the threshold more, and what does that tell you to validate first with the retention team?</p>
+<details class="answer"><summary>Show answer</summary>
+<p>At a 20% save rate the profit per true positive halves ($30 vs $60), so the best threshold rises sharply (the model contacts only the surest churners) and total profit falls to a few thousand dollars; at 60% the threshold drops and profit roughly doubles. Raising the offer cost to $60 has a similar effect to halving the save rate. The threshold is most sensitive to the ratio (save rate × value) / cost, so the save rate, which is an empirical claim about the offer rather than a price, is the number to validate first, ideally with the A/B test's holdout.</p>
+</details>
+</div>
+
+<div class="exercise"><div class="title">Exercise 23.2 — Break the split</div>
+<p>Modify Block 3 so that the split is a plain random split without <code>stratify</code>, then duplicate 10% of the rows before splitting (as happens when a customer appears in several monthly snapshots). Re-run Blocks 4 and 7. Explain what happens to the CV and test scores and why the duplicated version is dangerous even though its numbers look better.</p>
+<details class="answer"><summary>Show answer</summary>
+<p>Without stratification the positive rate differs slightly between train and test, adding noise but no bias. Duplicating rows before the split places copies of the same customer on both sides: the models (especially the tree ensembles) partially memorize those customers, and both CV and test scores rise by a few points that will not exist in production. The fix is a group-aware split (<code>GroupKFold</code>, <code>GroupShuffleSplit</code>) keyed on customer id, and a time-based split when snapshots span months (Chapter 8).</p>
+</details>
+</div>
+
+<div class="exercise"><div class="title">Exercise 23.3 — Do it at work: the canvas and the kill gate</div>
+<p>Take the problem you wrote down in Exercise 1.2 (or pick one now). Fill the blank canvas in Section 1 completely, including the success criterion as a number and the three baselines. Then schedule a 30-minute "baseline review" with the decision owner exactly three weeks from today and put the kill-gate question on the invitation: "If the linear model does not beat the current rule by X, we stop." Bring the data report and the three-number baseline table to that meeting.</p>
+<details class="answer"><summary>Show answer</summary>
+<p>There is no single right answer; the deliverable is a signed canvas and a calendar invitation. A good canvas has a target that two analysts could compute identically, a decision with a named owner and a cadence, and a success criterion in business units. A good kill-gate question names the number that would make the project not worth continuing. Most people who do this exercise discover that either the data does not exist at scoring time or nobody will act on the prediction, which is the exercise working as intended.</p>
+</details>
+</div>
+
+<div class="summary">
+  <h3>Chapter summary</h3>
+  <ul class="checklist">
+    <li>Fill the project canvas first: problem, decision, exact target, unit, metric with a money translation, baselines, constraints, data, success criterion, risks, owner.</li>
+    <li>Timebox the phases and put the baseline kill gate in week three; plan production and monitoring from the start.</li>
+    <li>Route by data type, size and interpretability: linear first, gradient boosting second on tables; pretrained models for images and text; seasonal naive then GBM for forecasts.</li>
+    <li>Two metrics per project: a threshold-free ranking metric to compare models and a decision metric to choose the operating point and talk to the business.</li>
+    <li>The eight blocks: EDA, single-column leakage check, sealed stratified split, dummy and linear baselines, ColumnTransformer pipeline and CV comparison, small random search, cost-matrix threshold on out-of-fold predictions, one test look with bootstrap CIs plus explanations, saved and reloaded artifact with metadata.</li>
+    <li>Keep an experiment log, one change per row, failures included; treat gains smaller than a fold standard deviation as noise.</li>
+    <li>Present in money: confusion matrix × cost matrix, compared with nobody / everyone / current rule, assumptions on the slide, five slides, no raw AUC.</li>
+    <li>Pre-mortem with the failure-mode catalogue; the fatal ones (wrong target, leakage, no baseline, no owner, nobody acts) are visible in week one.</li>
+    <li>Hand off with a checklist and a model card; keep a random holdout in production forever.</li>
+    <li>Become the ML person by shipping one measured, documented decision per quarter and teaching what you learned.</li>
+  </ul>
+</div>
+
+<div class="mark-done"></div>
+<nav class="pager"></nav>
+
+</div></main>
+</div>
+
+<script src="../assets/chapters.js"></script>
+<script src="../assets/app.js"></script>
+<script>
+(function () {
+  /* ---------- Widget 1: project timeline planner ---------- */
+  var svg = document.getElementById("pl-svg"), slider = document.getElementById("pl-weeks");
+  var baseOut = document.getElementById("pl-base"), shipOut = document.getElementById("pl-ship");
+  if (svg && slider) {
+    var phases = [
+      { name: "Scoping", frac: 0.10, min: 1, color: "var(--s1)", dod: "signed canvas" },
+      { name: "Data audit", frac: 0.10, min: 0.6, color: "var(--s2)", dod: "data report + leak list" },
+      { name: "Baseline", frac: 0.04, min: 0.4, max: 0.6, color: "var(--s3)", dod: "3 numbers vs dummy" },
+      { name: "Iteration", frac: 0.30, min: 1, color: "var(--s4)", dod: "frozen model + log" },
+      { name: "Validation", frac: 0.10, min: 0.5, color: "var(--s5)", dod: "one test look + CIs" },
+      { name: "Production", frac: 0.20, min: 0.8, color: "var(--s7)", dod: "deployed + rollback" },
+      { name: "Monitoring", frac: 0.16, min: 0.5, color: "var(--s6)", dod: "dashboard, ongoing →" }
+    ];
+    var renderPlan = function () {
+      var W = +slider.value, x0 = 130, x1 = 740, y0 = 40, rowH = 26, px = (x1 - x0) / W, s = "";
+      var durs = phases.map(function (p) { var d = Math.max(p.min, p.frac * W); if (p.max) d = Math.min(p.max, d); return d; });
+      var total = durs.reduce(function (a, b) { return a + b; }, 0);
+      durs = durs.map(function (d) { return d * W / total; });
+      for (var w = 0; w <= W; w++) {
+        var gx = x0 + w * px;
+        s += '<line x1="' + gx + '" y1="' + (y0 - 6) + '" x2="' + gx + '" y2="' + (y0 + phases.length * rowH) + '" stroke="currentColor" stroke-opacity=".15"/>';
+        if (W <= 12 || w % 2 === 0) s += '<text x="' + gx + '" y="' + (y0 - 10) + '" text-anchor="middle" font-size="10">' + w + '</text>';
+      }
+      s += '<text x="' + ((x0 + x1) / 2) + '" y="' + (y0 + phases.length * rowH + 22) + '" text-anchor="middle" font-size="11">week</text>';
+      var start = 0, baseEnd = 0, shipAt = 0;
+      phases.forEach(function (p, i) {
+        var y = y0 + i * rowH, bx = x0 + start * px, bw = durs[i] * px;
+        s += '<text x="' + (x0 - 8) + '" y="' + (y + 16) + '" text-anchor="end" font-size="12" font-weight="700">' + p.name + '</text>';
+        s += '<rect x="' + bx.toFixed(1) + '" y="' + (y + 4) + '" width="' + Math.max(2, bw).toFixed(1) + '" height="16" rx="3" fill="' + p.color + '"/>';
+        var lbl = durs[i] >= 1 ? durs[i].toFixed(1) + " wk" : Math.round(durs[i] * 5) + " d";
+        s += '<text x="' + (bx + bw + 6).toFixed(1) + '" y="' + (y + 16) + '" font-size="10" opacity=".85">' + lbl + ' · ' + p.dod + '</text>';
+        start += durs[i];
+        if (i === 2) baseEnd = start;
+        if (i === 4) shipAt = start;
+      });
+      var gx1 = x0 + baseEnd * px, gx2 = x0 + shipAt * px, yb = y0 + phases.length * rowH;
+      s += '<line x1="' + gx1 + '" y1="' + (y0 - 4) + '" x2="' + gx1 + '" y2="' + yb + '" stroke="var(--critical)" stroke-width="2" stroke-dasharray="5 3"/>';
+      s += '<text x="' + gx1 + '" y="' + (yb + 38) + '" text-anchor="middle" font-size="11" font-weight="700" fill="var(--critical)">kill gate</text>';
+      s += '<line x1="' + gx2 + '" y1="' + (y0 - 4) + '" x2="' + gx2 + '" y2="' + yb + '" stroke="var(--s7)" stroke-width="2" stroke-dasharray="5 3"/>';
+      s += '<text x="' + gx2 + '" y="' + (yb + 38) + '" text-anchor="middle" font-size="11" font-weight="700" fill="var(--s7)">ship gate</text>';
+      svg.innerHTML = s;
+      baseOut.textContent = "week " + baseEnd.toFixed(1);
+      shipOut.textContent = "week " + shipAt.toFixed(1);
+    };
+    slider.addEventListener("input", renderPlan); renderPlan();
+  }
+
+  /* ---------- Widget 2: expected-value calculator ---------- */
+  var ids = ["ev-p", "ev-r", "ev-n", "ev-c", "ev-v", "ev-o", "ev-s"];
+  var els = {}; ids.forEach(function (id) { els[id] = document.getElementById(id); });
+  var tbody = document.querySelector("#ev-table tbody"), esvg = document.getElementById("ev-svg");
+  if (tbody && esvg && els["ev-p"]) {
+    var money = function (v) { var neg = v < 0; v = Math.abs(Math.round(v)); return (neg ? "−$" : "$") + v.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ","); };
+    var renderEV = function () {
+      var P = +els["ev-p"].value / 100, R = +els["ev-r"].value / 100, N = +els["ev-n"].value, C = +els["ev-c"].value / 100;
+      var V = +els["ev-v"].value, O = +els["ev-o"].value, S = +els["ev-s"].value / 100;
+      var churners = N * C, tp = churners * R, contacted = tp / P;
+      contacted = Math.min(contacted, N);
+      var rows = [
+        { name: "Model (this threshold)", contacted: contacted, reached: tp },
+        { name: "Contact everyone", contacted: N, reached: churners },
+        { name: "Contact no one", contacted: 0, reached: 0 }
+      ];
+      var html = "";
+      rows.forEach(function (r) {
+        r.saved = r.reached * S; r.rev = r.saved * V; r.cost = r.contacted * O; r.profit = r.rev - r.cost;
+        html += "<tr><td><strong>" + r.name + "</strong></td><td class=\"num\">" + Math.round(r.contacted).toLocaleString() + "</td><td class=\"num\">" + Math.round(r.reached).toLocaleString() +
+          "</td><td class=\"num\">" + Math.round(r.saved).toLocaleString() + "</td><td class=\"num\">" + money(r.rev) + "</td><td class=\"num\">" + money(r.cost) +
+          "</td><td class=\"num\" style=\"font-weight:700;color:" + (r.profit >= 0 ? "var(--good)" : "var(--critical)") + "\">" + money(r.profit) + "</td></tr>";
+      });
+      tbody.innerHTML = html;
+      var maxAbs = Math.max(1, Math.abs(rows[0].profit), Math.abs(rows[1].profit)), zeroY = 100, scale = 70 / maxAbs, s = "";
+      s += '<line x1="60" y1="' + zeroY + '" x2="740" y2="' + zeroY + '" stroke="currentColor" stroke-opacity=".5"/>';
+      s += '<text x="56" y="' + (zeroY + 4) + '" text-anchor="end" font-size="10">$0</text>';
+      rows.forEach(function (r, i) {
+        var bx = 120 + i * 220, h = r.profit * scale, y = h >= 0 ? zeroY - h : zeroY;
+        s += '<rect x="' + bx + '" y="' + y.toFixed(1) + '" width="120" height="' + Math.abs(h).toFixed(1) + '" rx="4" fill="' + (i === 0 ? "var(--s1)" : i === 1 ? "var(--s2)" : "var(--ink-3)") + '"/>';
+        s += '<text x="' + (bx + 60) + '" y="' + (h >= 0 ? (y - 6) : (y + Math.abs(h) + 14)).toFixed(1) + '" text-anchor="middle" font-size="12" font-weight="700">' + money(r.profit) + '</text>';
+        s += '<text x="' + (bx + 60) + '" y="190" text-anchor="middle" font-size="11">' + r.name + '</text>';
+      });
+      esvg.innerHTML = s;
+    };
+    ids.forEach(function (id) { els[id].addEventListener("input", renderEV); });
+    renderEV();
+  }
+})();
+</script>
+</body>
+</html>

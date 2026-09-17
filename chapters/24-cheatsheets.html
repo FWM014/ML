@@ -302,7 +302,7 @@
 <tbody>
 <tr><td><strong>Linear regression</strong></td><td>Regression</td><td>No for fit; yes to compare coefficients</td><td>No (one-hot)</td><td>No</td><td>High (coefficients)</td><td>Very fast</td><td>Very fast</td><td>10² – 10⁷</td><td>none; consider <code>fit_intercept</code>, polynomial degree 1–3</td><td>5</td></tr>
 <tr><td><strong>Ridge / Lasso / ElasticNet</strong></td><td>Regression (and classification variants)</td><td><strong>Yes</strong> (penalty is scale-dependent)</td><td>No</td><td>No</td><td>High; Lasso selects features</td><td>Very fast</td><td>Very fast</td><td>10² – 10⁷; p ≫ n fine</td><td><code>alpha</code> 10⁻³ – 10³ (log grid); ElasticNet <code>l1_ratio</code> 0.1–0.9</td><td>5, 7</td></tr>
-<tr><td><strong>Logistic regression</strong></td><td>Classification</td><td><strong>Yes</strong></td><td>No</td><td>No</td><td>High (log-odds per unit)</td><td>Fast</td><td>Very fast</td><td>10² – 10⁷</td><td><code>C</code> 10⁻³ – 10² (log grid); <code>penalty</code> l2/l1; <code>class_weight='balanced'</code></td><td>6</td></tr>
+<tr><td><strong>Logistic regression</strong></td><td>Classification</td><td><strong>Yes</strong></td><td>No</td><td>No</td><td>High (log-odds per unit)</td><td>Fast</td><td>Very fast</td><td>10² – 10⁷</td><td><code>C</code> 10⁻³ – 10² (log grid); <code>l1_ratio</code> 0 (L2) or 1 (L1, needs <code>solver='saga'</code>); <code>class_weight='balanced'</code></td><td>6</td></tr>
 <tr><td><strong>kNN</strong></td><td>Both</td><td><strong>Yes</strong> (distances)</td><td>No</td><td>No</td><td>Medium (show the neighbours)</td><td>Instant (just stores)</td><td>Slow (grows with n)</td><td>10² – 10⁵, low dimension</td><td><code>n_neighbors</code> 3–51 (odd); <code>weights</code> uniform/distance; <code>p</code> 1 or 2</td><td>11</td></tr>
 <tr><td><strong>SVM (RBF)</strong></td><td>Both</td><td><strong>Yes</strong></td><td>No</td><td>No</td><td>Low (kernel); linear SVM medium</td><td>Slow (≈ n²)</td><td>Medium</td><td>10² – 10⁴</td><td><code>C</code> 10⁻² – 10³; <code>gamma</code> 10⁻⁴ – 10 or 'scale'; <code>kernel</code> rbf/linear</td><td>11</td></tr>
 <tr><td><strong>Naive Bayes</strong></td><td>Classification</td><td>No</td><td>Yes (Categorical/Multinomial NB)</td><td>No</td><td>Medium (per-feature likelihoods)</td><td>Very fast</td><td>Very fast</td><td>10² – 10⁷; text bag-of-words</td><td><code>alpha</code> (smoothing) 0.01–10; <code>var_smoothing</code> for Gaussian</td><td>11</td></tr>
@@ -312,10 +312,11 @@
 <tr><td><strong>MLP</strong> (feed-forward net)</td><td>Both</td><td><strong>Yes</strong> (critical)</td><td>No (embed or one-hot)</td><td>No</td><td>Low (use SHAP / permutation)</td><td>Medium–slow</td><td>Fast</td><td>10⁴ – 10⁸; rarely beats boosting on tables</td><td>layers 1–4 × 32–512 units; <code>lr</code> 10⁻⁴ – 10⁻²; dropout 0–0.5; weight decay 10⁻⁵ – 10⁻²; batch 32–512; epochs with early stopping</td><td>15, 16</td></tr>
 <tr><td><strong>CNN</strong></td><td>Vision (classify, detect, segment)</td><td>Yes (normalize pixels)</td><td>n/a</td><td>n/a</td><td>Low (saliency, Grad-CAM)</td><td>Slow (GPU)</td><td>Fast on GPU</td><td>10³ with transfer learning; 10⁵+ from scratch</td><td>backbone (ResNet/EfficientNet), <code>lr</code> 10⁻⁴ – 10⁻² with schedule, augmentation strength, freeze/unfreeze layers, weight decay</td><td>17</td></tr>
 <tr><td><strong>Transformer</strong></td><td>Sequences: text, time series, audio; LLMs</td><td>Yes (layer norm inside; normalize inputs)</td><td>Tokens are categorical by design</td><td>n/a (padding + masks)</td><td>Low (attention maps hint)</td><td>Very slow (GPU, days)</td><td>Medium (quadratic in length)</td><td>Fine-tune: 10³ – 10⁵; pretrain: 10⁹ tokens</td><td><code>d_model</code> 128–1024, heads 4–16, layers 2–24, <code>lr</code> 10⁻⁵ – 10⁻³ with warm-up, dropout 0.1, context length</td><td>18, 19</td></tr>
+<tr><td><strong>ARIMA / ETS</strong> (classical forecasting)</td><td>Forecasting (one series)</td><td>No (but difference / log-transform to stationarity)</td><td>n/a (exogenous regressors must be numeric)</td><td>No</td><td>High (coefficients, decomposition)</td><td>Fast</td><td>Very fast</td><td>10² – 10⁴ points per series; a few series</td><td><code>order=(p, d, q)</code> each 0–5; <code>seasonal_order=(P, D, Q, m)</code>; choose by AIC / rolling-origin CV; switch to lag features + GBM for many series</td><td>14</td></tr>
 <tr><td><strong>k-means</strong></td><td>Clustering</td><td><strong>Yes</strong></td><td>No</td><td>No</td><td>Medium (centroids)</td><td>Fast</td><td>Very fast</td><td>10³ – 10⁷, roundish clusters</td><td><code>n_clusters</code> 2–20 (elbow / silhouette); <code>n_init</code> 10; <code>init='k-means++'</code></td><td>12</td></tr>
 <tr><td><strong>DBSCAN</strong></td><td>Clustering + outliers</td><td><strong>Yes</strong></td><td>No</td><td>No</td><td>Medium</td><td>Medium (≈ n log n)</td><td>n/a (no predict)</td><td>10³ – 10⁶, arbitrary shapes</td><td><code>eps</code> from k-distance plot; <code>min_samples</code> 4–2·dim</td><td>12</td></tr>
 <tr><td><strong>PCA</strong></td><td>Dimensionality reduction</td><td><strong>Yes</strong> (standardize first)</td><td>No</td><td>No</td><td>Medium (loadings)</td><td>Fast</td><td>Very fast</td><td>any; features ≤ 10⁴</td><td><code>n_components</code> by explained variance (0.90–0.99) or 2 for plots; <code>whiten</code></td><td>12</td></tr>
-<tr><td><strong>Isolation Forest</strong></td><td>Anomaly detection</td><td>No</td><td>No</td><td>No</td><td>Low–medium (path length)</td><td>Fast</td><td>Fast</td><td>10³ – 10⁷</td><td><code>contamination</code> 0.001–0.1 (or set threshold on score); <code>n_estimators</code> 100–500; <code>max_samples</code> 256</td><td>22</td></tr>
+<tr><td><strong>Isolation Forest</strong></td><td>Anomaly detection</td><td>No</td><td>No</td><td>Yes (sklearn ≥ 1.6)</td><td>Low–medium (path length)</td><td>Fast</td><td>Fast</td><td>10³ – 10⁷</td><td><code>contamination</code> 0.001–0.1 (or set threshold on score); <code>n_estimators</code> 100–500; <code>max_samples</code> 256</td><td>22</td></tr>
 </tbody>
 </table>
 </div>
@@ -408,7 +409,7 @@
 <tr><td><strong>Ranking / recommendation</strong></td><td>NDCG@k, precision@k, MAP, hit rate</td><td>NDCG@k = DCG@k / ideal DCG@k, DCG = Σ rel<sub>i</sub> / log₂(i+1)</td><td><code>ndcg_score</code>, <code>top_k_accuracy_score</code>; custom for hit rate</td><td>Offline ranking metrics ≠ online CTR; evaluate with an A/B test</td><td>22</td></tr>
 <tr><td><strong>Forecasting</strong></td><td>MAE / RMSE per horizon, MASE, sMAPE</td><td>MASE = MAE / MAE of seasonal-naive on train; sMAPE = mean 2|y−ŷ|/(|y|+|ŷ|)</td><td><code>mean_absolute_error</code> on a <code>TimeSeriesSplit</code>; MASE by hand</td><td>Never random-split time; compare against seasonal naive; error grows with horizon</td><td>14</td></tr>
 <tr><td><strong>Clustering</strong></td><td>Silhouette, Davies–Bouldin (no labels); ARI / NMI (if labels exist)</td><td>Silhouette s = (b − a)/max(a, b): a = mean intra-cluster distance, b = mean distance to nearest other cluster</td><td><code>silhouette_score</code>, <code>davies_bouldin_score</code>, <code>adjusted_rand_score</code></td><td>Internal metrics reward round, well-separated blobs; the real test is whether the segments are actionable</td><td>12</td></tr>
-<tr><td><strong>Probabilities matter</strong> (pricing, triage)</td><td>Brier score, calibration curve</td><td>Brier = mean(p − y)²</td><td><code>brier_score_loss</code>, <code>calibration_curve</code>, <code>CalibratedClassifierCV</code></td><td>Boosted trees and SVMs are often over-confident; calibrate on a separate fold</td><td>13</td></tr>
+<tr><td><strong>Probabilities matter</strong> (pricing, triage)</td><td>Brier score, calibration curve</td><td>Brier = mean(p − y)²</td><td><code>brier_score_loss</code>, <code>calibration_curve</code>, <code>CalibratedClassifierCV</code></td><td>Forests, SVMs, Naive Bayes and neural nets are often mis-calibrated; calibrate on a separate fold, and again after any resampling or class weighting</td><td>6, 13</td></tr>
 </tbody>
 </table>
 </div>
@@ -847,7 +848,8 @@ loaded = joblib.<span class="fn">load</span>(path)                              
 <span class="kw">from</span> xgboost <span class="kw">import</span> XGBClassifier
 <span class="kw">from</span> lightgbm <span class="kw">import</span> LGBMClassifier
 
-<span class="fn">LogisticRegression</span>(C=<span class="nu">1.0</span>, penalty=<span class="st">&quot;l2&quot;</span>, class_weight=<span class="kw">None</span>, max_iter=<span class="nu">1000</span>, solver=<span class="st">&quot;lbfgs&quot;</span>)
+<span class="fn">LogisticRegression</span>(C=<span class="nu">1.0</span>, l1_ratio=<span class="nu">0.0</span>, class_weight=<span class="kw">None</span>, max_iter=<span class="nu">1000</span>, solver=<span class="st">&quot;lbfgs&quot;</span>)
+<span class="cm">#   l1_ratio replaces the deprecated penalty= (sklearn 1.8+): 0 = L2, 1 = L1 (use solver=&quot;saga&quot;)</span>
 <span class="fn">Ridge</span>(alpha=<span class="nu">1.0</span>);  <span class="fn">Lasso</span>(alpha=<span class="nu">0.01</span>, max_iter=<span class="nu">10000</span>)
 <span class="fn">KNeighborsClassifier</span>(n_neighbors=<span class="nu">15</span>, weights=<span class="st">&quot;distance&quot;</span>, p=<span class="nu">2</span>)
 <span class="fn">SVC</span>(C=<span class="nu">1.0</span>, kernel=<span class="st">&quot;rbf&quot;</span>, gamma=<span class="st">&quot;scale&quot;</span>, probability=<span class="kw">False</span>, class_weight=<span class="kw">None</span>)
@@ -1006,7 +1008,7 @@ model.<span class="fn">load_state_dict</span>(state)
 <table class="tbl" style="font-size:.84rem">
 <thead><tr><th>Model</th><th>Parameters in tuning order</th><th>Typical range</th><th>What increasing it does</th></tr></thead>
 <tbody>
-<tr><td><strong>Logistic regression</strong></td><td>1. <code>C</code> → 2. <code>class_weight</code> → 3. <code>penalty</code> (l1 / l2 / elasticnet)</td><td>C: 10⁻³ – 10² log-spaced; class_weight: None / 'balanced'</td><td>C ↑ = weaker regularization, larger coefficients, more variance. 'balanced' raises recall on the minority class at the cost of precision. l1 zeroes out features.</td></tr>
+<tr><td><strong>Logistic regression</strong></td><td>1. <code>C</code> → 2. <code>class_weight</code> → 3. <code>l1_ratio</code> (0 = L2, 1 = L1, between = elastic net; needs <code>solver="saga"</code> when &gt; 0)</td><td>C: 10⁻³ – 10² log-spaced; class_weight: None / 'balanced'; l1_ratio 0 / 0.5 / 1</td><td>C ↑ = weaker regularization, larger coefficients, more variance. 'balanced' raises recall on the minority class at the cost of precision. l1_ratio ↑ zeroes out more features (<code>penalty</code> is deprecated since scikit-learn 1.8).</td></tr>
 <tr><td><strong>Ridge / Lasso / ElasticNet</strong></td><td>1. <code>alpha</code> → 2. <code>l1_ratio</code> (ElasticNet) → 3. polynomial degree if using <code>PolynomialFeatures</code></td><td>alpha: 10⁻³ – 10³ log-spaced; l1_ratio 0.1–0.9; degree 1–3</td><td>alpha ↑ = more shrinkage, smoother fit, higher bias. l1_ratio ↑ = sparser. Degree ↑ = wildly more flexible; always pair with regularization.</td></tr>
 <tr><td><strong>kNN</strong></td><td>1. <code>n_neighbors</code> → 2. <code>weights</code> → 3. <code>p</code> (metric)</td><td>k: 1–51 (odd); uniform / distance; p 1 (Manhattan) or 2 (Euclidean)</td><td>k ↑ = smoother boundary, higher bias; k = 1 memorizes. 'distance' weighting lets near neighbours dominate. Scaling matters more than any of these.</td></tr>
 <tr><td><strong>SVM (RBF)</strong></td><td>1. <code>C</code> and <code>gamma</code> together (2-D grid) → 2. <code>kernel</code> → 3. <code>class_weight</code></td><td>C: 10⁻² – 10³; gamma: 10⁻⁴ – 10 or 'scale'</td><td>C ↑ = fewer margin violations allowed, wigglier boundary. gamma ↑ = each point's influence shrinks, boundary hugs the data, overfits. Try a linear kernel first if n &gt; 10⁴.</td></tr>
@@ -1014,7 +1016,7 @@ model.<span class="fn">load_state_dict</span>(state)
 <tr><td><strong>Random forest</strong></td><td>1. <code>n_estimators</code> (just make it large) → 2. <code>max_features</code> → 3. <code>min_samples_leaf</code> → 4. <code>max_depth</code></td><td>trees 200–1000; max_features sqrt / 0.2–0.8; leaf 1–20; depth None / 8–30</td><td>More trees never hurt, only slow. max_features ↓ = more decorrelated trees, lower variance, slight bias. Leaf ↑ = smoother, needed for noisy targets. Forests rarely need depth limits.</td></tr>
 <tr><td><strong>XGBoost / LightGBM / CatBoost</strong></td><td>1. <code>learning_rate</code> + <code>n_estimators</code> with early stopping → 2. <code>max_depth</code> / <code>num_leaves</code> → 3. <code>min_child_weight</code> / <code>min_child_samples</code> → 4. <code>subsample</code>, <code>colsample_bytree</code> → 5. <code>reg_lambda</code>, <code>reg_alpha</code>, <code>gamma</code></td><td>lr 0.01–0.3; rounds 100–5000 (let early stopping decide); depth 3–10 / leaves 15–255; min_child 1–100; subsample &amp; colsample 0.5–1.0; lambda 0–10</td><td>lr ↓ needs more rounds but generalizes better. Depth/leaves ↑ = higher-order interactions, overfits fast. min_child ↑, subsample ↓, colsample ↓, lambda ↑ all regularize. Rule: fix lr = 0.05, tune structure, then lower lr and re-fit with early stopping.</td></tr>
 <tr><td><strong>HistGradientBoosting</strong> (sklearn)</td><td>1. <code>learning_rate</code> + <code>max_iter</code> (early stopping on) → 2. <code>max_leaf_nodes</code> / <code>max_depth</code> → 3. <code>min_samples_leaf</code> → 4. <code>l2_regularization</code></td><td>lr 0.01–0.3; iter 100–2000; leaves 15–127; min_samples_leaf 5–100; l2 0–10</td><td>Same story as above; <code>categorical_features="from_dtype"</code> handles pandas category columns natively, NaN handled natively.</td></tr>
-<tr><td><strong>MLP / PyTorch net</strong></td><td>1. <code>learning_rate</code> → 2. architecture (width, depth) → 3. <code>weight_decay</code> and dropout → 4. batch size → 5. schedule / warm-up → 6. epochs via early stopping</td><td>lr 10⁻⁴ – 10⁻² (Adam); width 32–1024; depth 1–6; wd 10⁻⁵ – 10⁻²; dropout 0–0.5; batch 32–512</td><td>lr ↑ trains faster until it diverges (loss becomes NaN or oscillates); width/depth ↑ = capacity; wd/dropout ↑ = regularize; batch ↑ = smoother but noisier-generalizing gradients; more epochs overfit unless stopped early.</td></tr>
+<tr><td><strong>MLP / PyTorch net</strong></td><td>1. <code>learning_rate</code> → 2. architecture (width, depth) → 3. <code>weight_decay</code> and dropout → 4. batch size → 5. schedule / warm-up → 6. epochs via early stopping</td><td>lr 10⁻⁴ – 10⁻² (Adam); width 32–1024; depth 1–6; wd 10⁻⁵ – 10⁻²; dropout 0–0.5; batch 32–512</td><td>lr ↑ trains faster until it diverges (loss becomes NaN or oscillates); width/depth ↑ = capacity; wd/dropout ↑ = regularize; batch ↑ = less noisy gradients and faster epochs but often slightly worse generalization (raise lr with it); more epochs overfit unless stopped early.</td></tr>
 <tr><td><strong>k-means</strong></td><td>1. <code>n_clusters</code> → 2. <code>n_init</code> → 3. feature scaling / PCA before it</td><td>k 2–20; n_init 10–50</td><td>k ↑ always lowers inertia (no free lunch) — use the elbow, silhouette, and whether segments are actionable. n_init ↑ = more restarts, better optimum.</td></tr>
 <tr><td><strong>DBSCAN</strong></td><td>1. <code>eps</code> → 2. <code>min_samples</code> → 3. metric</td><td>eps: knee of the sorted k-distance plot; min_samples 4 – 2·dims</td><td>eps ↑ = clusters merge, fewer outliers; min_samples ↑ = denser cores required, more points labelled noise (−1).</td></tr>
 <tr><td><strong>PCA</strong></td><td>1. <code>n_components</code> → 2. <code>whiten</code></td><td>components: enough for 90–99% variance, or 2–3 for plots</td><td>More components keep more variance and more noise; always standardize first or the largest-scale feature becomes PC1.</td></tr>
@@ -1073,7 +1075,7 @@ model.<span class="fn">load_state_dict</span>(state)
     <text x="585" y="400" class="lbl" style="font-size:10.5px">• early stopping on a validation fold (boosting, nets)</text>
     <text x="585" y="416" class="lbl" style="font-size:10.5px">• fewer / less noisy features; drop high-cardinality IDs</text>
     <text x="585" y="432" class="lbl" style="font-size:10.5px">• ensembling / bagging to cut variance</text>
-    <text x="585" y="448" class="lbl" style="font-size:10.5px">• check for duplicates straddling the split (fake gap = leak)</text>
+    <text x="585" y="448" class="lbl" style="font-size:10.5px">• re-check the gap with a group / time split: random splits understate it</text>
   </g>
   <path d="M450,226 L450,246" class="arrow" marker-end="url(#arr-f7)"/><text x="462" y="242" class="lbl" style="font-size:10px">no</text>
 
@@ -1143,6 +1145,7 @@ model.<span class="fn">load_state_dict</span>(state)
 
 <h4 class="gloss-h">A</h4>
 <dl class="gloss">
+<dt>A/B test</dt><dd>Randomly assign units to a treatment or control group and compare outcomes; the gold standard for measuring a causal effect and for validating a model online. (Ch 21, 22)</dd>
 <dt>Activation function</dt><dd>The non-linearity applied after each layer's weighted sum (ReLU, sigmoid, tanh, GELU); without it a deep network collapses into one linear layer. (Ch 15)</dd>
 <dt>Adam</dt><dd>An optimizer that combines momentum with a per-parameter adaptive step size; the default choice for training neural networks. (Ch 16)</dd>
 <dt>AdaBoost</dt><dd>An early boosting algorithm that re-weights misclassified examples so the next weak learner focuses on them; historically important, now mostly replaced by gradient boosting. (Ch 10)</dd>
@@ -1150,14 +1153,16 @@ model.<span class="fn">load_state_dict</span>(state)
 <dt>ARIMA</dt><dd>AutoRegressive Integrated Moving Average, a classical forecasting model written ARIMA(p, d, q): p lags of the series, d differences, q lags of past errors. (Ch 14)</dd>
 <dt>Attention</dt><dd>A mechanism that lets each position in a sequence compute a weighted average over all other positions, with weights learned from content; the core of the Transformer. (Ch 18)</dd>
 <dt>AUC (ROC-AUC)</dt><dd>Area under the ROC curve; the probability that a random positive is scored above a random negative. Threshold-free and class-balance-insensitive. (Ch 6)</dd>
+<dt>Autocorrelation (ACF / PACF)</dt><dd>The correlation of a time series with its own lagged values; the ACF and partial-ACF plots show which lags carry signal and guide ARIMA's p and q. (Ch 14)</dd>
 <dt>Autoencoder</dt><dd>A network trained to reconstruct its input through a narrow bottleneck; the bottleneck is a learned compression, and large reconstruction error flags anomalies. (Ch 22)</dd>
-<dt>Autoregressive</dt><dd>Predicting the next value from previous values of the same series; ARIMA's AR term and LLM next-token generation are both autoregressive. (Ch 14, 19)</dd>
+<dt>Autoregressive</dt><dd>Predicting the next value from previous values of the same series; ARIMA's AR term and LLM next-token generation are both autoregressive. (Ch 14, 18, 19)</dd>
 
 </dl>
 <h4 class="gloss-h">B</h4>
 <dl class="gloss">
 <dt>Backpropagation</dt><dd>The chain rule applied layer by layer, backwards, to compute the gradient of the loss with respect to every weight in a network. (Ch 15)</dd>
 <dt>Bagging</dt><dd>Bootstrap aggregating: train many models on bootstrap resamples of the data and average their predictions to reduce variance; the idea behind random forests. (Ch 10)</dd>
+<dt>Bandit (multi-armed)</dt><dd>A one-step reinforcement-learning problem: repeatedly choose among options with unknown rewards while balancing exploration and exploitation; the practical form of RL for online recommendations and experiments. (Ch 22)</dd>
 <dt>Baseline</dt><dd>The simplest possible predictor (mean, majority class, last value, the current business rule) that every model must beat convincingly to justify its existence. (Ch 1, 23)</dd>
 <dt>Batch / mini-batch</dt><dd>A subset of training rows used for one gradient step; batch size trades gradient noise against memory and speed. (Ch 16)</dd>
 <dt>Batch normalization</dt><dd>A layer that standardizes its inputs using batch statistics, stabilizing and speeding up deep-network training. (Ch 16)</dd>
@@ -1166,21 +1171,24 @@ model.<span class="fn">load_state_dict</span>(state)
 <dt>Bias (weight)</dt><dd>The intercept term b in wᵀx + b, letting a linear unit shift its output; unrelated to statistical bias. (Ch 5, 15)</dd>
 <dt>Bias–variance trade-off</dt><dd>Making a model more flexible lowers bias but raises variance; the best generalization sits at the minimum of their sum. (Ch 7)</dd>
 <dt>Boosting</dt><dd>Building an ensemble sequentially, each new model correcting the errors of the sum so far; gradient boosting is the dominant form. (Ch 10)</dd>
-<dt>Bootstrap</dt><dd>Resampling the training set with replacement to create many "alternative" datasets; used in bagging and to estimate confidence intervals. (Ch 7, 10)</dd>
-<dt>Brier score</dt><dd>Mean squared error between predicted probabilities and 0/1 outcomes; a proper measure of probability quality. (Ch 13)</dd>
+<dt>Bootstrap</dt><dd>Resampling the training set with replacement to create many "alternative" datasets; used in bagging and to estimate confidence intervals. (Ch 10, 13)</dd>
+<dt>Brier score</dt><dd>Mean squared error between predicted probabilities and 0/1 outcomes; a proper scoring rule, so it rewards calibration and sharpness together. (Ch 6, 13)</dd>
 
 </dl>
 <h4 class="gloss-h">C</h4>
 <dl class="gloss">
-<dt>Calibration</dt><dd>Whether predicted probabilities match observed frequencies (of events scored 0.8, about 80% happen); checked with a calibration curve and fixed with Platt scaling or isotonic regression. (Ch 13)</dd>
+<dt>Calibration</dt><dd>Whether predicted probabilities match observed frequencies (of events scored 0.8, about 80% happen); checked with a calibration curve and fixed with Platt scaling or isotonic regression. (Ch 6, 13)</dd>
 <dt>Categorical feature</dt><dd>A column whose values are labels rather than quantities (country, plan type); needs encoding (one-hot, ordinal, target) or a model that handles it natively. (Ch 8)</dd>
 <dt>Causal inference</dt><dd>Estimating the effect of an intervention rather than a correlation; needs experiments (A/B tests) or assumptions (confounders observed) that prediction does not. (Ch 22)</dd>
 <dt>Class imbalance</dt><dd>When one class is far rarer than the other; makes accuracy misleading and calls for PR-AUC, class weights, resampling or threshold tuning. (Ch 13)</dd>
 <dt>Classification</dt><dd>Supervised learning where the target is a category. (Ch 1, 6)</dd>
 <dt>Clustering</dt><dd>Grouping rows so that members of a group are similar to each other and different from other groups, without labels. (Ch 12)</dd>
+<dt>CNN (convolutional neural network)</dt><dd>A network of convolution and pooling layers that learns local, translation-tolerant features; the standard architecture for images. (Ch 17)</dd>
 <dt>Coefficient</dt><dd>A learned weight in a linear model; its sign and size (after scaling) say how the feature moves the prediction. (Ch 5)</dd>
+<dt>Cold start</dt><dd>The recommender problem of users or items with no interaction history; handled with content features or popularity fallbacks. (Ch 22)</dd>
 <dt>ColumnTransformer</dt><dd>The scikit-learn object that applies different preprocessing to different columns (scale the numbers, one-hot the categories) inside one pipeline. (Ch 8)</dd>
 <dt>Concept drift</dt><dd>The relationship between features and target changes over time (the same inputs now mean something else), so the model must be retrained. (Ch 21)</dd>
+<dt>Confounder</dt><dd>A variable that influences both the treatment and the outcome, creating a correlation that is not causal; it must be measured and adjusted for, or randomized away, to estimate an effect. (Ch 22)</dd>
 <dt>Confusion matrix</dt><dd>The table of actual vs predicted classes (TP, FP, FN, TN for binary); every classification metric is a ratio of its cells. (Ch 6)</dd>
 <dt>Convolution</dt><dd>Sliding a small learned filter across an image (or sequence) to detect a local pattern anywhere it appears; the building block of CNNs. (Ch 17)</dd>
 <dt>Cosine similarity</dt><dd>The cosine of the angle between two vectors; the standard similarity measure for embeddings. (Ch 12, 19)</dd>
@@ -1191,24 +1199,29 @@ model.<span class="fn">load_state_dict</span>(state)
 </dl>
 <h4 class="gloss-h">D</h4>
 <dl class="gloss">
+<dt>Data augmentation</dt><dd>Creating extra training examples by label-preserving transforms (flips, crops, noise, paraphrases); a strong regularizer for images and text. (Ch 16, 17)</dd>
 <dt>Data drift</dt><dd>The distribution of the inputs changes over time (new customer mix, new sensor) even if the true relationship does not; detected with PSI or similar. (Ch 21)</dd>
 <dt>Data leakage</dt><dd>Information about the target sneaking into the features or preprocessing, inflating validation scores that then collapse in production. (Ch 7, 8)</dd>
-<dt>DBSCAN</dt><dd>Density-based clustering that grows clusters from dense cores and labels sparse points as noise; finds arbitrary shapes without choosing k. (Ch 12)</dd>
+<dt>DAG (causal graph)</dt><dd>A directed acyclic graph of which variables cause which; drawing it tells you what to adjust for (confounders) and what not to (colliders, mediators). (Ch 22)</dd>
+<dt>DBSCAN</dt><dd>Density-based clustering that grows clusters from core points with at least <code>min_samples</code> neighbours within radius <code>eps</code> and labels sparse points as noise (−1); finds arbitrary shapes without choosing k. (Ch 12)</dd>
 <dt>Decision boundary</dt><dd>The surface in feature space where a classifier switches from one class to another. (Ch 6)</dd>
 <dt>Decision tree</dt><dd>A model that asks a sequence of yes/no questions about features, chosen greedily to reduce impurity, ending in leaves that predict. (Ch 9)</dd>
 <dt>Deep learning</dt><dd>Models built from many stacked differentiable layers trained end-to-end with gradient descent. (Ch 15–19)</dd>
 <dt>Dimensionality reduction</dt><dd>Compressing many features into few while keeping most of the structure (PCA, t-SNE, UMAP, autoencoders). (Ch 12)</dd>
+<dt>Discount factor (γ)</dt><dd>In reinforcement learning, how much a reward one step later is worth relative to now (0 = myopic, near 1 = far-sighted); it also keeps the value of an endless future finite. (Ch 22)</dd>
 <dt>Dropout</dt><dd>Randomly zeroing a fraction of activations during training so the network cannot rely on any single unit; a cheap, effective regularizer. (Ch 16)</dd>
 
 </dl>
 <h4 class="gloss-h">E</h4>
 <dl class="gloss">
 <dt>Early stopping</dt><dd>Stop training when the validation score stops improving for a set number of rounds; the most important regularizer for boosting and neural nets. (Ch 10, 16)</dd>
+<dt>Elbow method</dt><dd>Plot k-means inertia against k and pick the k where the curve bends; a heuristic, so confirm with the silhouette score and whether the segments are actionable. (Ch 12)</dd>
 <dt>Embedding</dt><dd>A learned dense vector representing a discrete thing (word, product, user) so that similar things are close together. (Ch 19)</dd>
 <dt>Encoder–decoder</dt><dd>An architecture that compresses an input sequence into a representation and then generates an output sequence from it (translation, summarization). (Ch 18)</dd>
 <dt>Ensemble</dt><dd>Combining several models' predictions (averaging, voting, stacking) to get better accuracy and lower variance than any single one. (Ch 10)</dd>
 <dt>Entropy</dt><dd>−Σ p log p, the impurity or uncertainty of a class distribution; zero when pure. (Ch 9)</dd>
 <dt>Epoch</dt><dd>One full pass over the training data during gradient-based training. (Ch 16)</dd>
+<dt>Explained variance ratio</dt><dd>The fraction of total variance each principal component captures; the cumulative curve decides how many components to keep (e.g. enough for 95%). (Ch 12)</dd>
 <dt>Exploding / vanishing gradients</dt><dd>Gradients growing or shrinking exponentially through many layers, stalling deep or recurrent networks; fixed by ReLU, normalization, residual connections and gradient clipping. (Ch 16, 18)</dd>
 
 </dl>
@@ -1231,13 +1244,15 @@ model.<span class="fn">load_state_dict</span>(state)
 <dt>Gradient boosting</dt><dd>Boosting where each new tree is fitted to the gradient of the loss (the residuals for squared error); XGBoost, LightGBM, CatBoost and HistGradientBoosting are implementations. (Ch 10)</dd>
 <dt>Gradient descent</dt><dd>Iteratively update parameters by subtracting the learning rate times the gradient. (Ch 5)</dd>
 <dt>GridSearchCV</dt><dd>Try every combination in a hyperparameter grid with cross-validation; fine for one or two knobs. (Ch 13)</dd>
-<dt>Ground truth</dt><dd>The true label used to train and evaluate; only as good as the process that produced it. (Ch 2)</dd>
+<dt>Ground truth</dt><dd>The true label used to train and evaluate; only as good as the process that produced it. (Ch 1, 2)</dd>
 <dt>GroupKFold</dt><dd>Cross-validation that keeps all rows of the same group (customer, patient) in the same fold to prevent entity leakage. (Ch 7, 13)</dd>
 
 </dl>
 <h4 class="gloss-h">H–I</h4>
 <dl class="gloss">
+<dt>Hierarchical clustering</dt><dd>Agglomerative clustering that repeatedly merges the two closest clusters, producing a dendrogram that can be cut at any number of clusters. (Ch 12)</dd>
 <dt>Hyperparameter</dt><dd>A setting chosen before training (tree depth, learning rate, C) rather than learned from data. (Ch 1, 13)</dd>
+<dt>ICE / partial dependence</dt><dd>Plots of how the prediction changes as one feature varies, averaged over rows (partial dependence) or drawn one line per row (individual conditional expectation) to reveal interactions. (Ch 20)</dd>
 <dt>Imputation</dt><dd>Filling in missing values (median, most frequent, model-based) — inside the pipeline, fitted on training data only. (Ch 8)</dd>
 <dt>Inference</dt><dd>Using a trained model to make predictions; also called scoring or serving. (Ch 1, 21)</dd>
 <dt>Information gain</dt><dd>The reduction in entropy achieved by a split; trees choose the split with the largest gain. (Ch 9)</dd>
@@ -1249,12 +1264,18 @@ model.<span class="fn">load_state_dict</span>(state)
 <dl class="gloss">
 <dt>k-fold</dt><dd>Cross-validation with k equal folds (5 or 10 is standard). (Ch 7)</dd>
 <dt>k-means</dt><dd>Clustering that alternates assigning points to the nearest of k centroids and moving centroids to their members' mean; fast, needs scaling and a chosen k. (Ch 12)</dd>
+<dt>Kernel trick</dt><dd>Computing dot products in a high-dimensional feature space through a kernel function (RBF, polynomial) without ever building that space; how an SVM draws non-linear boundaries. (Ch 11)</dd>
 <dt>kNN (k-nearest neighbours)</dt><dd>Predict by looking at the k closest training rows and voting or averaging; no training, slow prediction, needs scaling. (Ch 11)</dd>
+<dt>KV cache</dt><dd>In autoregressive Transformer inference, storing each past token's keys and values so that generating the next token does not recompute them; the main memory cost of long contexts. (Ch 18)</dd>
 <dt>L1 / L2 regularization</dt><dd>Penalties on the sum of |w| (L1, Lasso, sparsifying) or w² (L2, Ridge, shrinking) added to the loss to control variance. (Ch 5, 7)</dd>
 <dt>Label / target</dt><dd>The column to predict; y. (Ch 1)</dd>
 <dt>Label encoding</dt><dd>Mapping categories to integers; only appropriate for ordered categories or tree models, otherwise it invents a false ordering. (Ch 8)</dd>
+<dt>Large language model (LLM)</dt><dd>A Transformer with billions of parameters pretrained to predict the next token on internet-scale text, then adapted by prompting, RAG or fine-tuning. (Ch 19)</dd>
 <dt>Lasso</dt><dd>Linear regression with an L1 penalty; drives some coefficients to exactly zero. (Ch 5)</dd>
+<dt>Layer normalization</dt><dd>Normalizing each token's activations across its own features (rather than across the batch); the normalization used inside Transformers. (Ch 16, 18)</dd>
+<dt>Learning curve</dt><dd>Score against training-set size (or epochs) for train and validation; two low curves that meet mean bias, a wide gap means variance and more data would help. (Ch 7)</dd>
 <dt>Learning rate</dt><dd>The step size of gradient descent (or the shrinkage of each boosting round); the single most important knob for nets and boosting. (Ch 5, 10, 16)</dd>
+<dt>Learning-rate schedule / one-cycle</dt><dd>Changing the learning rate during training (warm-up, cosine decay, one-cycle: rise then fall); often the biggest free gain in deep-net training. (Ch 16)</dd>
 <dt>Leaf</dt><dd>A terminal node of a decision tree holding a prediction. (Ch 9)</dd>
 <dt>Likelihood</dt><dd>The probability of the observed data under a model's parameters; maximizing it is what fitting logistic regression and Naive Bayes does. (Ch 3, 6)</dd>
 <dt>Linear regression</dt><dd>Fit a weighted sum of features to a numeric target by minimizing squared error. (Ch 5)</dd>
@@ -1267,9 +1288,12 @@ model.<span class="fn">load_state_dict</span>(state)
 <h4 class="gloss-h">M</h4>
 <dl class="gloss">
 <dt>MAE</dt><dd>Mean absolute error; the typical size of a miss in the target's units, robust to outliers. (Ch 5)</dd>
+<dt>MASE</dt><dd>Mean absolute scaled error: MAE divided by the MAE of the seasonal-naive forecast on the training data; below 1 means you beat naive. (Ch 14)</dd>
 <dt>Matrix factorization</dt><dd>Representing a user × item ratings matrix as the product of two low-rank matrices of embeddings; the classical recommender. (Ch 22)</dd>
 <dt>MCC</dt><dd>Matthews correlation coefficient: correlation between predicted and true labels using all four confusion cells; robust to imbalance. (Ch 6, 13)</dd>
+<dt>MDP (Markov decision process)</dt><dd>The formal setting of reinforcement learning: states, actions, transition probabilities, rewards and a discount factor, where the next state depends only on the current state and action. (Ch 22)</dd>
 <dt>MLP</dt><dd>Multi-layer perceptron: a stack of fully connected layers with non-linear activations; the basic feed-forward network. (Ch 15)</dd>
+<dt>MLOps</dt><dd>The engineering practice of shipping and running models: versioning, registries, CI/CD, serving, monitoring and retraining. (Ch 21)</dd>
 <dt>Model</dt><dd>The learned function from features to prediction. (Ch 1)</dd>
 <dt>Model registry</dt><dd>A versioned store of trained models with their metadata, metrics and lineage; what production loads from. (Ch 21)</dd>
 <dt>Momentum</dt><dd>Accumulating past gradients so optimization accelerates along consistent directions and damps oscillation. (Ch 16)</dd>
@@ -1280,6 +1304,9 @@ model.<span class="fn">load_state_dict</span>(state)
 <h4 class="gloss-h">N–O</h4>
 <dl class="gloss">
 <dt>Naive Bayes</dt><dd>A classifier that multiplies per-feature likelihoods under an independence assumption; fast and strong for bag-of-words text. (Ch 11)</dd>
+<dt>NDCG@k</dt><dd>Normalized discounted cumulative gain: a ranking metric that rewards placing relevant items near the top of the list, divided by the ideal ordering so 1 is perfect; precision@k is its simpler cousin. (Ch 22)</dd>
+<dt>Nested cross-validation</dt><dd>An outer CV loop for evaluation wrapping an inner loop for hyperparameter search, so the reported score is not biased by the tuning. (Ch 7, 13)</dd>
+<dt>Neural network</dt><dd>Layers of weighted sums and non-linearities trained by gradient descent and backpropagation; with enough units it can approximate any function. (Ch 15)</dd>
 <dt>Normalization (min–max)</dt><dd>Rescaling a feature to [0, 1]; contrast with standardization (z-scores). (Ch 8)</dd>
 <dt>One-hot encoding</dt><dd>Turning a categorical column into one 0/1 column per category. (Ch 8)</dd>
 <dt>Out-of-bag (OOB)</dt><dd>In bagging, the rows not drawn for a given bootstrap; scoring each tree on its OOB rows gives a free validation estimate. (Ch 10)</dd>
@@ -1297,9 +1324,11 @@ model.<span class="fn">load_state_dict</span>(state)
 <dt>Policy</dt><dd>In reinforcement learning, the mapping from state to action the agent learns. (Ch 22)</dd>
 <dt>Pooling</dt><dd>Down-sampling a feature map by taking the max or mean over small windows, giving CNNs translation tolerance. (Ch 17)</dd>
 <dt>Positional encoding</dt><dd>Vectors added to token embeddings so a Transformer, which has no inherent order, knows each token's position. (Ch 18)</dd>
+<dt>PR-AUC (average precision)</dt><dd>Area under the precision–recall curve; the ranking metric to prefer over ROC-AUC when positives are rare, because it ignores the flood of easy true negatives. (Ch 6, 13)</dd>
 <dt>Precision</dt><dd>TP / (TP + FP): of the predicted positives, the fraction that were real. (Ch 6)</dd>
 <dt>Precision–recall curve</dt><dd>Precision vs recall as the threshold sweeps; its area (average precision) is the right ranking metric for rare positives. (Ch 6, 13)</dd>
 <dt>Prompt</dt><dd>The text given to an LLM to steer its output; prompt engineering is the cheapest way to adapt an LLM. (Ch 19)</dd>
+<dt>Propensity score</dt><dd>The estimated probability of receiving a treatment given the covariates; matching or weighting on it balances treated and untreated groups in observational causal studies. (Ch 22)</dd>
 <dt>PSI</dt><dd>Population stability index: a binned divergence between a reference and current distribution used for drift monitoring. (Ch 21)</dd>
 
 </dl>
@@ -1311,6 +1340,8 @@ model.<span class="fn">load_state_dict</span>(state)
 <dt>Random forest</dt><dd>Bagged decision trees that also sample a random subset of features at each split; strong, low-maintenance, hard to overfit badly. (Ch 10)</dd>
 <dt>random_state / seed</dt><dd>The number that fixes any randomness (splits, initialization, sampling) so results reproduce; always set it, and vary it to measure stability. (Ch 4, 7)</dd>
 <dt>Recall (sensitivity)</dt><dd>TP / (TP + FN): of the real positives, the fraction we caught. (Ch 6)</dd>
+<dt>Receptive field</dt><dd>The region of the input that influences one unit's activation; it grows with every convolution or pooling layer, so deep units see whole objects. (Ch 17)</dd>
+<dt>Recommender system</dt><dd>Ranking items for a user from past interactions (collaborative filtering, matrix factorization) and/or content features; evaluated offline with ranking metrics and online with A/B tests. (Ch 22)</dd>
 <dt>Regression</dt><dd>Supervised learning where the target is a number. (Ch 1, 5)</dd>
 <dt>Regularization</dt><dd>Any technique that constrains a model to reduce variance: penalties, pruning, dropout, early stopping, data augmentation. (Ch 7)</dd>
 <dt>Reinforcement learning</dt><dd>Learning a policy by acting in an environment and receiving rewards. (Ch 1, 22)</dd>
@@ -1328,10 +1359,12 @@ model.<span class="fn">load_state_dict</span>(state)
 <dt>Scaling / standardization</dt><dd>Transforming features to comparable ranges (z-scores or min–max); required for distance- and gradient-based models. (Ch 8)</dd>
 <dt>Seasonality</dt><dd>A repeating pattern in a time series at a fixed period (weekly, yearly); the seasonal-naive forecast is the baseline. (Ch 14)</dd>
 <dt>Self-attention</dt><dd>Attention where queries, keys and values all come from the same sequence, letting every token look at every other. (Ch 18)</dd>
-<dt>Semi-supervised learning</dt><dd>Training with a small labelled set plus a large unlabelled set (pseudo-labelling, consistency training). (Ch 12)</dd>
+<dt>Semi-supervised learning</dt><dd>Training with a small labelled set plus a large unlabelled set (pseudo-labelling, consistency training). (Ch 22)</dd>
 <dt>SHAP</dt><dd>Shapley-value-based explanations that attribute each prediction to features so contributions sum exactly to the prediction; fast and exact for trees. (Ch 20)</dd>
 <dt>Sigmoid</dt><dd>1 / (1 + e⁻ᶻ), squashing any number into (0, 1). (Ch 6)</dd>
 <dt>Silhouette score</dt><dd>(b − a) / max(a, b) per point: how much closer it is to its own cluster than to the nearest other; averaged to judge a clustering. (Ch 12)</dd>
+<dt>sMAPE</dt><dd>Symmetric mean absolute percentage error, the mean of 2|y − ŷ| / (|y| + |ŷ|); scale-free but unstable when values are near zero. (Ch 14)</dd>
+<dt>SMOTE</dt><dd>Synthetic minority oversampling: creating new minority-class rows by interpolating between neighbours; apply it inside the CV folds only, and expect distorted probabilities. (Ch 13)</dd>
 <dt>Softmax</dt><dd>Turns K scores into K probabilities summing to 1. (Ch 6, 15)</dd>
 <dt>Sparsity</dt><dd>Most values are zero, as in one-hot text features or Lasso coefficients. (Ch 5, 8)</dd>
 <dt>Split (tree)</dt><dd>A feature-threshold question that sends rows left or right in a decision tree. (Ch 9)</dd>
@@ -1346,13 +1379,14 @@ model.<span class="fn">load_state_dict</span>(state)
 </dl>
 <h4 class="gloss-h">T</h4>
 <dl class="gloss">
-<dt>t-SNE / UMAP</dt><dd>Non-linear dimensionality reduction for visualizing high-dimensional data in 2-D; distances between far-apart clusters are not meaningful. (Ch 12)</dd>
+<dt>t-SNE / UMAP</dt><dd>Non-linear dimensionality reduction for visualizing high-dimensional data in 2-D; t-SNE's perplexity (≈ 5–50) sets the neighbourhood size, and distances between far-apart clusters are not meaningful. (Ch 12)</dd>
 <dt>Target encoding</dt><dd>Replacing a category with the mean target for that category; powerful, but must be done out-of-fold or it leaks. (Ch 8)</dd>
 <dt>Tensor</dt><dd>A multi-dimensional array (PyTorch's core data type) that can live on a GPU and track gradients. (Ch 16)</dd>
 <dt>Test set</dt><dd>Data held out and touched once, at the very end, to report the final number. (Ch 7)</dd>
 <dt>Threshold</dt><dd>The probability cutoff that turns a score into a class; chosen on validation data to match the costs of FP and FN, not left at 0.5. (Ch 6, 13)</dd>
+<dt>Thompson sampling</dt><dd>A bandit strategy that keeps a posterior over each arm's reward and pulls the arm that wins a random draw from those posteriors; it explores automatically in proportion to uncertainty. (Ch 22)</dd>
 <dt>Time-series cross-validation</dt><dd>Expanding- or rolling-window folds where validation always comes after training in time. (Ch 14)</dd>
-<dt>Token</dt><dd>The unit an LLM reads and writes: a word piece, roughly ¾ of a word in English. (Ch 19)</dd>
+<dt>Token / tokenization</dt><dd>Tokenization splits text into the units an LLM reads and writes (word pieces, roughly ¾ of a word in English); tokens, not words, are what context windows and API prices count. (Ch 19)</dd>
 <dt>Training set</dt><dd>The rows the model learns from. (Ch 7)</dd>
 <dt>Transfer learning</dt><dd>Reusing a model pretrained on a large dataset as the starting point for a new task. (Ch 17, 19)</dd>
 <dt>Transformer</dt><dd>The architecture built from stacked self-attention and feed-forward layers; the basis of all modern LLMs. (Ch 18)</dd>
@@ -1485,7 +1519,7 @@ model.<span class="fn">load_state_dict</span>(state)
 <p>Q(s, a) estimates the long-run reward of taking action a in state s; after each step the estimate is nudged toward the observed reward plus the discounted value of the best next action: Q ← Q + α[r + γ max Q(s′, ·) − Q]. Because the target uses the current estimate of the next state, it bootstraps and converges under enough exploration. Exploration (trying non-greedy actions, e.g. ε-greedy) is required or the agent never discovers better actions; exploitation is required to collect reward. Caveat: in business settings RL is usually a bandit problem with immediate reward, which is far easier and safer than full RL (Chapter 22).</p></details>
 
 <details class="answer"><summary>34. What is calibration, why does it matter, and how do you fix it?</summary>
-<p>A model is calibrated if, among predictions of 0.7, about 70% are positive. It matters whenever the probability itself drives a decision: expected-value pricing, risk triage, or combining scores across models. Boosted trees, SVMs and neural nets are often mis-calibrated (over-confident); check with a reliability diagram and the Brier score, and fix with Platt scaling (logistic on the scores) or isotonic regression fitted on a held-out fold (<code>CalibratedClassifierCV</code>). Caveat: resampling for imbalance destroys calibration, so calibrate after (Chapter 13).</p></details>
+<p>A model is calibrated if, among predictions of 0.7, about 70% are positive. It matters whenever the probability itself drives a decision: expected-value pricing, risk triage, or combining scores across models. Random forests, SVMs, Naive Bayes and neural nets are often mis-calibrated (forest and SVM scores are squeezed away from 0 and 1, Naive Bayes and deep nets are over-confident, and boosting drifts over-confident once it overfits); check with a reliability diagram and the Brier score, and fix with Platt scaling (logistic on the scores) or isotonic regression fitted on a held-out fold (<code>CalibratedClassifierCV</code>). Caveat: resampling or class weighting for imbalance destroys calibration, so calibrate after (Chapter 6, 13).</p></details>
 
 <details class="answer"><summary>35. How does transfer learning work for images, and when does it fail?</summary>
 <p>A CNN pretrained on a large dataset has learned general visual features (edges, textures, parts) in its early and middle layers; you keep those, replace the final classifier, and either train only the new head or fine-tune the whole network with a small learning rate. This lets a few hundred labelled images reach accuracy that would otherwise need hundreds of thousands. It fails when the domain is far from natural images (radiology, spectrograms, satellite bands) and the low-level statistics differ, or when the pretraining data leaks your test set. Caveat: augmentation and a proper validation split matter more than the choice of backbone (Chapter 17).</p></details>
@@ -1608,7 +1642,7 @@ model.<span class="fn">load_state_dict</span>(state)
     <span>MCC <span class="readout" id="mc-mcc">–</span></span>
   </div>
   <svg viewBox="0 0 770 300" id="mc-svg" role="img" aria-label="Confusion matrix with cells shaded in proportion to their counts, and bars for each derived metric"></svg>
-  <div class="note">Cells are shaded by their share of all rows; the bars on the right show each metric with its formula. Notice that MCC drops toward 0 for the "always negative" model even though accuracy stays high, and that F1 ignores TN entirely (Chapter 6).</div>
+  <div class="note">Cells are shaded by their share of all rows; the bars on the right show each metric with its formula. Notice that MCC collapses to ≈ 0 for the "always negative" model even though accuracy stays high (at exactly zero predicted positives it is undefined: the widget shows n/a where scikit-learn reports 0), and that F1 ignores TN entirely (Chapter 6).</div>
 </div>
 
 <!-- ============================================================ -->
@@ -1704,7 +1738,7 @@ model.<span class="fn">load_state_dict</span>(state)
 <details class="answer"><summary>Show answers</summary>
 <ol>
   <li>MAE per horizon (or MASE vs seasonal naive); secondary RMSE for peak errors; rolling time-ordered splits, never shuffled (Chapter 14).</li>
-  <li>Precision at the review capacity (precision@500/day, i.e. recall at that threshold) or PR-AUC; secondary recall at the chosen threshold; stratified k-fold with a time-based final holdout (Chapter 13).</li>
+  <li>Precision at the review capacity (precision among the top 500 alerts per day) or PR-AUC; secondary recall at that same cut-off; stratified k-fold with a time-based final holdout (Chapter 13).</li>
   <li>Macro-F1 (equal class weight) with the confusion matrix for confusable pairs; secondary accuracy since balanced; stratified k-fold (Chapter 6).</li>
   <li>NDCG@10 or precision@k; secondary hit rate; grouped by user/session for splitting, then an online A/B test because offline ranking metrics diverge from clicks (Chapter 22).</li>
   <li>Log-loss or Brier score with a calibration curve, because the probability itself feeds the price; secondary ROC-AUC for ranking; time-ordered holdout plus a calibration fold (Chapter 13).</li>

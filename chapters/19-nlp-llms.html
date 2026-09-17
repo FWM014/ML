@@ -72,12 +72,12 @@
   <line x1="465" y1="100" x2="493" y2="100" class="arrow" marker-end="url(#arr-g1)"/>
   <rect x="495" y="20" width="150" height="160" rx="8" fill="var(--accent-soft)" stroke="var(--accent)" stroke-width="1.5"/>
   <text x="570" y="42" text-anchor="middle" class="lbl-strong">Represent as numbers</text>
-  <rect x="507" y="54" width="126" height="34" rx="5" fill="var(--s1)" fill-opacity=".18" stroke="var(--s1)"/>
-  <text x="570" y="68" text-anchor="middle" class="lbl-strong" font-size="10">TF-IDF sparse vector</text><text x="570" y="82" text-anchor="middle" class="lbl" font-size="9">50k dims, mostly zeros · §3</text>
-  <rect x="507" y="94" width="126" height="34" rx="5" fill="var(--s2)" fill-opacity=".18" stroke="var(--s2)"/>
+  <rect x="502" y="54" width="136" height="34" rx="5" fill="var(--s1)" fill-opacity=".18" stroke="var(--s1)"/>
+  <text x="570" y="68" text-anchor="middle" class="lbl-strong" font-size="10">TF-IDF sparse vector</text><text x="570" y="82" text-anchor="middle" class="lbl" font-size="9">50k dims, sparse · §3</text>
+  <rect x="502" y="94" width="136" height="34" rx="5" fill="var(--s2)" fill-opacity=".18" stroke="var(--s2)"/>
   <text x="570" y="108" text-anchor="middle" class="lbl-strong" font-size="10">Averaged word vectors</text><text x="570" y="122" text-anchor="middle" class="lbl" font-size="9">300 dims, dense · §4</text>
-  <rect x="507" y="134" width="126" height="34" rx="5" fill="var(--s3)" fill-opacity=".18" stroke="var(--s3)"/>
-  <text x="570" y="148" text-anchor="middle" class="lbl-strong" font-size="10">Sentence embedding</text><text x="570" y="162" text-anchor="middle" class="lbl" font-size="9">384–1024 dims, contextual · §5</text>
+  <rect x="502" y="134" width="136" height="34" rx="5" fill="var(--s3)" fill-opacity=".18" stroke="var(--s3)"/>
+  <text x="570" y="148" text-anchor="middle" class="lbl-strong" font-size="10">Sentence embedding</text><text x="570" y="162" text-anchor="middle" class="lbl" font-size="9">384–1024 dims · §5</text>
   <line x1="645" y1="100" x2="673" y2="100" class="arrow" marker-end="url(#arr-g1)"/>
   <rect x="675" y="60" width="130" height="80" class="box-accent"/>
   <text x="740" y="92" text-anchor="middle" class="lbl-strong">Any model</text>
@@ -222,7 +222,7 @@ merges = []
     <span class="fn">print</span>(<span class="st">f"merge {step+1}: {best[0]!r} + {best[1]!r}  (count {pairs[best]})"</span>)
 
 <span class="fn">print</span>(<span class="st">"final vocab:"</span>, <span class="fn">sorted</span>({s <span class="kw">for</span> w <span class="kw">in</span> words <span class="kw">for</span> s <span class="kw">in</span> w.split()}))
-<span class="fn">print</span>(<span class="st">"segmentation of corpus words:"</span>, <span class="fn">dict</span>(words))
+<span class="fn">print</span>(<span class="st">"segmentation:"</span>, <span class="fn">dict</span>(words))
 <span class="out"># merge 1: 'l' + 'o'  (count 5)</span>
 <span class="out"># merge 2: 'lo' + 'w'  (count 5)</span>
 <span class="out"># merge 3: 'e' + 's'  (count 4)</span>
@@ -232,7 +232,7 @@ merges = []
 <span class="out"># merge 7: 'n' + 'e'  (count 3)</span>
 <span class="out"># merge 8: 'ne' + 'w'  (count 3)</span>
 <span class="out"># final vocab: ['&lt;/w&gt;', 'd', 'e', 'est&lt;/w&gt;', 'i', 'low', 'low&lt;/w&gt;', 'new', 'r', 'w']</span>
-<span class="out"># segmentation of corpus words: {'low&lt;/w&gt;': 3, 'low e r &lt;/w&gt;': 2, 'new est&lt;/w&gt;': 3, 'w i d est&lt;/w&gt;': 1, 'w i d e &lt;/w&gt;': 1}</span></code></pre>
+<span class="out"># segmentation: {'low&lt;/w&gt;': 3, 'low e r &lt;/w&gt;': 2, 'new est&lt;/w&gt;': 3, 'w i d est&lt;/w&gt;': 1, 'w i d e &lt;/w&gt;': 1}</span></code></pre>
 
 <p>Type into the box below to see a small fixed BPE merge table (learned on English-like text, ~70 merges) split your words. Watch how common words stay whole, how rare words and product codes shatter, and how the token count is never the word count.</p>
 
@@ -265,7 +265,7 @@ merges = []
 
 <p>Why does a 1990s method still matter? Because TF-IDF + a linear model is <strong>fast to train (seconds), fast to serve (microseconds), explainable (look at the coefficients), needs no GPU, and is remarkably strong when the label is about topic or vocabulary</strong> — which describes most routing, tagging and triage tasks at work. On our ticket problem it is the baseline every fancier approach must beat.</p>
 
-<pre class="code" data-lang="python"><code><span class="cm"># TF-IDF + logistic regression: the baseline text classifier you should always build first</span>
+<pre class="code" data-lang="python"><code><span class="cm"># TF-IDF + logistic regression: the baseline you should always build first</span>
 <span class="kw">from</span> sklearn.feature_extraction.text <span class="kw">import</span> TfidfVectorizer
 <span class="kw">from</span> sklearn.linear_model <span class="kw">import</span> LogisticRegression
 <span class="kw">from</span> sklearn.pipeline <span class="kw">import</span> Pipeline
@@ -336,7 +336,7 @@ vocab = clf[<span class="st">"tfidf"</span>].get_feature_names_out()            
 <p>The 2013 <strong>skip-gram</strong> model learns embeddings by solving a fake task: given a centre word, predict the words in a small window around it. The network is trivial — a lookup table (the embedding) followed by a softmax over the vocabulary. Nobody uses the predictions; the by-product, the lookup table, is the prize. Because "refund" and "reimbursement" both predict "receive", "still", "weeks", their rows are pushed toward the same region.</p>
 
 <figure class="fig">
-<svg viewBox="0 0 820 300" role="img" aria-label="Skip-gram: a sentence with the centre word not and a window of two words on each side; the centre word's one-hot goes through an embedding lookup to a dense vector, then a softmax layer scores every vocabulary word as context; training pushes the scores for the true context words up">
+<svg viewBox="0 0 820 316" role="img" aria-label="Skip-gram: a sentence with the centre word not and a window of two words on each side; the centre word's one-hot goes through an embedding lookup to a dense vector, then a softmax layer scores every vocabulary word as context; training pushes the scores for the true context words up">
   <defs><marker id="arr-g3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
   <!-- sentence -->
   <text x="20" y="28" class="lbl-strong" font-size="13">Training signal: predict the neighbours of the centre word (window = 2)</text>
@@ -392,7 +392,7 @@ vocab = clf[<span class="st">"tfidf"</span>].get_feature_names_out()            
     <text x="740" y="250" text-anchor="middle" class="lbl" font-size="10">loss = cross-entropy on</text>
     <text x="740" y="264" text-anchor="middle" class="lbl" font-size="10">the true neighbours</text>
   </g>
-  <text x="410" y="290" text-anchor="middle" class="lbl-strong" font-size="11">Words that predict the same neighbours get pushed to the same place. The prediction head is thrown away; the table is the product.</text>
+  <text x="410" y="306" text-anchor="middle" class="lbl-strong" font-size="11">Words that predict the same neighbours get pushed to the same place. The prediction head is thrown away; the table is the product.</text>
 </svg>
 <figcaption><strong>Figure 19.3 — Skip-gram learns embeddings as a by-product of predicting context.</strong> The "model" is a lookup followed by a softmax; gradient descent on the fake prediction task arranges the lookup table so that words with similar neighbours have similar rows. (Real implementations replace the full softmax with negative sampling for speed; the geometry is the same.)</figcaption>
 </figure>
@@ -402,8 +402,10 @@ vocab = clf[<span class="st">"tfidf"</span>].get_feature_names_out()            
 torch.manual_seed(<span class="nu">0</span>); random.seed(<span class="nu">0</span>)
 
 animals = [<span class="st">"cat"</span>, <span class="st">"dog"</span>, <span class="st">"puppy"</span>, <span class="st">"kitten"</span>]; drinks = [<span class="st">"coffee"</span>, <span class="st">"tea"</span>, <span class="st">"juice"</span>, <span class="st">"milk"</span>]
-animal_tpl = [<span class="st">"the {} sat on the mat"</span>, <span class="st">"my {} chased the ball"</span>, <span class="st">"a {} sleeps all day"</span>, <span class="st">"the {} likes to play"</span>]
-drink_tpl  = [<span class="st">"i drink {} every morning"</span>, <span class="st">"a cup of hot {}"</span>, <span class="st">"she poured some {}"</span>, <span class="st">"{} tastes good with sugar"</span>]
+animal_tpl = [<span class="st">"the {} sat on the mat"</span>, <span class="st">"my {} chased the ball"</span>,
+              <span class="st">"a {} sleeps all day"</span>, <span class="st">"the {} likes to play"</span>]
+drink_tpl  = [<span class="st">"i drink {} every morning"</span>, <span class="st">"a cup of hot {}"</span>,
+              <span class="st">"she poured some {}"</span>, <span class="st">"{} tastes good with sugar"</span>]
 sentences = [t.format(w) <span class="kw">for</span> _ <span class="kw">in</span> <span class="fn">range</span>(<span class="nu">15</span>) <span class="kw">for</span> t <span class="kw">in</span> animal_tpl <span class="kw">for</span> w <span class="kw">in</span> animals] + \
             [t.format(w) <span class="kw">for</span> _ <span class="kw">in</span> <span class="fn">range</span>(<span class="nu">15</span>) <span class="kw">for</span> t <span class="kw">in</span> drink_tpl <span class="kw">for</span> w <span class="kw">in</span> drinks]
 random.shuffle(sentences)
@@ -474,12 +476,12 @@ E = F.normalize(model.inp.weight.detach(), dim=<span class="nu">1</span>)       
   <line x1="40" y1="250" x2="330" y2="225" stroke="var(--s2)" stroke-width="3" marker-end="url(#arr-g4c)"/>
   <text x="336" y="222" class="lbl-strong" font-size="12" fill="var(--s2)">banana</text>
   <path d="M120,207 A85,85 0 0 1 124,195" fill="none" stroke="var(--s1)" stroke-width="1.5"/>
-  <text x="128" y="190" class="lbl" font-size="10" fill="var(--s1)">θ ≈ 8° → cos 0.99</text>
+  <text x="96" y="160" class="lbl" font-size="10" fill="var(--s1)">θ ≈ 8° → cos 0.99</text>
   <path d="M112,211 A75,75 0 0 1 114,244" fill="none" stroke="var(--s2)" stroke-width="1.5"/>
-  <text x="120" y="236" class="lbl" font-size="10" fill="var(--s2)">θ ≈ 23° → cos 0.92 in 2-D;</text>
-  <text x="120" y="248" class="lbl" font-size="10" fill="var(--s2)">in 300-D unrelated words sit near 0.1</text>
-  <text x="200" y="62" text-anchor="middle" class="lbl" font-size="11">"reimbursement" is shorter (rarer word) but points the same way:</text>
-  <text x="200" y="78" text-anchor="middle" class="lbl" font-size="11">cosine ignores length, so they count as near-synonyms.</text>
+  <text x="190" y="212" class="lbl" font-size="10" fill="var(--s2)">θ ≈ 23° → cos 0.92 (2-D)</text>
+  <text x="200" y="48" text-anchor="middle" class="lbl" font-size="11">"reimbursement" is shorter (rarer word) but points the same way:</text>
+  <text x="200" y="63" text-anchor="middle" class="lbl" font-size="11">cosine ignores length, so they count as near-synonyms.</text>
+  <text x="200" y="80" text-anchor="middle" class="lbl" font-size="10">(2-D squeezes angles; in 300-D unrelated words like "banana" sit near cos ≈ 0.1)</text>
   <!-- right panel: arithmetic -->
   <line x1="420" y1="40" x2="420" y2="280" class="grid" stroke-dasharray="4 4"/>
   <text x="610" y="24" text-anchor="middle" class="lbl-strong" font-size="14">Directions are relations</text>
@@ -489,10 +491,10 @@ E = F.normalize(model.inp.weight.detach(), dim=<span class="nu">1</span>)       
   <circle cx="700" cy="70" r="5" fill="var(--s2)"/><text x="700" y="62" text-anchor="middle" class="lbl-strong" font-size="12">queen</text>
   <line x1="480" y1="210" x2="556" y2="182" stroke="var(--s7)" stroke-width="2" marker-end="url(#arr-g4d)"/>
   <line x1="620" y1="100" x2="696" y2="72" stroke="var(--s7)" stroke-width="2" stroke-dasharray="5 3" marker-end="url(#arr-g4d)"/>
-  <text x="512" y="188" text-anchor="middle" class="lbl" font-size="10" fill="var(--s7)">"gender" direction</text>
+  <text x="548" y="222" text-anchor="middle" class="lbl" font-size="10" fill="var(--s7)">"gender" direction</text>
   <text x="668" y="120" text-anchor="middle" class="lbl" font-size="10" fill="var(--s7)">same offset, applied to king</text>
   <line x1="480" y1="210" x2="616" y2="104" stroke="var(--ink-3)" stroke-width="1.2" stroke-dasharray="2 3"/>
-  <text x="530" y="150" text-anchor="middle" class="lbl" font-size="10">"royalty" direction</text>
+  <text x="552" y="140" text-anchor="end" class="lbl" font-size="10">"royalty" direction</text>
   <circle cx="704" cy="82" r="10" fill="none" stroke="var(--s7)" stroke-width="2"/>
   <text x="620" y="258" text-anchor="middle" class="lbl-strong" font-size="12">king − man + woman ≈ queen</text>
   <text x="620" y="276" text-anchor="middle" class="lbl" font-size="10">(nearest neighbour of the result, excluding the inputs)</text>
@@ -548,7 +550,7 @@ ranked = <span class="fn">sorted</span>(emb, key=<span class="kw">lambda</span> 
 <p>Run a sentence through a Transformer encoder (Chapter 18) and every token comes out as a vector that has attended to the whole sentence: "bank" next to "river" gets a different vector from "bank" next to "loan". These are <strong>contextual embeddings</strong>. Pool them — take the [CLS] token, or average all token vectors — and you get one vector for the whole sentence or paragraph: a <strong>sentence embedding</strong>. Models trained specifically for this (sentence-transformers such as all-MiniLM, BGE, E5, GTE, and the embedding endpoints of every LLM provider) are trained contrastively: pairs of texts that mean the same thing are pulled together, unrelated pairs pushed apart. The result is a space where cosine similarity tracks <em>meaning</em>, not vocabulary.</p>
 
 <figure class="fig">
-<svg viewBox="0 0 660 360" role="img" aria-label="A two-dimensional projection of sentence embeddings of support tickets: three regions labelled billing and refunds, bugs and crashes, feature requests; a new ticket is plotted as a query point with dashed lines to its three nearest neighbours">
+<svg viewBox="0 0 660 384" role="img" aria-label="A two-dimensional projection of sentence embeddings of support tickets: three regions labelled billing and refunds, bugs and crashes, feature requests; a new ticket is plotted as a query point with dashed lines to its three nearest neighbours">
 <ellipse cx="190" cy="120" rx="100" ry="66" fill="var(--s1)" fill-opacity=".07" stroke="var(--s1)" stroke-dasharray="5 4"/>
 <circle cx="190.1" cy="128.4" r="5" fill="var(--s1)" fill-opacity=".8"/>
 <circle cx="178.5" cy="95.1" r="5" fill="var(--s1)" fill-opacity=".8"/>
@@ -628,8 +630,8 @@ ranked = <span class="fn">sorted</span>(emb, key=<span class="kw">lambda</span> 
 <line x1="318" y1="100" x2="325.0" y2="204.1" stroke="var(--s7)" stroke-width="1.5" stroke-dasharray="3 3"/>
 <circle cx="325.0" cy="204.1" r="8" fill="none" stroke="var(--s7)" stroke-width="2"/>
 <path d="M310,100 L318,92 L326,100 L318,108 Z" fill="var(--s7)"/>
-<text x="318" y="84" text-anchor="middle" class="lbl-strong" font-size="11" fill="var(--s7)">new ticket: "charged twice, then the app crashed"</text>
-<text x="318" y="122" text-anchor="middle" class="lbl" font-size="10" fill="var(--s7)">◇ query · ○ 3 nearest neighbours</text>
+
+<text x="20" y="374" class="lbl-strong" font-size="11" fill="var(--s7)">◇ new ticket: "charged twice, then the app crashed"  ·  ○ its 3 nearest neighbours</text>
 </svg>
 <figcaption><strong>Figure 19.5 — An embedding space is a map of meaning.</strong> Each dot is a ticket embedded by a sentence-transformer and projected to 2-D (Chapter 12). Tickets about the same thing cluster even when they share no words. A new ticket becomes a point; its nearest neighbours give you search, its cluster gives you a label, and a near-identical neighbour flags a duplicate. This ambiguous ticket sits between billing and bug with a neighbour in each — exactly the case where you want a human in the loop.</figcaption>
 </figure>
@@ -643,7 +645,7 @@ ranked = <span class="fn">sorted</span>(emb, key=<span class="kw">lambda</span> 
   <div class="card accent"><h4>Classification</h4><p>Embed the text, then train logistic regression or a small MLP on the vectors. Often within a few points of full fine-tuning, trains in seconds, and the embedding step can be shared across many downstream models.</p></div>
 </div>
 
-<pre class="code" data-lang="python-noexec"><code><span class="cm"># Sentence embeddings + cosine search with sentence-transformers (needs the package and a model download)</span>
+<pre class="code" data-lang="python-noexec"><code><span class="cm"># Sentence embeddings + cosine search (sentence-transformers; downloads a model)</span>
 <span class="kw">from</span> sentence_transformers <span class="kw">import</span> SentenceTransformer
 <span class="kw">import</span> numpy <span class="kw">as</span> np
 
@@ -687,65 +689,64 @@ clf = LogisticRegression(max_iter=<span class="nu">1000</span>).fit(X_train, tra
 </div>
 
 <figure class="fig">
-<svg viewBox="0 0 820 320" role="img" aria-label="Fine-tuning a BERT classifier: tokens with a CLS token in front pass through the pretrained encoder stack; the CLS output vector goes to a new small classification head producing billing, bug or feature probabilities; the encoder weights are updated with a small learning rate, the head with a larger one">
+<svg viewBox="0 0 820 380" role="img" aria-label="Fine-tuning a BERT classifier: tokens with a CLS token in front pass through the pretrained encoder stack; the CLS output vector goes to a new small classification head producing billing, bug or feature probabilities; the encoder weights are updated with a small learning rate, the head with a larger one">
   <defs><marker id="arr-g6" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
   <!-- tokens -->
   <g font-size="11">
-    <rect x="30" y="250" width="54" height="26" rx="5" fill="var(--s7)" fill-opacity=".25" stroke="var(--s7)"/><text x="57" y="267" text-anchor="middle" class="lbl-strong">[CLS]</text>
-    <rect x="92" y="250" width="54" height="26" rx="5" class="box"/><text x="119" y="267" text-anchor="middle" class="lbl">charged</text>
-    <rect x="154" y="250" width="46" height="26" rx="5" class="box"/><text x="177" y="267" text-anchor="middle" class="lbl">twice</text>
-    <rect x="208" y="250" width="40" height="26" rx="5" class="box"/><text x="228" y="267" text-anchor="middle" class="lbl">,</text>
-    <rect x="256" y="250" width="50" height="26" rx="5" class="box"/><text x="281" y="267" text-anchor="middle" class="lbl">need</text>
-    <rect x="314" y="250" width="54" height="26" rx="5" class="box"/><text x="341" y="267" text-anchor="middle" class="lbl">refund</text>
-    <rect x="376" y="250" width="54" height="26" rx="5" class="box"/><text x="403" y="267" text-anchor="middle" class="lbl">[SEP]</text>
-    <text x="230" y="300" text-anchor="middle" class="lbl" font-size="11">WordPiece tokens + special tokens (max 512)</text>
+    <rect x="30" y="318" width="54" height="26" rx="5" fill="var(--s7)" fill-opacity=".25" stroke="var(--s7)"/><text x="57" y="335" text-anchor="middle" class="lbl-strong">[CLS]</text>
+    <rect x="92" y="318" width="54" height="26" rx="5" class="box"/><text x="119" y="335" text-anchor="middle" class="lbl">charged</text>
+    <rect x="154" y="318" width="46" height="26" rx="5" class="box"/><text x="177" y="335" text-anchor="middle" class="lbl">twice</text>
+    <rect x="208" y="318" width="40" height="26" rx="5" class="box"/><text x="228" y="335" text-anchor="middle" class="lbl">,</text>
+    <rect x="256" y="318" width="50" height="26" rx="5" class="box"/><text x="281" y="335" text-anchor="middle" class="lbl">need</text>
+    <rect x="314" y="318" width="54" height="26" rx="5" class="box"/><text x="341" y="335" text-anchor="middle" class="lbl">refund</text>
+    <rect x="376" y="318" width="54" height="26" rx="5" class="box"/><text x="403" y="335" text-anchor="middle" class="lbl">[SEP]</text>
+    <text x="230" y="366" text-anchor="middle" class="lbl" font-size="11">WordPiece tokens + special tokens (max 512)</text>
   </g>
   <!-- encoder stack -->
-  <rect x="30" y="110" width="400" height="120" rx="8" fill="var(--s1)" fill-opacity=".12" stroke="var(--s1)" stroke-width="2"/>
-  <text x="230" y="136" text-anchor="middle" class="lbl-strong" font-size="13">Pretrained encoder (12 Transformer blocks, 110M params)</text>
-  <text x="230" y="156" text-anchor="middle" class="lbl" font-size="11">already knows English, grammar, "refund ≈ reimbursement", "twice" is a count …</text>
-  <text x="230" y="180" text-anchor="middle" class="lbl" font-size="11">fine-tuning: all weights updated, small learning rate (2e-5), 2–4 epochs</text>
-  <text x="230" y="200" text-anchor="middle" class="lbl" font-size="11">alternative: freeze the encoder and train only the head (weaker, but no GPU needed)</text>
-  <text x="230" y="220" text-anchor="middle" class="lbl" font-size="10">or LoRA: train small low-rank adapters, keep the base frozen — 100× fewer trainable params</text>
+  <rect x="30" y="170" width="400" height="130" rx="8" fill="var(--s1)" fill-opacity=".12" stroke="var(--s1)" stroke-width="2"/>
+  <text x="230" y="196" text-anchor="middle" class="lbl-strong" font-size="13">Pretrained encoder: 12 Transformer blocks, 110M params</text>
+  <text x="230" y="218" text-anchor="middle" class="lbl" font-size="11">already knows English, grammar, "refund ≈ reimbursement" …</text>
+  <text x="230" y="240" text-anchor="middle" class="lbl" font-size="11">fine-tune: all weights updated, lr 2e-5, 2–4 epochs</text>
+  <text x="230" y="260" text-anchor="middle" class="lbl" font-size="11">or freeze it and train only the head (no GPU, weaker)</text>
+  <text x="230" y="280" text-anchor="middle" class="lbl" font-size="11">or LoRA adapters: base frozen, 100× fewer trainable params</text>
   <g>
-    <line x1="57" y1="250" x2="57" y2="232" class="arrow" marker-end="url(#arr-g6)"/><line x1="119" y1="250" x2="119" y2="232" class="arrow" marker-end="url(#arr-g6)"/><line x1="177" y1="250" x2="177" y2="232" class="arrow" marker-end="url(#arr-g6)"/><line x1="228" y1="250" x2="228" y2="232" class="arrow" marker-end="url(#arr-g6)"/><line x1="281" y1="250" x2="281" y2="232" class="arrow" marker-end="url(#arr-g6)"/><line x1="341" y1="250" x2="341" y2="232" class="arrow" marker-end="url(#arr-g6)"/><line x1="403" y1="250" x2="403" y2="232" class="arrow" marker-end="url(#arr-g6)"/>
+    <line x1="57" y1="318" x2="57" y2="302" class="arrow" marker-end="url(#arr-g6)"/><line x1="119" y1="318" x2="119" y2="302" class="arrow" marker-end="url(#arr-g6)"/><line x1="177" y1="318" x2="177" y2="302" class="arrow" marker-end="url(#arr-g6)"/><line x1="228" y1="318" x2="228" y2="302" class="arrow" marker-end="url(#arr-g6)"/><line x1="281" y1="318" x2="281" y2="302" class="arrow" marker-end="url(#arr-g6)"/><line x1="341" y1="318" x2="341" y2="302" class="arrow" marker-end="url(#arr-g6)"/><line x1="403" y1="318" x2="403" y2="302" class="arrow" marker-end="url(#arr-g6)"/>
   </g>
   <!-- outputs -->
   <g>
-    <rect x="40" y="60" width="34" height="34" rx="5" fill="var(--s7)" fill-opacity=".35" stroke="var(--s7)" stroke-width="2"/><text x="57" y="81" text-anchor="middle" class="lbl-strong" font-size="9">h[CLS]</text>
-    <rect x="102" y="60" width="34" height="34" rx="5" class="box"/><rect x="160" y="60" width="34" height="34" rx="5" class="box"/><rect x="211" y="60" width="34" height="34" rx="5" class="box"/><rect x="264" y="60" width="34" height="34" rx="5" class="box"/><rect x="324" y="60" width="34" height="34" rx="5" class="box"/><rect x="386" y="60" width="34" height="34" rx="5" class="box"/>
-    <line x1="57" y1="110" x2="57" y2="96" class="arrow" marker-end="url(#arr-g6)"/>
-    <text x="250" y="46" text-anchor="middle" class="lbl" font-size="10">one contextual vector per token (768-d) — used for NER / extraction heads</text>
-    <text x="250" y="82" text-anchor="middle" class="lbl" font-size="10">ignored for classification</text>
+    <rect x="36" y="110" width="42" height="34" rx="5" fill="var(--s7)" fill-opacity=".35" stroke="var(--s7)" stroke-width="2"/><text x="57" y="131" text-anchor="middle" class="lbl-strong" font-size="9">h[CLS]</text>
+    <rect x="102" y="110" width="34" height="34" rx="5" class="box"/><rect x="160" y="110" width="34" height="34" rx="5" class="box"/><rect x="211" y="110" width="34" height="34" rx="5" class="box"/><rect x="264" y="110" width="34" height="34" rx="5" class="box"/><rect x="324" y="110" width="34" height="34" rx="5" class="box"/><rect x="386" y="110" width="34" height="34" rx="5" class="box"/>
+    <line x1="57" y1="170" x2="57" y2="146" class="arrow" marker-end="url(#arr-g6)"/><line x1="119" y1="170" x2="119" y2="146" class="arrow" marker-end="url(#arr-g6)"/><line x1="177" y1="170" x2="177" y2="146" class="arrow" marker-end="url(#arr-g6)"/><line x1="228" y1="170" x2="228" y2="146" class="arrow" marker-end="url(#arr-g6)"/><line x1="281" y1="170" x2="281" y2="146" class="arrow" marker-end="url(#arr-g6)"/><line x1="341" y1="170" x2="341" y2="146" class="arrow" marker-end="url(#arr-g6)"/><line x1="403" y1="170" x2="403" y2="146" class="arrow" marker-end="url(#arr-g6)"/>
+    <text x="260" y="98" text-anchor="middle" class="lbl" font-size="10">one contextual vector per token (768-d); NER / extraction heads read all of them</text>
   </g>
-  <!-- head -->
-  <line x1="74" y1="77" x2="490" y2="77" class="arrow" marker-end="url(#arr-g6)"/>
-  <text x="280" y="108" text-anchor="middle" class="lbl" font-size="10" fill="var(--s7)">the [CLS] vector summarizes the whole input</text>
-  <rect x="492" y="40" width="140" height="74" rx="8" fill="var(--s2)" fill-opacity=".18" stroke="var(--s2)" stroke-width="2"/>
-  <text x="562" y="62" text-anchor="middle" class="lbl-strong">New head</text>
-  <text x="562" y="80" text-anchor="middle" class="lbl" font-size="11">dropout · Linear(768→3)</text>
-  <text x="562" y="98" text-anchor="middle" class="lbl" font-size="11">softmax · randomly initialized</text>
-  <line x1="632" y1="77" x2="668" y2="77" class="arrow" marker-end="url(#arr-g6)"/>
+  <!-- head path -->
+  <path d="M57,110 L57,60 L490,60" fill="none" class="arrow" marker-end="url(#arr-g6)"/>
+  <text x="275" y="52" text-anchor="middle" class="lbl" font-size="10" fill="var(--s7)">classification reads only h[CLS]: it summarizes the whole input</text>
+  <rect x="492" y="24" width="140" height="72" rx="8" fill="var(--s2)" fill-opacity=".18" stroke="var(--s2)" stroke-width="2"/>
+  <text x="562" y="46" text-anchor="middle" class="lbl-strong">New head</text>
+  <text x="562" y="64" text-anchor="middle" class="lbl" font-size="11">dropout · Linear(768→3)</text>
+  <text x="562" y="82" text-anchor="middle" class="lbl" font-size="11">softmax · random init</text>
+  <line x1="632" y1="60" x2="668" y2="60" class="arrow" marker-end="url(#arr-g6)"/>
   <g font-size="11">
-    <text x="672" y="52" class="lbl-strong">billing</text><rect x="720" y="43" width="72" height="10" fill="var(--s1)"/><text x="796" y="52" class="lbl" font-size="10">0.91</text>
-    <text x="672" y="82" class="lbl-strong">bug</text><rect x="720" y="73" width="6" height="10" fill="var(--s2)"/><text x="796" y="82" class="lbl" font-size="10">0.07</text>
-    <text x="672" y="112" class="lbl-strong">feature</text><rect x="720" y="103" width="2" height="10" fill="var(--s3)"/><text x="796" y="112" class="lbl" font-size="10">0.02</text>
+    <text x="672" y="40" class="lbl-strong">billing</text><rect x="720" y="31" width="72" height="10" fill="var(--s1)"/><text x="796" y="40" class="lbl" font-size="10">0.91</text>
+    <text x="672" y="66" class="lbl-strong">bug</text><rect x="720" y="57" width="6" height="10" fill="var(--s2)"/><text x="796" y="66" class="lbl" font-size="10">0.07</text>
+    <text x="672" y="92" class="lbl-strong">feature</text><rect x="720" y="83" width="2" height="10" fill="var(--s3)"/><text x="796" y="92" class="lbl" font-size="10">0.02</text>
   </g>
-  <text x="640" y="160" text-anchor="middle" class="lbl-strong" font-size="11">Typical result on 10k tickets:</text>
-  <text x="640" y="178" text-anchor="middle" class="lbl" font-size="11">TF-IDF + LR macro-F1 ≈ 0.86</text>
-  <text x="640" y="196" text-anchor="middle" class="lbl" font-size="11">DistilBERT fine-tuned ≈ 0.90–0.92</text>
-  <text x="640" y="214" text-anchor="middle" class="lbl" font-size="11">Gains concentrate on tickets</text>
-  <text x="640" y="230" text-anchor="middle" class="lbl" font-size="11">with paraphrase, negation, sarcasm.</text>
-  <text x="640" y="262" text-anchor="middle" class="lbl" font-size="11">Cost: 1 GPU-hour to train,</text>
-  <text x="640" y="278" text-anchor="middle" class="lbl" font-size="11">~5 ms per ticket to serve on CPU.</text>
+  <rect x="470" y="130" width="330" height="150" rx="8" class="fill-surface2" stroke="var(--border)"/>
+  <text x="635" y="154" text-anchor="middle" class="lbl-strong" font-size="12">Typical result on 10k labelled tickets</text>
+  <text x="635" y="176" text-anchor="middle" class="lbl" font-size="11">TF-IDF + logistic regression: macro-F1 ≈ 0.86</text>
+  <text x="635" y="194" text-anchor="middle" class="lbl" font-size="11">DistilBERT fine-tuned: macro-F1 ≈ 0.90–0.92</text>
+  <text x="635" y="218" text-anchor="middle" class="lbl" font-size="11">Gains concentrate on tickets with paraphrase,</text>
+  <text x="635" y="234" text-anchor="middle" class="lbl" font-size="11">negation and sarcasm — where word counts fail.</text>
+  <text x="635" y="258" text-anchor="middle" class="lbl" font-size="11">Cost: ~1 GPU-hour to train; ~5 ms per ticket on CPU.</text>
 </svg>
 <figcaption><strong>Figure 19.6 — Fine-tuning BERT is "keep the body, replace the head".</strong> The [CLS] position is trained to summarize the input; a new 3-way linear layer reads it. All weights update, but with a tiny learning rate so pretrained knowledge is refined, not overwritten. The same skeleton with a per-token head gives you named-entity recognition and extraction.</figcaption>
 </figure>
 
-<pre class="code" data-lang="python-noexec"><code><span class="cm"># Hugging Face pipeline(): a pretrained model in three lines (downloads weights on first run)</span>
+<pre class="code" data-lang="python-noexec"><code><span class="cm"># Hugging Face pipeline(): a pretrained model in three lines (downloads weights)</span>
 <span class="kw">from</span> transformers <span class="kw">import</span> pipeline
 
-sentiment = pipeline(<span class="st">"sentiment-analysis"</span>)                  <span class="cm"># default: a DistilBERT fine-tuned on SST-2</span>
+sentiment = pipeline(<span class="st">"sentiment-analysis"</span>)        <span class="cm"># default: DistilBERT fine-tuned on SST-2</span>
 <span class="fn">print</span>(sentiment([<span class="st">"The refund arrived quickly, thank you!"</span>,
                  <span class="st">"Charged twice and nobody answers. Unacceptable."</span>]))
 <span class="out"># [{'label': 'POSITIVE', 'score': 0.9998}, {'label': 'NEGATIVE', 'score': 0.9995}]</span>
@@ -755,11 +756,12 @@ ner = pipeline(<span class="st">"ner"</span>, aggregation_strategy=<span class="
 <span class="out"># [{'entity_group': 'PER', 'word': 'Maria Lopez', 'score': 0.99, ...},</span>
 <span class="out">#  {'entity_group': 'ORG', 'word': 'Acme GmbH',  'score': 0.98, ...}]</span>
 
-zero_shot = pipeline(<span class="st">"zero-shot-classification"</span>)            <span class="cm"># classify with labels you invent on the spot</span>
-<span class="fn">print</span>(zero_shot(<span class="st">"the export button throws an error"</span>, candidate_labels=[<span class="st">"billing"</span>, <span class="st">"bug"</span>, <span class="st">"feature request"</span>]))
+zero_shot = pipeline(<span class="st">"zero-shot-classification"</span>)  <span class="cm"># labels you invent on the spot</span>
+<span class="fn">print</span>(zero_shot(<span class="st">"the export button throws an error"</span>,
+                candidate_labels=[<span class="st">"billing"</span>, <span class="st">"bug"</span>, <span class="st">"feature request"</span>]))
 <span class="out"># {'labels': ['bug', 'feature request', 'billing'], 'scores': [0.93, 0.05, 0.02], ...}</span></code></pre>
 
-<pre class="code" data-lang="python-noexec"><code><span class="cm"># Fine-tuning a BERT-style classifier with the Trainer API (sketch; needs a GPU for comfort)</span>
+<pre class="code" data-lang="python-noexec"><code><span class="cm"># Fine-tuning a BERT-style classifier with the Trainer API (sketch; wants a GPU)</span>
 <span class="kw">from</span> datasets <span class="kw">import</span> Dataset
 <span class="kw">from</span> transformers <span class="kw">import</span> (AutoTokenizer, AutoModelForSequenceClassification,
                           TrainingArguments, Trainer)
@@ -769,7 +771,7 @@ name = <span class="st">"distilbert-base-uncased"</span>
 tok = AutoTokenizer.from_pretrained(name)
 labels = [<span class="st">"billing"</span>, <span class="st">"bug"</span>, <span class="st">"feature"</span>]; lab2id = {l: i <span class="kw">for</span> i, l <span class="kw">in</span> <span class="fn">enumerate</span>(labels)}
 
-<span class="kw">def</span> <span class="fn">encode</span>(batch):                                        <span class="cm"># text -&gt; input_ids, attention_mask, label</span>
+<span class="kw">def</span> <span class="fn">encode</span>(batch):                     <span class="cm"># text -&gt; input_ids, attention_mask, label</span>
     enc = tok(batch[<span class="st">"text"</span>], truncation=<span class="kw">True</span>, max_length=<span class="nu">256</span>)
     enc[<span class="st">"label"</span>] = [lab2id[l] <span class="kw">for</span> l <span class="kw">in</span> batch[<span class="st">"label"</span>]]
     <span class="kw">return</span> enc
@@ -777,10 +779,11 @@ labels = [<span class="st">"billing"</span>, <span class="st">"bug"</span>, <spa
 train_ds = Dataset.from_dict({<span class="st">"text"</span>: train_texts, <span class="st">"label"</span>: train_labels}).map(encode, batched=<span class="kw">True</span>)
 val_ds   = Dataset.from_dict({<span class="st">"text"</span>: val_texts,   <span class="st">"label"</span>: val_labels}).map(encode, batched=<span class="kw">True</span>)
 
-model = AutoModelForSequenceClassification.from_pretrained(name, num_labels=<span class="nu">3</span>)   <span class="cm"># new head, random init</span>
+model = AutoModelForSequenceClassification.from_pretrained(name, num_labels=<span class="nu">3</span>)  <span class="cm"># new head</span>
 f1 = evaluate.load(<span class="st">"f1"</span>)
 <span class="kw">def</span> <span class="fn">metrics</span>(p):
-    <span class="kw">return</span> f1.compute(predictions=np.argmax(p.predictions, axis=<span class="nu">1</span>), references=p.label_ids, average=<span class="st">"macro"</span>)
+    <span class="kw">return</span> f1.compute(predictions=np.argmax(p.predictions, axis=<span class="nu">1</span>),
+                      references=p.label_ids, average=<span class="st">"macro"</span>)
 
 args = TrainingArguments(output_dir=<span class="st">"tickets-distilbert"</span>, learning_rate=<span class="nu">2e-5</span>, num_train_epochs=<span class="nu">3</span>,
                          per_device_train_batch_size=<span class="nu">16</span>, eval_strategy=<span class="st">"epoch"</span>,
@@ -789,7 +792,7 @@ trainer = Trainer(model=model, args=args, train_dataset=train_ds, eval_dataset=v
                   processing_class=tok, compute_metrics=metrics)
 trainer.train()
 <span class="fn">print</span>(trainer.evaluate())                                  <span class="cm"># {'eval_f1': ≈0.90, ...}</span>
-trainer.save_model(<span class="st">"tickets-distilbert/final"</span>)             <span class="cm"># reload later with pipeline("text-classification", model=...)</span></code></pre>
+trainer.save_model(<span class="st">"tickets-distilbert/final"</span>)   <span class="cm"># reload with pipeline("text-classification", model=...)</span></code></pre>
 
 <div class="callout key"><div class="title">Key idea</div>
 <p>Transfer learning changed the economics of NLP: the expensive part (learning language) is done once by someone else; you pay only for the cheap part (learning your labels). With 2,000 labelled examples a fine-tuned DistilBERT usually beats a TF-IDF model trained on 20,000. With 200, embeddings + logistic regression or a zero-shot LLM prompt may beat both.</p>
@@ -801,7 +804,7 @@ trainer.save_model(<span class="st">"tickets-distilbert/final"</span>)          
 <p>A large language model starts life as the character model of Chapter 18, section 10, scaled to tens of billions of parameters and trillions of tokens. Three stages turn that next-token predictor into an assistant.</p>
 
 <figure class="fig">
-<svg viewBox="0 0 820 340" role="img" aria-label="Three stages of building an LLM: pretraining on trillions of web tokens by next-token prediction yields a base model that completes text; supervised fine-tuning on tens of thousands of instruction and response pairs yields an instruction-tuned model; preference alignment via RLHF or DPO on human-ranked responses yields the chat model; below, data sizes and compute shrink from left to right">
+<svg viewBox="0 0 820 356" role="img" aria-label="Three stages of building an LLM: pretraining on trillions of web tokens by next-token prediction yields a base model that completes text; supervised fine-tuning on tens of thousands of instruction and response pairs yields an instruction-tuned model; preference alignment via RLHF or DPO on human-ranked responses yields the chat model; below, data sizes and compute shrink from left to right">
   <defs><marker id="arr-g7" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
   <!-- stage 1 -->
   <rect x="15" y="20" width="250" height="200" rx="10" fill="var(--s1)" fill-opacity=".10" stroke="var(--s1)" stroke-width="2"/>
@@ -845,8 +848,9 @@ trainer.save_model(<span class="st">"tickets-distilbert/final"</span>)          
   <rect x="20" y="262" width="560" height="16" fill="var(--s1)" fill-opacity=".8"/><text x="300" y="274" text-anchor="middle" font-size="10" fill="#fff" font-weight="700">~10¹³ tokens · months on thousands of GPUs · ~99% of cost</text>
   <rect x="580" y="262" width="60" height="16" fill="var(--s2)" fill-opacity=".8"/><text x="610" y="274" text-anchor="middle" font-size="9" fill="#fff" font-weight="700">10⁴–10⁶</text>
   <rect x="640" y="262" width="40" height="16" fill="var(--s3)" fill-opacity=".8"/><text x="660" y="274" text-anchor="middle" font-size="9" fill="#fff" font-weight="700">10⁴–10⁵</text>
-  <text x="20" y="300" class="lbl" font-size="11">Knowledge comes from stage 1. Stages 2–3 mostly teach <tspan font-weight="700">format and behaviour</tspan>, not facts — which is why fine-tuning is the wrong tool for teaching a model your documents (see RAG).</text>
-  <text x="20" y="322" class="lbl" font-size="11">"Instruction-tuned" = has been through stage 2 (and usually 3). A "base" model has not; it will continue your prompt rather than answer it.</text>
+  <text x="20" y="300" class="lbl" font-size="11">Knowledge comes from stage 1. Stages 2–3 mostly teach <tspan font-weight="700">format and behaviour</tspan>, not facts —</text>
+  <text x="20" y="316" class="lbl" font-size="11">which is why fine-tuning is the wrong tool for teaching a model your documents (see RAG).</text>
+  <text x="20" y="340" class="lbl" font-size="11">"Instruction-tuned" = has been through stage 2 (and usually 3). A "base" model has not; it continues your prompt instead of answering it.</text>
 </svg>
 <figcaption><strong>Figure 19.7 — Three stages, wildly unequal in size.</strong> Pretraining is where capability and knowledge come from and costs almost everything. Supervised fine-tuning teaches the question-and-answer format from a comparatively tiny set of demonstrations. Preference alignment (RLHF or DPO) shapes tone, helpfulness and refusals from human rankings. The lesson for practitioners: later stages change <em>behaviour</em>, not <em>knowledge</em>.</figcaption>
 </figure>
@@ -881,9 +885,12 @@ customer is asking us to ACT on. Respond with JSON only.
 
 USER
 Examples:
-Ticket: "Charged twice, please refund the second one."      → {"category": "billing", "confidence": 0.97}
-Ticket: "Export to PDF would be great."                     → {"category": "feature", "confidence": 0.95}
-Ticket: "App crashed while I was paying, was I charged?"    → {"category": "billing", "confidence": 0.70}
+Ticket: "Charged twice, please refund the second one."
+  → {"category": "billing", "confidence": 0.97}
+Ticket: "Export to PDF would be great."
+  → {"category": "feature", "confidence": 0.95}
+Ticket: "App crashed while I was paying, was I charged?"
+  → {"category": "billing", "confidence": 0.70}
 
 Ticket: "The dashboard shows blank charts since yesterday's update."
 Answer with {"category": ..., "confidence": ...}.
@@ -926,15 +933,15 @@ ASSISTANT
   <defs><marker id="arr-g8" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
   <!-- offline row -->
   <text x="20" y="26" class="lbl-strong" font-size="13">Offline: build the index (re-run whenever documents change)</text>
-  <rect x="20" y="42" width="120" height="60" class="box"/><text x="80" y="66" text-anchor="middle" class="lbl-strong" font-size="11">Documents</text><text x="80" y="84" text-anchor="middle" class="lbl" font-size="10">policies, KB, tickets, PDFs</text>
+  <rect x="20" y="42" width="120" height="60" class="box"/><text x="80" y="66" text-anchor="middle" class="lbl-strong" font-size="11">Documents</text><text x="80" y="84" text-anchor="middle" class="lbl" font-size="10">policies, KB, PDFs</text>
   <line x1="140" y1="72" x2="168" y2="72" class="arrow" marker-end="url(#arr-g8)"/>
-  <rect x="170" y="42" width="120" height="60" class="box"/><text x="230" y="66" text-anchor="middle" class="lbl-strong" font-size="11">Chunk</text><text x="230" y="84" text-anchor="middle" class="lbl" font-size="10">200–800 tokens, overlap</text>
+  <rect x="170" y="42" width="120" height="60" class="box"/><text x="230" y="66" text-anchor="middle" class="lbl-strong" font-size="11">Chunk</text><text x="230" y="84" text-anchor="middle" class="lbl" font-size="10">200–800 tokens each</text>
   <line x1="290" y1="72" x2="318" y2="72" class="arrow" marker-end="url(#arr-g8)"/>
   <rect x="320" y="42" width="120" height="60" class="box"/><text x="380" y="66" text-anchor="middle" class="lbl-strong" font-size="11">Embed</text><text x="380" y="84" text-anchor="middle" class="lbl" font-size="10">one vector per chunk</text>
   <line x1="440" y1="72" x2="468" y2="72" class="arrow" marker-end="url(#arr-g8)"/>
   <rect x="470" y="36" width="140" height="72" rx="8" fill="var(--s1)" fill-opacity=".14" stroke="var(--s1)" stroke-width="2"/>
   <text x="540" y="60" text-anchor="middle" class="lbl-strong" font-size="11">Vector index</text>
-  <text x="540" y="76" text-anchor="middle" class="lbl" font-size="10">+ metadata (source, date, ACL)</text>
+  <text x="540" y="76" text-anchor="middle" class="lbl" font-size="10">+ metadata (date, ACL)</text>
   <text x="540" y="92" text-anchor="middle" class="lbl" font-size="10">+ keyword index (hybrid)</text>
   <!-- failure annotations top -->
   <text x="230" y="124" text-anchor="middle" class="lbl" font-size="10" fill="var(--critical)">✗ bad chunking: tables split,</text>
@@ -945,18 +952,18 @@ ASSISTANT
   <!-- online row -->
   <line x1="20" y1="156" x2="800" y2="156" class="grid" stroke-dasharray="4 4"/>
   <text x="20" y="180" class="lbl-strong" font-size="13">Online: answer a question</text>
-  <rect x="20" y="200" width="120" height="60" class="box-accent"/><text x="80" y="224" text-anchor="middle" class="lbl-strong" font-size="11">Question</text><text x="80" y="242" text-anchor="middle" class="lbl" font-size="9">"refund window, annual plans?"</text>
+  <rect x="20" y="200" width="120" height="60" class="box-accent"/><text x="80" y="224" text-anchor="middle" class="lbl-strong" font-size="11">Question</text><text x="80" y="242" text-anchor="middle" class="lbl" font-size="10">"refund window?"</text>
   <line x1="140" y1="230" x2="168" y2="230" class="arrow" marker-end="url(#arr-g8)"/>
-  <rect x="170" y="200" width="120" height="60" class="box"/><text x="230" y="224" text-anchor="middle" class="lbl-strong" font-size="11">Embed query</text><text x="230" y="242" text-anchor="middle" class="lbl" font-size="10">same model as the index!</text>
+  <rect x="170" y="200" width="120" height="60" class="box"/><text x="230" y="224" text-anchor="middle" class="lbl-strong" font-size="11">Embed query</text><text x="230" y="242" text-anchor="middle" class="lbl" font-size="9">same model as the index!</text>
   <line x1="290" y1="230" x2="318" y2="230" class="arrow" marker-end="url(#arr-g8)"/>
   <rect x="320" y="200" width="120" height="60" class="box"/><text x="380" y="224" text-anchor="middle" class="lbl-strong" font-size="11">Retrieve top-k</text><text x="380" y="242" text-anchor="middle" class="lbl" font-size="10">k = 5–20, then re-rank</text>
   <path d="M540,108 L540,140 L380,140 L380,198" fill="none" class="arrow" marker-end="url(#arr-g8)" stroke-dasharray="3 3"/>
   <line x1="440" y1="230" x2="468" y2="230" class="arrow" marker-end="url(#arr-g8)"/>
   <rect x="470" y="192" width="140" height="76" rx="8" fill="var(--s2)" fill-opacity=".14" stroke="var(--s2)" stroke-width="2"/>
   <text x="540" y="212" text-anchor="middle" class="lbl-strong" font-size="11">Build prompt</text>
-  <text x="540" y="228" text-anchor="middle" class="lbl" font-size="10">system rules + retrieved chunks</text>
-  <text x="540" y="242" text-anchor="middle" class="lbl" font-size="10">+ question + "answer only from</text>
-  <text x="540" y="256" text-anchor="middle" class="lbl" font-size="10">the context, cite chunk ids"</text>
+  <text x="540" y="228" text-anchor="middle" class="lbl" font-size="9">rules + chunks + question</text>
+  <text x="540" y="242" text-anchor="middle" class="lbl" font-size="9">+ "answer only from the</text>
+  <text x="540" y="256" text-anchor="middle" class="lbl" font-size="9">context, cite chunk ids"</text>
   <line x1="610" y1="230" x2="638" y2="230" class="arrow" marker-end="url(#arr-g8)"/>
   <rect x="640" y="200" width="70" height="60" rx="8" fill="var(--s7)" fill-opacity=".18" stroke="var(--s7)" stroke-width="2"/><text x="675" y="234" text-anchor="middle" class="lbl-strong" font-size="12">LLM</text>
   <line x1="710" y1="230" x2="738" y2="230" class="arrow" marker-end="url(#arr-g8)"/>
@@ -975,7 +982,7 @@ ASSISTANT
 <figcaption><strong>Figure 19.8 — RAG is a search engine with a reading assistant bolted on.</strong> Offline: chunk, embed, index. Online: embed the question, fetch the closest chunks, hand them to the model with strict instructions, return an answer with citations. The red annotations are where real systems fail — and three of the four are not the LLM's fault.</figcaption>
 </figure>
 
-<pre class="code" data-lang="python-noexec"><code><span class="cm"># A minimal RAG loop with generic, provider-agnostic function names (replace with your SDK calls)</span>
+<pre class="code" data-lang="python-noexec"><code><span class="cm"># A minimal RAG loop with provider-agnostic function names (swap in your SDK)</span>
 <span class="kw">import</span> numpy <span class="kw">as</span> np
 
 <span class="kw">def</span> <span class="fn">embed</span>(texts: <span class="fn">list</span>[<span class="fn">str</span>]) -&gt; np.ndarray:
@@ -995,7 +1002,7 @@ chunks, meta = [], []
 <span class="kw">for</span> doc_id, text <span class="kw">in</span> documents.items():                <span class="cm"># {"refund-policy.md": "...", ...}</span>
     <span class="kw">for</span> j, c <span class="kw">in</span> <span class="fn">enumerate</span>(chunk(text)):
         chunks.append(c); meta.append((doc_id, j))
-index = embed(chunks)                                  <span class="cm"># (n_chunks, d); persist with a vector DB in production</span>
+index = embed(chunks)                                  <span class="cm"># (n_chunks, d); use a vector DB in production</span>
 
 <span class="cm"># ---- online: retrieve + generate ----------------------------------------------</span>
 SYSTEM = (<span class="st">"Answer the question using ONLY the provided context. "</span>
@@ -1217,8 +1224,8 @@ SYSTEM = (<span class="st">"Answer the question using ONLY the provided context.
     ["t","h"],["th","e"],["i","n"],["e","r"],["a","n"],["o","n"],["r","e"],["e","d"],["e","s"],["a","t"],["o","r"],
     ["in","g"],["e","n"],["ing","⌂"],["a","l"],["i","t"],["s","t"],["the","⌂"],["ed","⌂"],["l","y"],["ly","⌂"],
     ["o","u"],["u","n"],["a","r"],["i","s"],["is","⌂"],["l","e"],["a","b"],["ab","le"],["able","⌂"],
-    ["e","f"],["r","ef"],["un","d"],["ref","und"],["refund","⌂"],["t","i"],["ti","on"],["tion","⌂"],
-    ["a","s"],["w","as"],["was","⌂"],["s","l"],["o","w"],["sl","ow"],["slow","⌂"],["i","c"],["t","ic"],["tic","k"],
+    ["re","f"],["un","d"],["ref","und"],["refund","⌂"],["t","i"],["ti","on"],["tion","⌂"],
+    ["a","s"],["w","as"],["was","⌂"],["s","l"],["o","w"],["sl","ow"],["slow","⌂"],["ti","c"],["tic","k"],
     ["e","t"],["tick","et"],["ticket","⌂"],["n","d"],["a","nd"],["and","⌂"],["o","f"],["of","⌂"],["t","o"],["to","⌂"],
     ["f","or"],["for","⌂"],["m","ent"],["ent","⌂"],["er","⌂"],["es","⌂"],["s","⌂"],["y","⌂"],["e","⌂"],["d","⌂"],["t","⌂"]
   ];
@@ -1244,7 +1251,7 @@ SYSTEM = (<span class="st">"Answer the question using ONLY the provided context.
     var text = inp.value.toLowerCase(), words = text.match(/[a-z]+|[0-9]+|[^\sa-z0-9]/g) || [];
     var toks = [], s = "", x = 12, y = 30;
     words.forEach(function (w, k) {
-      var parts = /^[a-z]+$/.test(w) ? bpe(w) : w.split("").concat(["⌂"]);   // digits and symbols: character level
+      var parts = /^[a-z]+$/.test(w) ? bpe(w) : w.split("");   // digits and symbols: character level
       parts.forEach(function (p) { toks.push({ t: p, w: k }); });
     });
     toks.forEach(function (tok) {
