@@ -428,9 +428,11 @@ df[<span class="st">"churned"</span>] = (rng.random(n) &lt; <span class="nu">1</
 
 X = df.drop(columns=[<span class="st">"churned"</span>]); y = df[<span class="st">"churned"</span>]
 <span class="cm"># cut 1: 80% train+val, 20% test.  stratify=y keeps the churn rate equal on both sides.</span>
-X_trval, X_test, y_trval, y_test = train_test_split(X, y, test_size=<span class="nu">0.20</span>, stratify=y, random_state=<span class="nu">0</span>)
+X_trval, X_test, y_trval, y_test = train_test_split(
+    X, y, test_size=<span class="nu">0.20</span>, stratify=y, random_state=<span class="nu">0</span>)
 <span class="cm"># cut 2: 25% of the remaining 80% becomes validation  ->  60 / 20 / 20 overall</span>
-X_train, X_val, y_train, y_val = train_test_split(X_trval, y_trval, test_size=<span class="nu">0.25</span>, stratify=y_trval, random_state=<span class="nu">0</span>)
+X_train, X_val, y_train, y_val = train_test_split(
+    X_trval, y_trval, test_size=<span class="nu">0.25</span>, stratify=y_trval, random_state=<span class="nu">0</span>)
 <span class="kw">for</span> name, part <span class="kw">in</span> [(<span class="st">"train"</span>, y_train), (<span class="st">"val"</span>, y_val), (<span class="st">"test"</span>, y_test)]:
     <span class="fn">print</span>(<span class="st">f"{name:5s} n={len(part):4d}  churn rate={part.mean():.3f}"</span>)
 <span class="out"># train n=1200  churn rate=0.262</span>

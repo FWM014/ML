@@ -140,9 +140,9 @@
     <path d="M480,262 L470,262" fill="none"/>
     <polyline points="480.0,390 480.0,262" fill="none" stroke="var(--s2)" stroke-width="2.2" stroke-dasharray="2 3"/>
     <polyline points="480.0,262.0 489.7,265.9 499.3,269.7 509.0,273.3 518.7,276.9 528.3,280.3 538.0,283.7 547.7,286.9 557.3,290.1 567.0,293.1 576.7,296.1 586.3,299.0 596.0,301.8 605.7,304.5 615.3,307.1 625.0,309.7 634.7,312.2 644.3,314.6 654.0,317.0 663.7,319.2 673.3,321.4 683.0,323.6 692.7,325.7 702.3,327.7 712.0,329.7 721.7,331.6 731.3,333.4 741.0,335.2 750.7,337.0 760.3,338.7 770.0,340.3" fill="none" stroke="var(--s3)" stroke-width="2.2"/>
-    <text x="560" y="300" class="lbl" font-size="11" fill="var(--s1)" font-weight="700">vanishing (×0.8 per hop)</text>
-    <text x="520" y="276" class="lbl" font-size="11" fill="var(--s2)" font-weight="700">exploding (×1.12, off the chart)</text>
-    <text x="640" y="365" class="lbl" font-size="11" fill="var(--s3)" font-weight="700">LSTM-style (≈×0.97)</text>
+    <text x="600" y="378" class="lbl" font-size="11" fill="var(--s1)" font-weight="700">vanishing (×0.8 per hop)</text>
+    <text x="520" y="256" class="lbl" font-size="11" fill="var(--s2)" font-weight="700">exploding (×1.12): off the chart ↑</text>
+    <text x="600" y="326" class="lbl" font-size="11" fill="var(--s3)" font-weight="700">LSTM-style (≈×0.97)</text>
   </g>
 </svg>
 <figcaption><strong>Figure 18.1 — The chain that gives an RNN memory is the chain that starves its gradients.</strong> Top: the same cell is applied at every step and the hidden state h<sub>t</sub> is the only thing carried forward. Bottom: backpropagation through time multiplies by the same Jacobian at every hop, so the gradient reaching early steps shrinks geometrically (or blows up). Errors at "wrong" barely adjust how "my" was processed.</figcaption>
@@ -176,7 +176,7 @@
   <!-- cell state line -->
   <line x1="20" y1="80" x2="590" y2="80" stroke="var(--s3)" stroke-width="4" marker-end="url(#arr-f2)"/>
   <text x="30" y="70" class="lbl-strong" font-size="12" fill="var(--s3)">c<tspan font-size="9" dy="3">t−1</tspan></text>
-  <text x="560" y="70" class="lbl-strong" font-size="12" fill="var(--s3)">c<tspan font-size="9" dy="3">t</tspan></text>
+  <text x="540" y="70" class="lbl-strong" font-size="12" fill="var(--s3)">c<tspan font-size="9" dy="3">t</tspan></text>
   <text x="300" y="66" text-anchor="middle" class="lbl" font-size="11" fill="var(--s3)" font-weight="700">cell state = the notebook (changed only by × and +)</text>
   <!-- forget: multiply -->
   <circle cx="190" cy="80" r="14" fill="var(--surface)" stroke="var(--s2)" stroke-width="2"/><text x="190" y="85" text-anchor="middle" class="lbl-strong" font-size="14">×</text>
@@ -186,7 +186,7 @@
   <rect x="150" y="150" width="80" height="44" rx="6" fill="var(--s2)" fill-opacity=".18" stroke="var(--s2)" stroke-width="1.5"/><text x="190" y="169" text-anchor="middle" class="lbl-strong" font-size="11">forget f<tspan font-size="8" dy="3">t</tspan></text><text x="190" y="185" text-anchor="middle" class="lbl" font-size="10">σ → eraser</text>
   <rect x="260" y="150" width="80" height="44" rx="6" fill="var(--s2)" fill-opacity=".18" stroke="var(--s2)" stroke-width="1.5"/><text x="300" y="169" text-anchor="middle" class="lbl-strong" font-size="11">input i<tspan font-size="8" dy="3">t</tspan></text><text x="300" y="185" text-anchor="middle" class="lbl" font-size="10">σ → pencil</text>
   <rect x="350" y="150" width="90" height="44" rx="6" fill="var(--s1)" fill-opacity=".18" stroke="var(--s1)" stroke-width="1.5"/><text x="395" y="169" text-anchor="middle" class="lbl-strong" font-size="11">candidate c̃<tspan font-size="8" dy="3">t</tspan></text><text x="395" y="185" text-anchor="middle" class="lbl" font-size="10">tanh → new fact</text>
-  <rect x="460" y="150" width="80" height="44" rx="6" fill="var(--s2)" fill-opacity=".18" stroke="var(--s2)" stroke-width="1.5"/><text x="500" y="169" text-anchor="middle" class="lbl-strong" font-size="11">output o<tspan font-size="8" dy="3">t</tspan></text><text x="500" y="185" text-anchor="middle" class="lbl" font-size="10">σ → reading window</text>
+  <rect x="460" y="150" width="80" height="44" rx="6" fill="var(--s2)" fill-opacity=".18" stroke="var(--s2)" stroke-width="1.5"/><text x="500" y="169" text-anchor="middle" class="lbl-strong" font-size="11">output o<tspan font-size="8" dy="3">t</tspan></text><text x="500" y="185" text-anchor="middle" class="lbl" font-size="10">σ → reader</text>
   <!-- arrows from gates -->
   <line x1="190" y1="150" x2="190" y2="96" class="arrow" marker-end="url(#arr-f2)"/>
   <line x1="300" y1="150" x2="300" y2="122" class="arrow"/><line x1="395" y1="150" x2="395" y2="122" class="arrow"/>
@@ -272,12 +272,12 @@ c<sub>t</sub> = f<sub>t</sub> ⊙ c<sub>t−1</sub> + i<sub>t</sub> ⊙ tanh(W<s
     <rect x="470" y="70" width="60" height="40" class="box"/><rect x="550" y="70" width="60" height="40" class="box"/><rect x="630" y="70" width="60" height="40" class="box"/><rect x="710" y="70" width="60" height="40" class="box"/>
     <line x1="530" y1="90" x2="548" y2="90" class="arrow" marker-end="url(#arr-f3)"/><line x1="610" y1="90" x2="628" y2="90" class="arrow" marker-end="url(#arr-f3)"/><line x1="690" y1="90" x2="708" y2="90" class="arrow" marker-end="url(#arr-f3)"/>
     <line x1="500" y1="68" x2="500" y2="40" class="arrow" marker-end="url(#arr-f3)"/><line x1="580" y1="68" x2="580" y2="40" class="arrow" marker-end="url(#arr-f3)"/><line x1="660" y1="68" x2="660" y2="40" class="arrow" marker-end="url(#arr-f3)"/><line x1="740" y1="68" x2="740" y2="40" class="arrow" marker-end="url(#arr-f3)"/>
-    <text x="500" y="34" text-anchor="middle" class="lbl-strong" font-size="11" fill="var(--s1)">invoice</text><text x="580" y="34" text-anchor="middle" class="lbl-strong" font-size="11" fill="var(--s1)">is</text><text x="660" y="34" text-anchor="middle" class="lbl-strong" font-size="11" fill="var(--s1)">wrong</text><text x="740" y="34" text-anchor="middle" class="lbl-strong" font-size="11" fill="var(--s1)">&lt;eos&gt;</text>
+    <text x="500" y="28" text-anchor="middle" class="lbl-strong" font-size="11" fill="var(--s1)">invoice</text><text x="580" y="28" text-anchor="middle" class="lbl-strong" font-size="11" fill="var(--s1)">is</text><text x="660" y="28" text-anchor="middle" class="lbl-strong" font-size="11" fill="var(--s1)">wrong</text><text x="740" y="28" text-anchor="middle" class="lbl-strong" font-size="11" fill="var(--s1)">&lt;eos&gt;</text>
     <!-- feedback of outputs -->
-    <path d="M500,40 C520,20 560,20 580,68" fill="none" stroke="var(--ink-3)" stroke-dasharray="3 3" marker-end="url(#arr-f3)"/>
-    <path d="M580,40 C600,20 640,20 660,68" fill="none" stroke="var(--ink-3)" stroke-dasharray="3 3" marker-end="url(#arr-f3)"/>
-    <path d="M660,40 C680,20 720,20 740,68" fill="none" stroke="var(--ink-3)" stroke-dasharray="3 3" marker-end="url(#arr-f3)"/>
-    <text x="620" y="140" text-anchor="middle" class="lbl" font-size="11">each output is fed back as the next input (autoregressive)</text>
+    <path d="M522,30 C545,44 560,50 574,64" fill="none" stroke="var(--ink-3)" stroke-dasharray="3 3" marker-end="url(#arr-f3)"/>
+    <path d="M592,30 C620,44 640,50 654,64" fill="none" stroke="var(--ink-3)" stroke-dasharray="3 3" marker-end="url(#arr-f3)"/>
+    <path d="M684,30 C705,44 720,50 734,64" fill="none" stroke="var(--ink-3)" stroke-dasharray="3 3" marker-end="url(#arr-f3)"/>
+    <text x="640" y="190" text-anchor="middle" class="lbl" font-size="11">dashed: each output is fed back as the next input (autoregressive)</text>
     <line x1="500" y1="150" x2="500" y2="112" class="arrow" marker-end="url(#arr-f3)"/><text x="500" y="168" text-anchor="middle" class="lbl-strong" font-size="11">&lt;start&gt;</text>
   </g>
   <text x="400" y="240" text-anchor="middle" class="lbl-strong" font-size="12">Translation quality of this design falls off a cliff beyond ~30 input words: the bottleneck is full.</text>
@@ -439,16 +439,16 @@ out, w, s = attention(Q, K, V)
 <figure class="fig">
 <svg viewBox="0 0 680 430" role="img" aria-label="A 10 by 10 heatmap of self-attention weights for the sentence 'The animal didn't cross the street because it was tired'; the row for 'it' puts most of its weight on 'animal'">
 <text x="280.0" y="22" text-anchor="middle" class="lbl-strong" font-size="14">Self-attention weights (rows = query token, columns = key token)</text>
-<text x="127.0" y="62" text-anchor="end" class="lbl" font-size="11" transform="rotate(-45 127.0 62)">The</text>
-<text x="161.0" y="62" text-anchor="end" class="lbl" font-size="11" transform="rotate(-45 161.0 62)">animal</text>
-<text x="195.0" y="62" text-anchor="end" class="lbl" font-size="11" transform="rotate(-45 195.0 62)">didn't</text>
-<text x="229.0" y="62" text-anchor="end" class="lbl" font-size="11" transform="rotate(-45 229.0 62)">cross</text>
-<text x="263.0" y="62" text-anchor="end" class="lbl" font-size="11" transform="rotate(-45 263.0 62)">the</text>
-<text x="297.0" y="62" text-anchor="end" class="lbl" font-size="11" transform="rotate(-45 297.0 62)">street</text>
-<text x="331.0" y="62" text-anchor="end" class="lbl" font-size="11" transform="rotate(-45 331.0 62)">because</text>
-<text x="365.0" y="62" text-anchor="end" class="lbl" font-size="11" transform="rotate(-45 365.0 62)">it</text>
-<text x="399.0" y="62" text-anchor="end" class="lbl" font-size="11" transform="rotate(-45 399.0 62)">was</text>
-<text x="433.0" y="62" text-anchor="end" class="lbl" font-size="11" transform="rotate(-45 433.0 62)">tired</text>
+<text x="127.0" y="62" text-anchor="end" class="lbl" font-size="11" transform="rotate(-55 127.0 62)">The</text>
+<text x="161.0" y="62" text-anchor="end" class="lbl" font-size="11" transform="rotate(-55 161.0 62)">animal</text>
+<text x="195.0" y="62" text-anchor="end" class="lbl" font-size="11" transform="rotate(-55 195.0 62)">didn't</text>
+<text x="229.0" y="62" text-anchor="end" class="lbl" font-size="11" transform="rotate(-55 229.0 62)">cross</text>
+<text x="263.0" y="62" text-anchor="end" class="lbl" font-size="11" transform="rotate(-55 263.0 62)">the</text>
+<text x="297.0" y="62" text-anchor="end" class="lbl" font-size="11" transform="rotate(-55 297.0 62)">street</text>
+<text x="331.0" y="62" text-anchor="end" class="lbl" font-size="11" transform="rotate(-55 331.0 62)">because</text>
+<text x="365.0" y="62" text-anchor="end" class="lbl" font-size="11" transform="rotate(-55 365.0 62)">it</text>
+<text x="399.0" y="62" text-anchor="end" class="lbl" font-size="11" transform="rotate(-55 399.0 62)">was</text>
+<text x="433.0" y="62" text-anchor="end" class="lbl" font-size="11" transform="rotate(-55 433.0 62)">tired</text>
 <text x="102" y="91.0" text-anchor="end" class="lbl" font-size="11">The</text>
 <rect x="110" y="70" width="34" height="34" fill="var(--s1)" fill-opacity="0.7" stroke="var(--surface)" stroke-width="1"/>
 <text x="127.0" y="91.0" text-anchor="middle" font-size="10" fill="#fff" font-weight="700">0.46</text>
@@ -645,7 +645,7 @@ out, w = head(x)
   <g>
     <rect x="200" y="30" width="200" height="56" rx="6" fill="var(--s1)" fill-opacity=".14" stroke="var(--s1)" stroke-width="1.5"/>
     <text x="300" y="52" text-anchor="middle" class="lbl-strong" font-size="12">Head 1: W<tspan font-size="8" dy="3">Q1</tspan><tspan dy="-3">, W</tspan><tspan font-size="8" dy="3">K1</tspan><tspan dy="-3">, W</tspan><tspan font-size="8" dy="3">V1</tspan></text>
-    <text x="300" y="72" text-anchor="middle" class="lbl" font-size="11">learns e.g. "which noun does it refer to"</text>
+    <text x="300" y="72" text-anchor="middle" class="lbl" font-size="11">learns e.g. "which noun is it?"</text>
     <rect x="200" y="100" width="200" height="56" rx="6" fill="var(--s2)" fill-opacity=".14" stroke="var(--s2)" stroke-width="1.5"/>
     <text x="300" y="122" text-anchor="middle" class="lbl-strong" font-size="12">Head 2: W<tspan font-size="8" dy="3">Q2</tspan><tspan dy="-3">, W</tspan><tspan font-size="8" dy="3">K2</tspan><tspan dy="-3">, W</tspan><tspan font-size="8" dy="3">V2</tspan></text>
     <text x="300" y="142" text-anchor="middle" class="lbl" font-size="11">learns e.g. "previous word"</text>
@@ -1286,7 +1286,7 @@ out, w = head(x)
   <!-- shape note -->
   <text x="400" y="290" text-anchor="middle" class="lbl" font-size="11">Shape in = shape out = (n tokens × d<tspan font-size="8" dy="3">model</tspan><tspan dy="-3">), so blocks stack freely. Only attention mixes across positions;</tspan></text>
   <text x="400" y="308" text-anchor="middle" class="lbl" font-size="11">the FFN is where most parameters live (≈ 2/3 of each block) and where facts are thought to be stored.</text>
-  <text x="400" y="340" text-anchor="middle" class="lbl" font-size="11">Modern variants put LayerNorm <em>before</em> each sub-layer ("pre-norm"); it trains more stably at depth. Same idea.</text>
+  <text x="400" y="340" text-anchor="middle" class="lbl" font-size="11">Modern variants put LayerNorm <tspan font-style="italic">before</tspan> each sub-layer ("pre-norm"); it trains more stably at depth. Same idea.</text>
 </svg>
 <figcaption><strong>Figure 18.8 — The Transformer block: gather, then think, with an escape hatch.</strong> Attention mixes information across tokens; the feed-forward network processes each token on its own; the residual paths (violet) guarantee that every block starts from the identity and the gradient has a clean highway to the input. Stack N of these and you have BERT or GPT.</figcaption>
 </figure>
@@ -1487,18 +1487,18 @@ w = torch.softmax(masked, dim=-<span class="nu">1</span>)
   </g>
   <g class="grid"><line x1="220" y1="270" x2="220" y2="45"/><line x1="340" y1="270" x2="340" y2="45"/><line x1="460" y1="270" x2="460" y2="45"/><line x1="580" y1="270" x2="580" y2="45"/></g>
   <!-- envelope power law -->
-  <line x1="90" y1="72" x2="700" y2="232" stroke="var(--s7)" stroke-width="2" stroke-dasharray="7 4"/>
-  <text x="560" y="180" class="lbl" font-size="11" fill="var(--s7)" font-weight="700">L ∝ C<tspan font-size="8" dy="-4">−0.05</tspan><tspan dy="4"> — a straight line for 7 orders of magnitude</tspan></text>
+  <line x1="90" y1="102" x2="700" y2="247" stroke="var(--s7)" stroke-width="2" stroke-dasharray="7 4"/>
+  <text x="380" y="256" class="lbl" font-size="11" fill="var(--s7)" font-weight="700">envelope: L ∝ C<tspan font-size="8" dy="-4">−0.05</tspan><tspan dy="4"> — straight on log-log for 7 orders of magnitude</tspan></text>
   <!-- small model -->
   <path d="M100,75 C150,110 190,135 240,150 C270,158 300,160 340,161" fill="none" stroke="var(--s1)" stroke-width="2.5"/>
-  <text x="345" y="166" class="lbl" font-size="11" fill="var(--s1)" font-weight="700">small model (plateaus)</text>
+  <text x="112" y="68" class="lbl" font-size="11" fill="var(--s1)" font-weight="700">small model</text>
   <!-- medium -->
   <path d="M190,98 C250,135 300,165 360,185 C400,196 440,200 480,201" fill="none" stroke="var(--s2)" stroke-width="2.5"/>
-  <text x="485" y="206" class="lbl" font-size="11" fill="var(--s2)" font-weight="700">medium</text>
+  <text x="202" y="92" class="lbl" font-size="11" fill="var(--s2)" font-weight="700">medium model</text>
   <!-- large -->
   <path d="M300,128 C370,165 430,200 500,220 C550,232 600,236 660,237" fill="none" stroke="var(--s3)" stroke-width="2.5"/>
-  <text x="600" y="255" class="lbl" font-size="11" fill="var(--s3)" font-weight="700">large model</text>
-  <text x="400" y="60" text-anchor="middle" class="lbl" font-size="11">Each size eventually plateaus; the <tspan fill="var(--s7)" font-weight="700">envelope</tspan> keeps falling. Bigger model + more data + more compute, in the right ratio, is a reliable bet.</text>
+  <text x="312" y="122" class="lbl" font-size="11" fill="var(--s3)" font-weight="700">large model</text>
+  <text x="400" y="60" text-anchor="middle" class="lbl" font-size="11">Each size eventually plateaus; the <tspan fill="var(--s7)" font-weight="700">envelope</tspan> keeps falling. Bigger model + more data + more compute is a reliable bet.</text>
 </svg>
 <figcaption><strong>Figure 18.10 — Scaling laws: loss is a smooth power law in compute.</strong> Each curve is one model size trained longer; each flattens when it runs out of capacity. The envelope across sizes is a straight line on log-log axes (shape after Kaplan et al. 2020 and Hoffmann et al. 2022, which also showed that data must grow with model size). This predictability, not any single trick, is why the field bet everything on scaling Transformers.</figcaption>
 </figure>
@@ -1521,7 +1521,7 @@ w = torch.softmax(masked, dim=-<span class="nu">1</span>)
 
 <p>Everything above fits in 40 lines. The model below is a decoder-only Transformer with one block: token and position embeddings, one causal attention head with a residual, a feed-forward with a residual, and a linear head that predicts the next character. We train it on a short sentence repeated many times, so the loss should collapse toward zero within a few hundred steps and the model should be able to continue the sentence. Read it top to bottom against Figure 18.8.</p>
 
-<pre class="code" data-lang="python"><code><span class="cm"># A tiny character-level next-token model (one causal attention head + FFN), trained in seconds on CPU</span>
+<pre class="code" data-lang="python"><code><span class="cm"># A tiny character-level next-token model: one causal attention head + FFN</span>
 <span class="kw">import</span> torch, torch.nn <span class="kw">as</span> nn, torch.nn.functional <span class="kw">as</span> F, math, time
 torch.manual_seed(<span class="nu">0</span>)
 
@@ -1578,7 +1578,7 @@ idx = torch.tensor([[stoi[c] <span class="kw">for</span> c <span class="kw">in</
 <p>Three things to notice. The starting loss ≈ 3.6 is ln(29), the loss of guessing uniformly over 29 characters — always check that your first loss makes sense. The loss collapses because the data is trivially predictable; on real text a character model plateaus around 1.0–1.5 nats. And generation is the causal loop of Figure 18.3: predict, append, repeat — exactly what a chat model does, at 70 billion parameters instead of 20 thousand.</p>
 
 <div class="callout eli9"><div class="title">Explain it like I'm 9</div>
-<p>The model played a guessing game 300 times: "here are 24 letters; what comes next?" At first it guessed randomly. Each time, it got told the answer and nudged its numbers a little. After a few hundred rounds it knows the sentence by heart — and can finish it from just "the quick". A chat model plays the same game, but on the whole internet, and the game is much harder to memorize, so it has to learn the patterns instead.</p>
+<p>The model played a guessing game 200 times: "here are 24 letters; what comes next?" At first it guessed randomly. Each time, it got told the answer and nudged its numbers a little. After a few hundred rounds it knows the sentence by heart — and can finish it from just "the quick". A chat model plays the same game, but on the whole internet, and the game is much harder to memorize, so it has to learn the patterns instead.</p>
 </div>
 
 <div class="callout key"><div class="title">Key idea</div>
@@ -1742,7 +1742,7 @@ idx = torch.tensor([[stoi[c] <span class="kw">for</span> c <span class="kw">in</
       }
     }
     s += '<line x1="30" y1="150" x2="730" y2="150" stroke="currentColor" stroke-opacity=".3"/>';
-    s += '<text x="30" y="235" font-size="11" opacity=".7">line thickness = weight</text>';
+    s += '<text x="30" y="40" font-size="11" opacity=".7">bar height and line thickness = weight</text>';
     svg.innerHTML = s;
     top.textContent = toks[best] + " (" + w[best].toFixed(2) + ")";
   }

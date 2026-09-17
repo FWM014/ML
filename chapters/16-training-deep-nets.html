@@ -1,0 +1,1289 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>16 · Training Deep Networks (PyTorch) — ML: Zero to Expert</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body data-chapter="16">
+<header class="topbar"></header>
+<div class="progress-track"><div></div></div>
+<div class="shell">
+<nav class="sidebar"></nav>
+<main class="content"><div class="container">
+
+<header class="ch-header">
+  <div class="kicker">Part III · Deep Learning · Chapter 16</div>
+  <h1>Training Deep Networks (PyTorch)</h1>
+  <p class="lede">Chapter 15 built a network by hand so you would understand it. This chapter is about training one <em>well</em>: the PyTorch objects, the five-line loop that every deep-learning project is built on, and the optimizer, learning-rate, initialization, normalization and regularization decisions that separate a model that learns from one that sits at chance. It ends with the debugging recipe practitioners actually use.</p>
+  <div class="meta"><span class="level advanced">Advanced</span> <span>⏱ 90 min read</span> <span>·</span> <span>Prereqs: Ch 15</span></div>
+</header>
+
+<div class="objectives">
+  <h3>By the end of this chapter you will be able to</h3>
+  <ul>
+    <li>Explain what autograd does and why a framework beats hand-written backprop.</li>
+    <li>Write a complete, correct PyTorch training loop with validation and early stopping from memory.</li>
+    <li>Pick the right loss function and know which output layer each one expects (logits, not probabilities).</li>
+    <li>Choose an optimizer, a learning rate and a schedule, and diagnose "too high" vs "too low" from a loss curve.</li>
+    <li>Use initialization, batch/layer norm, weight decay, dropout and gradient clipping deliberately rather than by superstition.</li>
+    <li>Debug a network that will not train using a fixed checklist, and decide honestly when a gradient-boosted tree is the better tool.</li>
+  </ul>
+</div>
+
+<div class="toc-inline"><strong>In this chapter</strong>
+<ol>
+  <li><a href="#s1">Why a framework: autograd</a></li>
+  <li><a href="#s2">The PyTorch mental model</a></li>
+  <li><a href="#s3">Anatomy of a training loop</a></li>
+  <li><a href="#s4">Optimizers: SGD to AdamW</a></li>
+  <li><a href="#s5">The learning rate and its schedules</a></li>
+  <li><a href="#s6">Initialization and normalization</a></li>
+  <li><a href="#s7">Regularization and gradient clipping</a></li>
+  <li><a href="#s8">The debugging recipe and reading curves</a></li>
+  <li><a href="#s9">Hardware, precision, checkpoints, reproducibility</a></li>
+  <li><a href="#s10">Defaults for tabular MLPs, and MLP vs GBM</a></li>
+  <li><a href="#quiz">Quiz &amp; exercises</a></li>
+</ol></div>
+
+<!-- ============================================================ -->
+<h2 id="s1">1. Why a framework: autograd</h2>
+
+<p>In Chapter 15 you derived the backward pass of a two-layer network by hand: a page of chain-rule algebra for a model with a few hundred weights. Now imagine a network with fifty layers, skip connections, normalization layers and a custom loss. Deriving gradients by hand is not merely tedious; it is where bugs live. Every serious deep-learning framework exists to remove that job from you, and the mechanism that does it is called <strong>automatic differentiation</strong>, or <strong>autograd</strong>.</p>
+
+<div class="callout eli9"><div class="title">Explain it like I'm 9</div>
+<p>Imagine building a LEGO tower and writing down every brick you add, in order, on a receipt. If someone later asks "how much did the third brick contribute to the tower's height?", you do not need to rebuild anything: you read the receipt backwards. Autograd is the receipt. Every time you multiply, add or squash a tensor, PyTorch writes down what you did. When you call <code>backward()</code>, it reads the receipt from the end to the start and hands each weight its gradient.</p>
+</div>
+
+<p>The receipt is a <strong>computation graph</strong>. Every operation on a tensor that requires gradients creates a node that remembers its inputs and how to differentiate itself. The forward pass builds the graph as a side effect of computing the answer; <code>backward()</code> walks it in reverse, multiplying local derivatives along the way. That is exactly the chain rule from Chapter 15, executed by a machine that never forgets a term.</p>
+
+<figure class="fig">
+<svg viewBox="0 0 820 330" role="img" aria-label="The autograd graph for a tiny model: inputs x, weights w and bias b flow forward through multiply, sum, add, subtract and square to a scalar loss; gradients flow backward along the same edges with their numeric values">
+  <defs>
+    <marker id="arr16-1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker>
+    <marker id="arr16-1b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--s2)"/></marker>
+  </defs>
+  <text x="20" y="26" class="lbl-strong" font-size="14">Forward: build the graph while computing</text>
+  <text x="20" y="300" class="lbl-strong" font-size="14" fill="var(--s2)">Backward: walk it in reverse, multiplying local derivatives</text>
+  <!-- leaves -->
+  <rect x="20" y="60" width="90" height="40" class="box"/><text x="65" y="85" text-anchor="middle" class="lbl-strong">x = [1,2,3]</text>
+  <text x="65" y="115" text-anchor="middle" class="lbl" font-size="10">data, no grad</text>
+  <rect x="20" y="140" width="90" height="40" class="box-accent"/><text x="65" y="165" text-anchor="middle" class="lbl-strong">w (param)</text>
+  <text x="65" y="195" text-anchor="middle" class="lbl" font-size="10">requires_grad</text>
+  <rect x="20" y="215" width="90" height="40" class="box-accent"/><text x="65" y="240" text-anchor="middle" class="lbl-strong">b (param)</text>
+  <!-- op nodes -->
+  <rect x="160" y="100" width="80" height="40" class="box"/><text x="200" y="125" text-anchor="middle" class="lbl-strong">w · x</text>
+  <rect x="290" y="100" width="80" height="40" class="box"/><text x="330" y="125" text-anchor="middle" class="lbl-strong">sum</text>
+  <rect x="420" y="140" width="80" height="40" class="box"/><text x="460" y="165" text-anchor="middle" class="lbl-strong">+ b</text>
+  <text x="460" y="128" text-anchor="middle" class="lbl" font-size="11">ŷ = 4.6</text>
+  <rect x="550" y="140" width="80" height="40" class="box"/><text x="590" y="165" text-anchor="middle" class="lbl-strong">− 4.0</text>
+  <rect x="680" y="140" width="80" height="40" class="box"/><text x="720" y="165" text-anchor="middle" class="lbl-strong">(·)²</text>
+  <text x="720" y="128" text-anchor="middle" class="lbl-strong" font-size="12">loss = 0.36</text>
+  <!-- forward edges -->
+  <line x1="110" y1="80" x2="160" y2="110" class="arrow" marker-end="url(#arr16-1)"/>
+  <line x1="110" y1="160" x2="160" y2="130" class="arrow" marker-end="url(#arr16-1)"/>
+  <line x1="240" y1="120" x2="290" y2="120" class="arrow" marker-end="url(#arr16-1)"/>
+  <line x1="370" y1="120" x2="420" y2="150" class="arrow" marker-end="url(#arr16-1)"/>
+  <line x1="110" y1="235" x2="420" y2="172" class="arrow" marker-end="url(#arr16-1)"/>
+  <line x1="500" y1="160" x2="550" y2="160" class="arrow" marker-end="url(#arr16-1)"/>
+  <line x1="630" y1="160" x2="680" y2="160" class="arrow" marker-end="url(#arr16-1)"/>
+  <!-- backward edges (below, orange) -->
+  <path d="M720,182 L720,250 L600,250" stroke="var(--s2)" stroke-width="1.6" fill="none" marker-end="url(#arr16-1b)"/>
+  <text x="660" y="244" text-anchor="middle" class="lbl" font-size="11" fill="var(--s2)">∂loss/∂(ŷ−4) = 2·0.6 = 1.2</text>
+  <path d="M590,250 L470,250" stroke="var(--s2)" stroke-width="1.6" fill="none" marker-end="url(#arr16-1b)"/>
+  <text x="530" y="266" text-anchor="middle" class="lbl" font-size="11" fill="var(--s2)">× 1</text>
+  <path d="M460,250 L330,250 L330,150" stroke="var(--s2)" stroke-width="1.6" fill="none" marker-end="url(#arr16-1b)"/>
+  <text x="400" y="266" text-anchor="middle" class="lbl" font-size="11" fill="var(--s2)">∂ŷ/∂b = 1 → b.grad = 1.2</text>
+  <path d="M290,130 L250,130" stroke="var(--s2)" stroke-width="1.6" fill="none" marker-end="url(#arr16-1b)"/>
+  <path d="M160,135 L118,168" stroke="var(--s2)" stroke-width="1.6" fill="none" marker-end="url(#arr16-1b)"/>
+  <text x="200" y="160" text-anchor="middle" class="lbl" font-size="11" fill="var(--s2)">∂(w·x)/∂w = x</text>
+  <text x="200" y="176" text-anchor="middle" class="lbl-strong" font-size="11" fill="var(--s2)">w.grad = 1.2·x</text>
+  <text x="200" y="192" text-anchor="middle" class="lbl-strong" font-size="11" fill="var(--s2)">= [1.2, 2.4, 3.6]</text>
+  <text x="65" y="275" text-anchor="middle" class="lbl" font-size="10">x.grad stays None</text>
+</svg>
+<figcaption><strong>Figure 16.1 — The autograd graph for a one-neuron model.</strong> The forward pass computes ŷ = w·x + b and the loss (ŷ − 4)², recording each operation. <code>backward()</code> retraces the graph from the loss: the local derivative of each node is multiplied into the running gradient until it reaches the parameters. The numbers match the code below exactly.</figcaption>
+</figure>
+
+<p>Three practical consequences follow. First, <strong>you only ever write the forward pass</strong>; the backward pass is derived for you, correctly, every time. Second, <strong>gradients are only computed for tensors that ask for them</strong> (<code>requires_grad=True</code>) — data tensors do not carry gradients, and that is what keeps memory manageable. Third, <strong>the graph is rebuilt on every forward pass</strong> ("define-by-run"), so ordinary Python <code>if</code> statements and loops inside a model just work. That dynamic style is why PyTorch won over researchers and then over industry.</p>
+
+<pre class="code" data-lang="python"><code><span class="cm"># Tensors, requires_grad and the autograd graph</span>
+<span class="kw">import</span> torch
+torch.manual_seed(<span class="nu">0</span>)
+
+x = torch.tensor([<span class="nu">1.0</span>, <span class="nu">2.0</span>, <span class="nu">3.0</span>])          <span class="cm"># plain data: no gradient tracked</span>
+w = torch.tensor([<span class="nu">0.5</span>, -<span class="nu">1.0</span>, <span class="nu">2.0</span>], requires_grad=<span class="kw">True</span>)   <span class="cm"># a parameter</span>
+b = torch.tensor(<span class="nu">0.1</span>, requires_grad=<span class="kw">True</span>)
+
+y_hat = (w * x).<span class="fn">sum</span>() + b                 <span class="cm"># forward: builds a graph as it runs</span>
+loss = (y_hat - <span class="nu">4.0</span>) ** <span class="nu">2</span>                 <span class="cm"># scalar loss</span>
+<span class="fn">print</span>(<span class="st">f"y_hat = {y_hat.item():.2f}   loss = {loss.item():.2f}"</span>)
+<span class="fn">print</span>(<span class="st">"loss.grad_fn:"</span>, <span class="fn">type</span>(loss.grad_fn).__name__)   <span class="cm"># the graph node that made loss</span>
+
+loss.backward()                           <span class="cm"># walk the graph backwards: chain rule</span>
+<span class="fn">print</span>(<span class="st">"dloss/dw ="</span>, w.grad)               <span class="cm"># = 2*(y_hat-4)*x</span>
+<span class="fn">print</span>(<span class="st">"dloss/db ="</span>, <span class="fn">round</span>(b.grad.item(), <span class="nu">2</span>))   <span class="cm"># = 2*(y_hat-4)</span>
+<span class="fn">print</span>(<span class="st">"x.grad  ="</span>, x.grad)                <span class="cm"># None: we never asked for it</span>
+<span class="out"># y_hat = 4.60   loss = 0.36</span>
+<span class="out"># loss.grad_fn: PowBackward0</span>
+<span class="out"># dloss/dw = tensor([1.2000, 2.4000, 3.6000])</span>
+<span class="out"># dloss/db = 1.2</span>
+<span class="out"># x.grad  = None</span></code></pre>
+
+<div class="callout key"><div class="title">Key idea</div>
+<p><strong>Forward builds, backward reads.</strong> Every tensor operation records itself in a graph; <code>loss.backward()</code> replays the graph in reverse and deposits a gradient in each parameter's <code>.grad</code>. Gradients <em>accumulate</em> across calls, which is why every training loop must clear them before each backward pass.</p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s2">2. The PyTorch mental model</h2>
+
+<p>PyTorch has a small cast of objects. Once you can name what each one owns and what it is responsible for, every tutorial, codebase and error message becomes readable.</p>
+
+<div class="tbl-wrap">
+<table class="tbl">
+<thead><tr><th>Object</th><th>What it is</th><th>What it owns / does</th><th>Typical line</th></tr></thead>
+<tbody>
+<tr><td><strong>Tensor</strong></td><td>An n-dimensional array, like a NumPy array that can live on a GPU and track gradients.</td><td>Data, <code>dtype</code>, <code>device</code>, <code>requires_grad</code>, <code>.grad</code></td><td><code>torch.tensor(X, dtype=torch.float32)</code></td></tr>
+<tr><td><strong>nn.Module</strong></td><td>A model or a layer. Anything with parameters and a <code>forward()</code>.</td><td>Its parameters, submodules, train/eval mode, <code>state_dict()</code></td><td><code>class MLP(nn.Module): …</code></td></tr>
+<tr><td><strong>Parameter</strong></td><td>A tensor that is registered as learnable inside a Module.</td><td>Automatically <code>requires_grad=True</code>; listed by <code>model.parameters()</code></td><td><code>nn.Linear(30, 16).weight</code></td></tr>
+<tr><td><strong>Loss function</strong></td><td>A Module that turns (outputs, targets) into one scalar.</td><td>Knows what kind of output it expects (logits vs values)</td><td><code>nn.BCEWithLogitsLoss()</code></td></tr>
+<tr><td><strong>Optimizer</strong></td><td>The update rule. Holds a reference to the parameters and its own state (momentum buffers, etc.).</td><td><code>zero_grad()</code>, <code>step()</code>, learning rate in <code>param_groups</code></td><td><code>torch.optim.AdamW(model.parameters(), lr=1e-3)</code></td></tr>
+<tr><td><strong>Dataset</strong></td><td>Anything with <code>__len__</code> and <code>__getitem__</code> returning one example.</td><td>Where the data lives; how one item is loaded/transformed</td><td><code>TensorDataset(X, y)</code></td></tr>
+<tr><td><strong>DataLoader</strong></td><td>Wraps a Dataset to produce shuffled mini-batches, optionally in parallel workers.</td><td>Batch size, shuffling, <code>num_workers</code>, <code>drop_last</code></td><td><code>DataLoader(ds, batch_size=64, shuffle=True)</code></td></tr>
+<tr><td><strong>Device</strong></td><td>Where tensors and modules live: <code>cpu</code>, <code>cuda</code>, <code>mps</code>.</td><td>Everything in one computation must be on the same device</td><td><code>model.to(device); xb = xb.to(device)</code></td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="callout eli9"><div class="title">Explain it like I'm 9</div>
+<p>Think of a bakery. The <strong>Dataset</strong> is the pantry (every ingredient, one at a time). The <strong>DataLoader</strong> is the assistant who brings you trays of 32 ingredients at once, in a random order so you never bake the same tray twice in a row. The <strong>Module</strong> is the recipe with its adjustable amounts (the parameters). The <strong>loss</strong> is the taste test. The <strong>optimizer</strong> is the rule for adjusting the amounts after each taste test. The <strong>device</strong> is which kitchen you are standing in; you cannot mix ingredients from two kitchens.</p>
+</div>
+
+<h3>Tensors and requires_grad</h3>
+<p>A tensor is a NumPy array with two extras: it can live on an accelerator, and it can participate in autograd. By default a tensor made from data does not track gradients; parameters inside a Module do. The dtype matters more than in NumPy: models default to <code>float32</code>, and a <code>float64</code> input silently produces a "expected Float but found Double" error. Convert explicitly, as the code above does with <code>dtype=torch.float32</code>. Integer class labels for <code>CrossEntropyLoss</code> must be <code>int64</code> (<code>torch.long</code>).</p>
+
+<h3>nn.Module and parameters</h3>
+<p>A Module is a container that knows its learnable parameters and how to compute its output. You get two things for free: <code>model.parameters()</code> (an iterator over every weight, recursively through submodules — this is what you hand to the optimizer) and <code>model.state_dict()</code> (an ordered dictionary of every parameter and buffer, which is what you save to disk). <code>nn.Sequential</code> is a Module that chains layers; for anything with branches or reuse, write a class with <code>__init__</code> and <code>forward</code>. The <code>train()</code>/<code>eval()</code> switch changes the behavior of dropout and batch norm, and forgetting it is one of the two or three most common bugs in the field.</p>
+
+<h3>Dataset and DataLoader</h3>
+<p>For tabular data that fits in memory, <code>TensorDataset</code> plus a <code>DataLoader</code> is all you need. The DataLoader gives you shuffling (essential for SGD; unshuffled sorted data trains badly), batching, and multi-process loading for the cases where reading an item is expensive (images from disk, tokenization). Set <code>shuffle=True</code> for training and <code>False</code> for validation.</p>
+
+<div class="callout pro"><div class="title">At work</div>
+<p>Scale features exactly as you would for logistic regression (Chapter 8): fit a <code>StandardScaler</code> on the training split only, then transform train, validation and test. Neural networks are far more sensitive to unscaled inputs than tree models are; an unscaled column with values in the thousands will dominate every gradient and the loss will stall or explode. If a network "will not learn", unscaled inputs are the first thing to check.</p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s3">3. Anatomy of a training loop</h2>
+
+<p>Every PyTorch training loop, from a two-layer MLP to a large language model, is the same five steps repeated for each mini-batch. Learn them as a sequence you can type without thinking, because you will type them thousands of times.</p>
+
+<figure class="fig">
+<svg viewBox="0 0 820 300" role="img" aria-label="The five steps of a training iteration in a cycle: forward pass produces logits, loss compares to targets, zero_grad clears gradients, backward computes gradients, optimizer step updates parameters; the DataLoader feeds a mini-batch into each iteration">
+  <defs><marker id="arr16-2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+  <!-- dataloader -->
+  <rect x="20" y="110" width="120" height="70" class="box"/>
+  <text x="80" y="138" text-anchor="middle" class="lbl-strong">DataLoader</text>
+  <text x="80" y="156" text-anchor="middle" class="lbl" font-size="11">next batch</text>
+  <text x="80" y="170" text-anchor="middle" class="lbl" font-size="11">(xb, yb)</text>
+  <line x1="140" y1="145" x2="190" y2="145" class="arrow" marker-end="url(#arr16-2)"/>
+  <!-- step 1 -->
+  <rect x="192" y="110" width="120" height="70" class="box-accent"/>
+  <text x="252" y="134" text-anchor="middle" class="lbl-strong">1. forward</text>
+  <text x="252" y="152" text-anchor="middle" class="lbl" font-size="11">logits = model(xb)</text>
+  <text x="252" y="168" text-anchor="middle" class="lbl" font-size="10">builds the graph</text>
+  <line x1="312" y1="145" x2="362" y2="145" class="arrow" marker-end="url(#arr16-2)"/>
+  <!-- step 2 -->
+  <rect x="364" y="110" width="120" height="70" class="box-accent"/>
+  <text x="424" y="134" text-anchor="middle" class="lbl-strong">2. loss</text>
+  <text x="424" y="152" text-anchor="middle" class="lbl" font-size="11">loss_fn(logits, yb)</text>
+  <text x="424" y="168" text-anchor="middle" class="lbl" font-size="10">one scalar</text>
+  <line x1="484" y1="145" x2="534" y2="145" class="arrow" marker-end="url(#arr16-2)"/>
+  <!-- step 3 -->
+  <rect x="536" y="110" width="120" height="70" class="box-accent"/>
+  <text x="596" y="134" text-anchor="middle" class="lbl-strong">3. zero_grad</text>
+  <text x="596" y="152" text-anchor="middle" class="lbl" font-size="11">opt.zero_grad()</text>
+  <text x="596" y="168" text-anchor="middle" class="lbl" font-size="10">clear old .grad</text>
+  <line x1="656" y1="145" x2="706" y2="145" class="arrow" marker-end="url(#arr16-2)"/>
+  <!-- step 4 -->
+  <rect x="708" y="110" width="100" height="70" class="box-accent"/>
+  <text x="758" y="134" text-anchor="middle" class="lbl-strong">4. backward</text>
+  <text x="758" y="152" text-anchor="middle" class="lbl" font-size="11">loss.backward()</text>
+  <text x="758" y="168" text-anchor="middle" class="lbl" font-size="10">fills every .grad</text>
+  <!-- step 5 below -->
+  <path d="M758,180 L758,230 L500,230" class="arrow" marker-end="url(#arr16-2)"/>
+  <rect x="380" y="205" width="118" height="50" class="box-accent"/>
+  <text x="439" y="226" text-anchor="middle" class="lbl-strong">5. step</text>
+  <text x="439" y="243" text-anchor="middle" class="lbl" font-size="11">opt.step()</text>
+  <text x="620" y="222" text-anchor="middle" class="lbl" font-size="11">w ← w − lr · w.grad (or fancier)</text>
+  <path d="M380,230 L80,230 L80,182" class="arrow" marker-end="url(#arr16-2)" stroke-dasharray="6 4"/>
+  <text x="230" y="222" text-anchor="middle" class="lbl" font-size="11">repeat for the next batch; an epoch = one pass over the data</text>
+  <!-- model box top -->
+  <rect x="300" y="20" width="250" height="56" rx="8" fill="var(--s1)" fill-opacity=".12" stroke="var(--s1)" stroke-width="1.5"/>
+  <text x="425" y="42" text-anchor="middle" class="lbl-strong">model (nn.Module) — parameters w</text>
+  <text x="425" y="60" text-anchor="middle" class="lbl" font-size="11">read in step 1 · gradients written in step 4 · updated in step 5</text>
+  <line x1="300" y1="70" x2="262" y2="108" class="arrow" stroke-dasharray="3 3"/>
+  <line x1="550" y1="70" x2="740" y2="108" class="arrow" stroke-dasharray="3 3"/>
+  <line x1="425" y1="76" x2="435" y2="203" class="arrow" stroke-dasharray="3 3"/>
+  <text x="20" y="285" class="lbl" font-size="11">After each epoch: model.eval() + torch.no_grad() → validation loss/metric → early-stopping decision.</text>
+</svg>
+<figcaption><strong>Figure 16.2 — One training iteration.</strong> Forward computes predictions, the loss reduces them to one number, <code>zero_grad</code> clears the previous gradients, <code>backward</code> fills new ones, <code>step</code> moves the weights. The DataLoader feeds one batch per iteration; a full pass over the data is an epoch, after which you validate.</figcaption>
+</figure>
+
+<ol class="steps">
+  <li><strong>Forward.</strong> <code>logits = model(xb)</code>. The model reads its current parameters and produces raw outputs. Autograd records the graph.</li>
+  <li><strong>Loss.</strong> <code>loss = loss_fn(logits, yb)</code>. One scalar. If it is not a scalar, <code>backward()</code> will complain.</li>
+  <li><strong>Zero the gradients.</strong> <code>opt.zero_grad()</code>. Gradients accumulate into <code>.grad</code> by design (useful for gradient accumulation across micro-batches); if you forget this, every step uses the sum of all previous gradients and training silently degrades.</li>
+  <li><strong>Backward.</strong> <code>loss.backward()</code>. Autograd walks the graph and writes a gradient into every parameter.</li>
+  <li><strong>Step.</strong> <code>opt.step()</code>. The optimizer reads each <code>.grad</code> and updates each parameter according to its rule (plain SGD, momentum, Adam…).</li>
+</ol>
+
+<p>Here is the whole thing, with the two pieces every real loop also needs: an evaluation pass under <code>torch.no_grad()</code> (no graph, less memory, faster) and <strong>early stopping</strong> that keeps the best weights seen on the validation set.</p>
+
+<pre class="code" data-lang="python"><code><span class="cm"># A complete PyTorch training loop with validation and early stopping</span>
+<span class="kw">import</span> torch, torch.nn <span class="kw">as</span> nn
+<span class="kw">from</span> torch.utils.data <span class="kw">import</span> TensorDataset, DataLoader
+<span class="kw">from</span> sklearn.datasets <span class="kw">import</span> make_moons
+<span class="kw">from</span> sklearn.model_selection <span class="kw">import</span> train_test_split
+<span class="kw">from</span> sklearn.preprocessing <span class="kw">import</span> StandardScaler
+torch.manual_seed(<span class="nu">0</span>)
+
+X, y = make_moons(n_samples=<span class="nu">600</span>, noise=<span class="nu">0.25</span>, random_state=<span class="nu">42</span>)
+X_tr, X_va, y_tr, y_va = train_test_split(X, y, test_size=<span class="nu">0.25</span>, random_state=<span class="nu">0</span>, stratify=y)
+sc = StandardScaler().fit(X_tr)                     <span class="cm"># scale on TRAIN only</span>
+to_t = <span class="kw">lambda</span> a: torch.tensor(a, dtype=torch.float32)
+X_tr, X_va = to_t(sc.transform(X_tr)), to_t(sc.transform(X_va))
+y_tr, y_va = to_t(y_tr).unsqueeze(<span class="nu">1</span>), to_t(y_va).unsqueeze(<span class="nu">1</span>)   <span class="cm"># shape (n, 1)</span>
+
+train_dl = DataLoader(TensorDataset(X_tr, y_tr), batch_size=<span class="nu">32</span>, shuffle=<span class="kw">True</span>)
+
+model = nn.Sequential(nn.Linear(<span class="nu">2</span>, <span class="nu">32</span>), nn.ReLU(), nn.Linear(<span class="nu">32</span>, <span class="nu">32</span>), nn.ReLU(), nn.Linear(<span class="nu">32</span>, <span class="nu">1</span>))
+loss_fn = nn.BCEWithLogitsLoss()                    <span class="cm"># expects raw logits, NOT sigmoid output</span>
+opt = torch.optim.Adam(model.parameters(), lr=<span class="nu">1e-2</span>)
+
+best_val, best_state, patience, bad = <span class="fn">float</span>(<span class="st">"inf"</span>), <span class="kw">None</span>, <span class="nu">5</span>, <span class="nu">0</span>
+<span class="kw">for</span> epoch <span class="kw">in</span> <span class="fn">range</span>(<span class="nu">1</span>, <span class="nu">41</span>):
+    model.train()
+    <span class="kw">for</span> xb, yb <span class="kw">in</span> train_dl:
+        logits = model(xb)              <span class="cm"># 1. forward</span>
+        loss = loss_fn(logits, yb)      <span class="cm"># 2. loss</span>
+        opt.zero_grad()                 <span class="cm"># 3. clear old gradients</span>
+        loss.backward()                 <span class="cm"># 4. backward (autograd)</span>
+        opt.step()                      <span class="cm"># 5. update weights</span>
+    model.eval()
+    <span class="kw">with</span> torch.no_grad():               <span class="cm"># no graph needed for evaluation</span>
+        val_loss = loss_fn(model(X_va), y_va).item()
+        val_acc = ((model(X_va) &gt; <span class="nu">0</span>).<span class="fn">float</span>() == y_va).<span class="fn">float</span>().mean().item()
+    <span class="kw">if</span> val_loss &lt; best_val - <span class="nu">1e-4</span>:
+        best_val, bad = val_loss, <span class="nu">0</span>
+        best_state = {k: v.clone() <span class="kw">for</span> k, v <span class="kw">in</span> model.state_dict().items()}
+    <span class="kw">else</span>:
+        bad += <span class="nu">1</span>
+    <span class="kw">if</span> epoch % <span class="nu">5</span> == <span class="nu">0</span>:
+        <span class="fn">print</span>(<span class="st">f"epoch {epoch:2d}  val_loss {val_loss:.3f}  val_acc {val_acc:.3f}"</span>)
+    <span class="kw">if</span> bad &gt;= patience:
+        <span class="fn">print</span>(<span class="st">f"early stop at epoch {epoch}, best val_loss {best_val:.3f}"</span>)
+        <span class="kw">break</span>
+model.load_state_dict(best_state)       <span class="cm"># roll back to the best epoch</span>
+<span class="out"># epoch  5  val_loss 0.190  val_acc 0.927</span>
+<span class="out"># epoch 10  val_loss 0.154  val_acc 0.940</span>
+<span class="out"># epoch 15  val_loss 0.169  val_acc 0.940</span>
+<span class="out"># early stop at epoch 15, best val_loss 0.154</span></code></pre>
+
+<p>Notice the details that distinguish a correct loop from a demo: features scaled on the training split only; labels shaped <code>(n, 1)</code> to match the model output; <code>model.train()</code> / <code>model.eval()</code> toggled every epoch; validation under <code>no_grad</code>; the best <code>state_dict</code> cloned (not referenced — the tensors would keep changing) and restored at the end. The loop stopped at epoch 15 because validation loss had not improved for five epochs: that is early stopping doing its job as a regularizer (Chapter 7).</p>
+
+<h3>Loss functions and the output layer they expect</h3>
+<p>This is the single most common source of silently-wrong deep learning code. Each loss expects a specific kind of model output. Get it wrong and the code runs, the loss goes down a little, and the model is mediocre for a reason you cannot see.</p>
+
+<div class="tbl-wrap">
+<table class="tbl">
+<thead><tr><th>Task</th><th>Loss</th><th>Model output (last layer)</th><th>Target</th><th>Why it's built this way</th></tr></thead>
+<tbody>
+<tr><td>Regression</td><td><code>nn.MSELoss()</code> (or <code>HuberLoss</code> for outliers)</td><td>1 raw number per target, <em>no</em> activation</td><td>float, shape <code>(n, 1)</code></td><td>Scale the target too; an unscaled target in the millions gives enormous gradients.</td></tr>
+<tr><td>Binary classification</td><td><code>nn.BCEWithLogitsLoss()</code></td><td>1 <strong>logit</strong> per example, <em>no</em> sigmoid</td><td>float 0/1, shape <code>(n, 1)</code></td><td>Combines sigmoid + log-loss in one numerically stable op; <code>pos_weight</code> handles imbalance.</td></tr>
+<tr><td>Multi-class (one label)</td><td><code>nn.CrossEntropyLoss()</code></td><td>C <strong>logits</strong> per example, <em>no</em> softmax</td><td>int64 class index, shape <code>(n,)</code></td><td>Applies log-softmax internally; <code>weight=</code> handles class imbalance; <code>label_smoothing=</code> available.</td></tr>
+<tr><td>Multi-label</td><td><code>nn.BCEWithLogitsLoss()</code></td><td>C logits per example</td><td>float 0/1 matrix, shape <code>(n, C)</code></td><td>Each label is an independent yes/no.</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="callout warn"><div class="title">Common mistake</div>
+<p><strong>Putting a sigmoid or softmax at the end of the model and then using <code>BCEWithLogitsLoss</code> / <code>CrossEntropyLoss</code>.</strong> The loss applies the activation again. Probabilities get squashed a second time, gradients shrink toward zero near confident predictions, and the model trains slowly to a worse optimum. The rule: the model outputs <strong>logits</strong>; the loss owns the activation. Apply <code>sigmoid</code>/<code>softmax</code> only at inference time when you actually want probabilities.</p>
+</div>
+
+<div class="callout math"><div class="title">The math (optional): why logits and the loss belong together</div>
+<div class="formula">BCEWithLogits(z, y) = max(z, 0) − z·y + log(1 + e<sup>−|z|</sup>)</div>
+<p>Here <em>z</em> is the logit and <em>y</em> ∈ {0, 1} the target. Algebraically this equals −[y·log σ(z) + (1−y)·log(1−σ(z))], the ordinary log-loss on the sigmoid σ(z). The rewritten form never computes log(σ(z)) directly, so it cannot produce log(0) = −∞ when z is very negative; a separate sigmoid followed by <code>BCELoss</code> can. The same trick (log-sum-exp) is inside <code>CrossEntropyLoss</code>. Numerical stability is the practical reason the framework insists on logits.</p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s4">4. Optimizers: SGD to AdamW</h2>
+
+<p>The optimizer decides how a gradient becomes a weight update. Plain gradient descent (Chapter 5) moves each weight a fixed fraction of its gradient: <em>w ← w − η·g</em>. On the loss surfaces of real networks that rule is fragile. Losses are shaped like long, narrow ravines: steep across, almost flat along. A step small enough not to bounce off the steep walls is far too small to make progress along the floor. Every optimizer since 1990 is a fix for that picture.</p>
+
+<div class="callout eli9"><div class="title">Explain it like I'm 9</div>
+<p>Plain SGD is a person walking downhill in fog who stops after every step, looks at the slope under their feet, and steps that way. In a narrow canyon they keep bouncing wall to wall. <strong>Momentum</strong> is a heavy ball rolling downhill: it remembers which way it was going, so the wall-to-wall bounces cancel out and the downhill motion adds up. <strong>Adam</strong> is a ball that also notices "this direction is always bumpy, take smaller steps there; that direction is always smooth, take bigger steps there."</p>
+</div>
+
+<figure class="fig">
+<svg viewBox="0 0 820 320" role="img" aria-label="Left: on an elongated loss surface plain SGD zigzags across the narrow direction and creeps along the long one, while momentum damps the zigzag and accelerates along the floor. Right: a ball on a 1-D loss curve accumulating velocity, with the momentum update rule">
+  <defs><marker id="arr16-3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+  <!-- left panel: contours -->
+  <text x="220" y="24" text-anchor="middle" class="lbl-strong" font-size="14">A narrow ravine (contours of the loss)</text>
+  <g fill="none" stroke="var(--ink-3)" stroke-width="1" stroke-opacity=".7">
+    <ellipse cx="220" cy="170" rx="190" ry="60"/>
+    <ellipse cx="220" cy="170" rx="150" ry="46"/>
+    <ellipse cx="220" cy="170" rx="110" ry="33"/>
+    <ellipse cx="220" cy="170" rx="70" ry="21"/>
+    <ellipse cx="220" cy="170" rx="30" ry="9"/>
+  </g>
+  <circle cx="220" cy="170" r="3" fill="var(--ink)"/>
+  <text x="220" y="250" text-anchor="middle" class="lbl" font-size="11">minimum</text>
+  <!-- SGD zigzag -->
+  <polyline points="50,140 80,196 106,150 128,188 146,156 162,182 176,160 188,178 198,164 206,175 213,167" fill="none" stroke="var(--s1)" stroke-width="2" marker-end="url(#arr16-3)"/>
+  <text x="70" y="128" class="lbl-strong" font-size="12" fill="var(--s1)">SGD: bounces across, creeps along</text>
+  <!-- momentum path -->
+  <path d="M50,205 C 90,235 130,190 160,175 S 205,168 218,171" fill="none" stroke="var(--s2)" stroke-width="2.4" marker-end="url(#arr16-3)"/>
+  <text x="48" y="292" class="lbl-strong" font-size="12" fill="var(--s2)">Momentum: bounces cancel, progress adds up</text>
+  <line x1="30" y1="270" x2="410" y2="270" class="grid"/>
+  <!-- right panel: ball on curve -->
+  <text x="630" y="24" text-anchor="middle" class="lbl-strong" font-size="14">The ball remembers its velocity</text>
+  <line x1="450" y1="240" x2="810" y2="240" class="axis"/>
+  <text x="630" y="258" text-anchor="middle" class="lbl">weight w</text>
+  <text x="440" y="130" text-anchor="middle" class="lbl" transform="rotate(-90 440 130)">loss</text>
+  <path d="M460,60 C 520,70 560,180 620,200 S 700,190 720,150 S 780,110 805,140" fill="none" stroke="var(--ink-2)" stroke-width="2"/>
+  <!-- little bump label -->
+  <text x="700" y="176" text-anchor="middle" class="lbl" font-size="10">small bump</text>
+  <!-- ball and vectors -->
+  <circle cx="520" cy="102" r="9" fill="var(--s2)"/>
+  <line x1="520" y1="102" x2="560" y2="150" stroke="var(--s1)" stroke-width="2.2" marker-end="url(#arr16-3)"/>
+  <text x="575" y="150" class="lbl" font-size="11" fill="var(--s1)">−η·g (gradient step)</text>
+  <line x1="520" y1="102" x2="548" y2="122" stroke="var(--s7)" stroke-width="2.2" stroke-dasharray="4 2" marker-end="url(#arr16-3)"/>
+  <text x="470" y="88" class="lbl" font-size="11" fill="var(--s7)">β·v (kept velocity)</text>
+  <circle cx="640" cy="203" r="9" fill="var(--s2)" fill-opacity=".5"/>
+  <line x1="640" y1="203" x2="700" y2="196" stroke="var(--s2)" stroke-width="2.2" marker-end="url(#arr16-3)"/>
+  <text x="600" y="228" class="lbl" font-size="10" fill="var(--s2)">velocity carries it over the bump</text>
+  <rect x="455" y="272" width="350" height="38" rx="6" class="box"/>
+  <text x="630" y="290" text-anchor="middle" class="lbl-strong" font-size="12">v ← β·v + g    w ← w − η·v</text>
+  <text x="630" y="304" text-anchor="middle" class="lbl" font-size="10">β = 0.9: the last ~10 gradients are averaged into the motion</text>
+</svg>
+<figcaption><strong>Figure 16.3 — Why momentum.</strong> Left: in a ravine, SGD's steps alternate direction across the narrow axis and cancel, while the tiny along-axis components barely move. Momentum averages recent gradients: the alternating parts cancel <em>in the average</em> and the consistent parts accumulate. Right: the velocity also carries the ball through small bumps and flat spots.</figcaption>
+</figure>
+
+<div class="callout math"><div class="title">The math (optional): momentum and Nesterov</div>
+<div class="formula">v<sub>t</sub> = β·v<sub>t−1</sub> + g<sub>t</sub>      w<sub>t+1</sub> = w<sub>t</sub> − η·v<sub>t</sub></div>
+<p><em>g<sub>t</sub></em> is the gradient of the mini-batch loss at step <em>t</em>; <em>v<sub>t</sub></em> is the velocity, an exponentially decaying sum of past gradients; <em>β</em> (usually 0.9) is how much of the old velocity survives each step; <em>η</em> is the learning rate. Because Σβ<sup>k</sup> = 1/(1−β) = 10 for β = 0.9, the velocity can grow to about ten times a consistent gradient, which is the acceleration along the ravine floor. <strong>Nesterov momentum</strong> (<code>nesterov=True</code>) evaluates the gradient at the look-ahead point <em>w − η·β·v</em> instead of at <em>w</em>; it corrects overshooting slightly earlier and is the variant usually preferred with SGD.</p>
+</div>
+
+<h3>Adaptive methods: RMSProp, Adam, AdamW</h3>
+<p>Momentum treats every weight with one learning rate. But different weights see gradients of wildly different scales: an embedding row that appears once per thousand examples gets tiny, rare gradients; a bias in the last layer gets large, constant ones. <strong>RMSProp</strong> keeps a running average of each weight's <em>squared</em> gradient and divides the step by its square root, so every weight moves by roughly the same amount regardless of its gradient's raw scale. <strong>Adam</strong> combines that with momentum on the gradient itself, plus a correction for the fact that the running averages start at zero.</p>
+
+<div class="callout math"><div class="title">The math (optional): Adam</div>
+<div class="formula">m<sub>t</sub> = β<sub>1</sub>m<sub>t−1</sub> + (1−β<sub>1</sub>)g<sub>t</sub>      s<sub>t</sub> = β<sub>2</sub>s<sub>t−1</sub> + (1−β<sub>2</sub>)g<sub>t</sub><sup>2</sup></div>
+<div class="formula">m̂<sub>t</sub> = m<sub>t</sub>/(1−β<sub>1</sub><sup>t</sup>)      ŝ<sub>t</sub> = s<sub>t</sub>/(1−β<sub>2</sub><sup>t</sup>)      w<sub>t+1</sub> = w<sub>t</sub> − η · m̂<sub>t</sub> / (√ŝ<sub>t</sub> + ε)</div>
+<p><em>m<sub>t</sub></em> is the momentum (first moment) of the gradient with decay β<sub>1</sub> = 0.9; <em>s<sub>t</sub></em> is the running mean of the squared gradient (second moment, computed per weight) with decay β<sub>2</sub> = 0.999; the hats are bias corrections so the first steps are not artificially tiny; <em>ε</em> ≈ 10<sup>−8</sup> avoids division by zero. Reading the update: the step direction is the smoothed gradient, and its size in every coordinate is about <em>η</em> because the gradient is divided by its own typical magnitude. That is why Adam's learning rate is "unit-free" and why 10<sup>−3</sup> works across so many problems.</p>
+<p><strong>AdamW</strong> is Adam with weight decay applied <em>directly to the weights</em> (<em>w ← w − η·λ·w</em>) instead of being added to the gradient. In Adam the added L2 gradient gets divided by √ŝ like everything else, which makes the regularization strength depend on gradient scale and effectively disables it for weights with large gradients. AdamW decouples the two. It is the default in essentially all modern training recipes.</p>
+</div>
+
+<p>Below, one network, one starting point (same seed), five optimizers, sixty full-batch steps each. The numbers are for the same problem, so they can be compared directly.</p>
+
+<pre class="code" data-lang="python"><code><span class="cm"># Same net, same data, same seed — four optimizers</span>
+<span class="kw">import</span> torch, torch.nn <span class="kw">as</span> nn
+<span class="kw">from</span> sklearn.datasets <span class="kw">import</span> load_breast_cancer
+<span class="kw">from</span> sklearn.preprocessing <span class="kw">import</span> StandardScaler
+
+X, y = load_breast_cancer(return_X_y=<span class="kw">True</span>)
+X = torch.tensor(StandardScaler().fit_transform(X), dtype=torch.float32)
+y = torch.tensor(y, dtype=torch.float32).unsqueeze(<span class="nu">1</span>)
+
+<span class="kw">def</span> make_net():
+    torch.manual_seed(<span class="nu">0</span>)                     <span class="cm"># identical starting weights every time</span>
+    <span class="kw">return</span> nn.Sequential(nn.Linear(<span class="nu">30</span>, <span class="nu">16</span>), nn.ReLU(), nn.Linear(<span class="nu">16</span>, <span class="nu">1</span>))
+
+<span class="kw">def</span> train(opt_name, **kw):
+    net = make_net()
+    opt = <span class="fn">getattr</span>(torch.optim, opt_name)(net.parameters(), **kw)
+    loss_fn = nn.BCEWithLogitsLoss()
+    <span class="kw">for</span> step <span class="kw">in</span> <span class="fn">range</span>(<span class="nu">60</span>):                   <span class="cm"># full-batch, 60 steps</span>
+        loss = loss_fn(net(X), y)
+        opt.zero_grad(); loss.backward(); opt.step()
+    <span class="kw">return</span> loss.item()
+
+<span class="kw">for</span> name, kw <span class="kw">in</span> [(<span class="st">"SGD"</span>, <span class="fn">dict</span>(lr=<span class="nu">0.05</span>)),
+                 (<span class="st">"SGD"</span>, <span class="fn">dict</span>(lr=<span class="nu">0.05</span>, momentum=<span class="nu">0.9</span>)),
+                 (<span class="st">"RMSprop"</span>, <span class="fn">dict</span>(lr=<span class="nu">0.01</span>)),
+                 (<span class="st">"Adam"</span>, <span class="fn">dict</span>(lr=<span class="nu">0.01</span>)),
+                 (<span class="st">"AdamW"</span>, <span class="fn">dict</span>(lr=<span class="nu">0.01</span>, weight_decay=<span class="nu">0.01</span>))]:
+    tag = name + (<span class="st">"+momentum"</span> <span class="kw">if</span> kw.get(<span class="st">"momentum"</span>) <span class="kw">else</span> <span class="st">""</span>)
+    <span class="fn">print</span>(<span class="st">f"{tag:14s} final loss {train(name, **kw):.3f}"</span>)
+<span class="out"># SGD            final loss 0.266</span>
+<span class="out"># SGD+momentum   final loss 0.062</span>
+<span class="out"># RMSprop        final loss 0.029</span>
+<span class="out"># Adam           final loss 0.053</span>
+<span class="out"># AdamW          final loss 0.053</span></code></pre>
+
+<p>Plain SGD at this learning rate has barely started; momentum is four times further along; the adaptive methods are further still. This ranking after a fixed small budget is typical, and it is why the adaptive methods dominate practice. It is <em>not</em> a statement about final accuracy after a long, well-tuned run: SGD with momentum and a good schedule matches or beats Adam on many vision benchmarks, which is why you still see it in ResNet recipes. But it needs more tuning to get there.</p>
+
+<div class="widget" id="w-race">
+  <div class="w-title">Interactive: the optimizer race</div>
+  <div class="controls">
+    <button class="btn primary" id="race-run" type="button">▶ Run</button>
+    <label>Learning rate <input type="range" id="race-lr" min="0.02" max="0.20" step="0.01" value="0.12" data-out="race-lr-out"> <output id="race-lr-out"></output></label>
+    <span>Step: <span class="readout" id="race-step">0</span></span>
+  </div>
+  <div class="legend"><span style="--c:var(--s1)">SGD</span><span style="--c:var(--s2)">SGD + momentum (β = 0.9)</span><span style="--c:var(--s3)">Adam</span></div>
+  <svg viewBox="0 0 700 380" id="race-svg" role="img" aria-label="Three optimizer trajectories on an elongated quadratic loss surface, animated step by step"></svg>
+  <div class="note">The loss is ½(x² + 12y²): 12× steeper in y than in x, a ravine. Watch SGD (blue) bounce across the ravine while creeping along it; momentum (orange) overshoots but arrives; Adam (aqua) moves about <em>lr</em> per step in every direction regardless of steepness. Push the learning rate above ≈ 0.17 and SGD's y-step exceeds the stability limit 2/12 and diverges (clamped to the edge here) — the same "loss goes to NaN" you will meet in real life.</div>
+</div>
+
+<h3>Which optimizer, at work?</h3>
+<div class="tbl-wrap">
+<table class="tbl">
+<thead><tr><th>Situation</th><th>Use</th><th>Starting hyperparameters</th></tr></thead>
+<tbody>
+<tr><td>Default for anything: tabular MLP, fine-tuning a pretrained model, transformers</td><td><strong>AdamW</strong></td><td>lr 1e-3 (3e-4 to 1e-4 for fine-tuning), weight_decay 0.01–0.1, betas (0.9, 0.999)</td></tr>
+<tr><td>Training a CNN from scratch with a long schedule and time to tune</td><td>SGD + Nesterov momentum</td><td>lr 0.1 with batch 256, momentum 0.9, weight_decay 5e-4, cosine or step schedule</td></tr>
+<tr><td>Recurrent nets, very noisy gradients</td><td>RMSProp or Adam</td><td>lr 1e-3, clip gradients at 1.0</td></tr>
+<tr><td>Quick experiment, no tuning budget</td><td>Adam</td><td>lr 1e-3 — the "just works" setting</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="callout pro"><div class="title">At work</div>
+<p>Start with <code>AdamW(lr=1e-3, weight_decay=1e-2)</code> and a cosine schedule with a short warmup. That configuration gets you to within a few percent of the best achievable result on most problems with zero tuning, which means you can spend your time on data and features, where the real gains are. Switch to SGD only when you are reproducing a published recipe that uses it or you have a benchmark showing it helps.</p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s5">5. The learning rate and its schedules</h2>
+
+<p>If you tune one hyperparameter, tune this one. The learning rate <em>η</em> controls how far each step moves. Too high and the update overshoots the valley floor, the loss oscillates or explodes to NaN. Too low and training crawls, often stalling on a plateau that looks like convergence but is not. Every other hyperparameter interacts with it, and a "bad architecture" is very frequently a bad learning rate.</p>
+
+<figure class="fig">
+<svg viewBox="0 0 820 320" role="img" aria-label="Training loss versus epoch for four learning rates: too low decreases slowly and linearly, slightly high drops fast then plateaus above the optimum, just right decreases quickly and smoothly to a low value, too high oscillates and diverges upward">
+  <defs><marker id="arr16-4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+  <line x1="60" y1="270" x2="560" y2="270" class="axis" marker-end="url(#arr16-4)"/>
+  <line x1="60" y1="270" x2="60" y2="30" class="axis" marker-end="url(#arr16-4)"/>
+  <text x="310" y="298" text-anchor="middle" class="lbl">epoch</text>
+  <text x="30" y="150" text-anchor="middle" class="lbl" transform="rotate(-90 30 150)">training loss</text>
+  <g class="grid"><line x1="60" y1="210" x2="560" y2="210"/><line x1="60" y1="150" x2="560" y2="150"/><line x1="60" y1="90" x2="560" y2="90"/></g>
+  <!-- too low: slow linear -->
+  <path d="M60,70 L560,150" fill="none" stroke="var(--s4)" stroke-width="2.4"/>
+  <!-- slightly high: fast then plateau above optimum -->
+  <path d="M60,70 C 100,150 140,175 200,180 S 400,182 560,180" fill="none" stroke="var(--s2)" stroke-width="2.4"/>
+  <!-- just right -->
+  <path d="M60,70 C 110,150 170,225 260,245 S 450,258 560,260" fill="none" stroke="var(--s1)" stroke-width="2.8"/>
+  <!-- too high: oscillate & diverge -->
+  <polyline points="60,70 80,120 100,60 120,140 140,50 160,160 180,45 200,175 220,38 240,190" fill="none" stroke="var(--critical)" stroke-width="2.2"/>
+  <text x="248" y="36" class="lbl-strong" font-size="11" fill="var(--critical)">→ NaN</text>
+  <!-- legend / notes on the right -->
+  <rect x="590" y="40" width="210" height="230" rx="8" class="box"/>
+  <line x1="602" y1="66" x2="630" y2="66" stroke="var(--critical)" stroke-width="3"/><text x="638" y="70" class="lbl-strong" font-size="12">Too high</text>
+  <text x="602" y="88" class="lbl" font-size="11">loss jumps around, then NaN</text>
+  <line x1="602" y1="116" x2="630" y2="116" stroke="var(--s2)" stroke-width="3"/><text x="638" y="120" class="lbl-strong" font-size="12">A bit high</text>
+  <text x="602" y="138" class="lbl" font-size="11">fast start, plateaus early;</text>
+  <text x="602" y="152" class="lbl" font-size="11">bounces around the minimum</text>
+  <line x1="602" y1="180" x2="630" y2="180" stroke="var(--s1)" stroke-width="3"/><text x="638" y="184" class="lbl-strong" font-size="12">Just right</text>
+  <text x="602" y="202" class="lbl" font-size="11">steep, smooth, keeps going</text>
+  <line x1="602" y1="230" x2="630" y2="230" stroke="var(--s4)" stroke-width="3"/><text x="638" y="234" class="lbl-strong" font-size="12">Too low</text>
+  <text x="602" y="252" class="lbl" font-size="11">slow, nearly linear descent</text>
+</svg>
+<figcaption><strong>Figure 16.4 — Reading the learning rate off the loss curve.</strong> Four runs of the same model differing only in η. A slightly-too-high rate is the sneaky one: it looks like healthy training that "converged", but the plateau is well above the loss a smaller rate reaches. That is what schedules fix.</figcaption>
+</figure>
+
+<h3>The LR range test</h3>
+<p>Instead of guessing, measure. Start from a tiny learning rate (10<sup>−6</sup>) and increase it geometrically every batch up to something absurd (10), recording the loss at each step. Plot loss against learning rate on a log axis. The loss is flat at first (rate too small to matter), then drops steeply (the useful region), then bottoms out and explodes. A good constant learning rate is <strong>about one order of magnitude below the point where the loss is lowest</strong>; a good maximum for a one-cycle schedule is just before the loss starts rising. The whole test takes one short epoch and replaces hours of trial and error.</p>
+
+<h3>Schedules: change η during training</h3>
+<p>A large learning rate early makes fast progress and escapes bad regions; a small one late settles into a sharp minimum. No single constant does both, so we schedule it. A short <strong>warmup</strong> at the start (linearly increasing from ~0 over a few hundred steps or a few epochs) is cheap insurance: it lets the adaptive optimizer's running statistics and the batch-norm layers stabilize before large steps are taken. It matters most for transformers and for large batches.</p>
+
+<figure class="fig">
+<svg viewBox="0 0 820 300" role="img" aria-label="Four learning-rate schedule shapes plotted against epochs: step decay drops by a factor at fixed epochs, cosine decays smoothly to zero, one-cycle rises then falls, and warmup plus cosine rises linearly for a few epochs then follows a cosine decay">
+  <defs><marker id="arr16-5" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+  <!-- panel 1: step -->
+  <g>
+    <text x="115" y="24" text-anchor="middle" class="lbl-strong" font-size="13">StepLR (÷10 every N epochs)</text>
+    <line x1="30" y1="130" x2="200" y2="130" class="axis" marker-end="url(#arr16-5)"/><line x1="30" y1="130" x2="30" y2="35" class="axis" marker-end="url(#arr16-5)"/>
+    <polyline points="30,50 85,50 85,105 140,105 140,122 195,122" fill="none" stroke="var(--s1)" stroke-width="2.5"/>
+    <text x="115" y="146" text-anchor="middle" class="lbl" font-size="10">epoch</text>
+  </g>
+  <!-- panel 2: cosine -->
+  <g transform="translate(220,0)">
+    <text x="115" y="24" text-anchor="middle" class="lbl-strong" font-size="13">Cosine annealing</text>
+    <line x1="30" y1="130" x2="200" y2="130" class="axis" marker-end="url(#arr16-5)"/><line x1="30" y1="130" x2="30" y2="35" class="axis" marker-end="url(#arr16-5)"/>
+    <path d="M30,50 C 90,50 110,128 195,128" fill="none" stroke="var(--s1)" stroke-width="2.5"/>
+    <text x="115" y="146" text-anchor="middle" class="lbl" font-size="10">epoch</text>
+  </g>
+  <!-- panel 3: one-cycle -->
+  <g transform="translate(440,0)">
+    <text x="115" y="24" text-anchor="middle" class="lbl-strong" font-size="13">One-cycle</text>
+    <line x1="30" y1="130" x2="200" y2="130" class="axis" marker-end="url(#arr16-5)"/><line x1="30" y1="130" x2="30" y2="35" class="axis" marker-end="url(#arr16-5)"/>
+    <path d="M30,115 L80,48 C 120,48 150,128 195,129" fill="none" stroke="var(--s1)" stroke-width="2.5"/>
+    <text x="80" y="42" text-anchor="middle" class="lbl" font-size="10">max_lr</text>
+    <text x="115" y="146" text-anchor="middle" class="lbl" font-size="10">epoch (or step)</text>
+  </g>
+  <!-- panel 4: warmup + cosine -->
+  <g transform="translate(600,0)">
+    <text x="115" y="24" text-anchor="middle" class="lbl-strong" font-size="13">Warmup + cosine</text>
+    <line x1="30" y1="130" x2="200" y2="130" class="axis" marker-end="url(#arr16-5)"/><line x1="30" y1="130" x2="30" y2="35" class="axis" marker-end="url(#arr16-5)"/>
+    <path d="M30,128 L55,48 C 110,48 130,128 195,128" fill="none" stroke="var(--s1)" stroke-width="2.5"/>
+    <rect x="30" y="35" width="25" height="95" fill="var(--s2)" fill-opacity=".15"/>
+    <text x="42" y="146" text-anchor="middle" class="lbl" font-size="10" fill="var(--s2)">warmup</text>
+  </g>
+  <!-- bottom row: plateau and constant, wider -->
+  <g transform="translate(0,160)">
+    <text x="200" y="24" text-anchor="middle" class="lbl-strong" font-size="13">ReduceLROnPlateau (reacts to validation loss)</text>
+    <line x1="30" y1="120" x2="380" y2="120" class="axis" marker-end="url(#arr16-5)"/><line x1="30" y1="120" x2="30" y2="35" class="axis" marker-end="url(#arr16-5)"/>
+    <polyline points="30,50 150,50 150,85 260,85 260,102 375,102" fill="none" stroke="var(--s1)" stroke-width="2.5"/>
+    <path d="M30,60 C 80,90 120,100 150,101 S 240,104 260,110 S 340,113 375,114" fill="none" stroke="var(--s3)" stroke-width="2" stroke-dasharray="4 3"/>
+    <text x="150" y="44" text-anchor="middle" class="lbl" font-size="10">val loss stalls → lr × 0.5</text>
+    <text x="300" y="98" class="lbl" font-size="10" fill="var(--s3)">val loss</text>
+    <text x="200" y="136" text-anchor="middle" class="lbl" font-size="10">epoch</text>
+  </g>
+  <g transform="translate(420,160)">
+    <text x="200" y="24" text-anchor="middle" class="lbl-strong" font-size="13">Rule of thumb</text>
+    <rect x="30" y="34" width="350" height="96" rx="8" class="box"/>
+    <text x="45" y="58" class="lbl" font-size="11">• Know the epoch budget → warmup + cosine (or one-cycle)</text>
+    <text x="45" y="78" class="lbl" font-size="11">• Open-ended training → ReduceLROnPlateau + early stopping</text>
+    <text x="45" y="98" class="lbl" font-size="11">• Reproducing a paper → whatever the paper used (often step)</text>
+    <text x="45" y="118" class="lbl" font-size="11">• Fine-tuning → tiny constant lr or short cosine, always warmup</text>
+  </g>
+</svg>
+<figcaption><strong>Figure 16.5 — Schedule shapes.</strong> All of them spend the early steps at a high rate and end low. The choice mostly depends on whether you know the training length in advance (cosine, one-cycle) or not (plateau-based).</figcaption>
+</figure>
+
+<div class="widget" id="w-sched">
+  <div class="w-title">Interactive: learning-rate schedule plotter</div>
+  <div class="controls">
+    <label>Schedule <select id="sch-type"><option value="cos">warmup + cosine</option><option value="step">step (÷10 twice)</option><option value="one">one-cycle</option><option value="exp">exponential</option><option value="const">constant</option></select></label>
+    <label>Max LR <input type="range" id="sch-lr" min="0.001" max="0.100" step="0.001" value="0.010" data-out="sch-lr-out"> <output id="sch-lr-out"></output></label>
+    <label>Warmup epochs <input type="range" id="sch-warm" min="0" max="10" value="3" data-out="sch-warm-out"> <output id="sch-warm-out"></output></label>
+    <label>Epochs <input type="range" id="sch-ep" min="10" max="100" step="5" value="40" data-out="sch-ep-out"> <output id="sch-ep-out"></output></label>
+  </div>
+  <svg viewBox="0 0 700 300" id="sch-svg" role="img" aria-label="Learning rate per epoch for the chosen schedule"></svg>
+  <div class="note">This is exactly what <code>opt.param_groups[0]['lr']</code> would print each epoch. The shaded band is warmup (one-cycle uses its own built-in 30% ramp and ignores the warmup slider). Notice that cosine and one-cycle spend the last ~20% of training at a tiny rate: that is the "settling" phase where most of the final accuracy is gained.</div>
+</div>
+
+<pre class="code" data-lang="python"><code><span class="cm"># Learning-rate schedules: watch the LR change per epoch</span>
+<span class="kw">import</span> torch, torch.nn <span class="kw">as</span> nn
+net = nn.Linear(<span class="nu">4</span>, <span class="nu">1</span>)
+opt = torch.optim.SGD(net.parameters(), lr=<span class="nu">0.1</span>)
+
+<span class="cm"># warmup for 3 epochs, then cosine decay to ~0 over the remaining 9</span>
+warm, total = <span class="nu">3</span>, <span class="nu">12</span>
+lr_lambda = <span class="kw">lambda</span> e: (e + <span class="nu">1</span>) / warm <span class="kw">if</span> e &lt; warm <span class="kw">else</span> <span class="nu">0.5</span> * (<span class="nu">1</span> + torch.cos(torch.tensor(<span class="nu">3.14159265</span> * (e - warm) / (total - warm)))).item()
+sched = torch.optim.lr_scheduler.LambdaLR(opt, lr_lambda)
+
+<span class="kw">for</span> epoch <span class="kw">in</span> <span class="fn">range</span>(total):
+    <span class="cm"># ... train one epoch here ...</span>
+    opt.step()              <span class="cm"># optimizer step(s) come first</span>
+    sched.step()            <span class="cm"># then the scheduler, once per epoch</span>
+    <span class="fn">print</span>(<span class="st">f"epoch {epoch+1:2d}  lr = {opt.param_groups[0]['lr']:.4f}"</span>)
+
+<span class="out"># epoch  1  lr = 0.0667</span>
+<span class="out"># epoch  2  lr = 0.1000</span>
+<span class="out"># epoch  3  lr = 0.1000</span>
+<span class="out"># epoch  4  lr = 0.0970</span>
+<span class="out"># epoch  5  lr = 0.0883</span>
+<span class="out"># epoch  6  lr = 0.0750</span>
+<span class="out"># epoch  7  lr = 0.0587</span>
+<span class="out"># epoch  8  lr = 0.0413</span>
+<span class="out"># epoch  9  lr = 0.0250</span>
+<span class="out"># epoch 10  lr = 0.0117</span>
+<span class="out"># epoch 11  lr = 0.0030</span>
+<span class="out"># epoch 12  lr = 0.0000</span>
+
+<span class="cm"># Built-ins you will actually use:</span>
+<span class="cm"># torch.optim.lr_scheduler.StepLR(opt, step_size=10, gamma=0.1)</span>
+<span class="cm"># torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=total)</span>
+<span class="cm"># torch.optim.lr_scheduler.OneCycleLR(opt, max_lr=0.1, total_steps=n_batches*epochs)</span>
+<span class="cm"># torch.optim.lr_scheduler.ReduceLROnPlateau(opt, factor=0.5, patience=3)  # .step(val_loss)</span></code></pre>
+
+<p>Two mechanics to remember: schedulers are stepped <em>after</em> the optimizer (once per epoch for epoch-based schedules, once per batch for <code>OneCycleLR</code>), and <code>ReduceLROnPlateau.step()</code> takes the validation metric as an argument because it decides based on it. Keep the scheduler's state in your checkpoint together with the optimizer's.</p>
+
+<h3>Batch size and its interaction with the learning rate</h3>
+<p>Larger batches give a less noisy gradient, so they tolerate (and need) a larger learning rate: the practical rule for SGD is that doubling the batch size lets you roughly double η ("linear scaling"), for Adam closer to √2. Very small batches (8–32) add noise that acts as a regularizer and often generalize slightly better; very large batches train faster per epoch on a GPU but can generalize worse unless the rate and warmup are re-tuned. For tabular MLPs, 64–256 is the sweet spot. Pick the batch size for hardware efficiency first, then tune the learning rate for that batch size, not the other way round.</p>
+
+<div class="callout key"><div class="title">Key idea</div>
+<p><strong>The learning rate is a property of the (model, optimizer, batch size, loss scale) combination, not of the problem.</strong> Change any of those and re-tune it, ideally with a range test. When something stops working after a "harmless" change, the learning rate is the first suspect.</p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s6">6. Initialization and normalization</h2>
+
+<p>A deep network is a long product of matrices and nonlinearities. Numbers that pass through it either stay in a reasonable range or they don't; if they don't, they shrink to zero or blow up geometrically with depth, and so do the gradients coming back. Initialization and normalization are the two tools that keep the signal's scale under control, one at time zero and one throughout training.</p>
+
+<div class="callout eli9"><div class="title">Explain it like I'm 9</div>
+<p>Whisper a message down a line of 50 friends. If each friend repeats it a little quieter, by friend 50 there is nothing to hear (vanishing). If each repeats it a little louder, by friend 50 it is a scream (exploding). Initialization picks how loud each friend starts. Normalization puts a volume knob between every pair of friends that resets the message to normal loudness before passing it on.</p>
+</div>
+
+<h3>Initialization: Xavier/Glorot and He/Kaiming</h3>
+<p>Take a linear layer with <em>n<sub>in</sub></em> inputs, each of variance 1, and weights drawn independently with variance <em>σ<sup>2</sup></em>. The output is a sum of <em>n<sub>in</sub></em> terms, so its variance is <em>n<sub>in</sub>·σ<sup>2</sup></em>. To keep the output variance equal to the input variance you need <em>σ<sup>2</sup> = 1/n<sub>in</sub></em>. That is <strong>Xavier (Glorot)</strong> initialization, the right choice for tanh and sigmoid networks. A ReLU zeroes half of its inputs and so halves the variance; to compensate, <strong>He (Kaiming)</strong> initialization uses <em>σ<sup>2</sup> = 2/n<sub>in</sub></em>. PyTorch's <code>nn.Linear</code> and <code>nn.Conv2d</code> default to a Kaiming-uniform variant, so in practice you rarely set this by hand — but you should know what it is doing, because a custom layer or a hand-built weight tensor with <code>torch.randn</code> (variance 1) will not train at depth.</p>
+
+<div class="callout math"><div class="title">The math (optional): variance preservation</div>
+<div class="formula">Var(z) = Var(Σ<sub>i</sub> w<sub>i</sub>x<sub>i</sub>) = n<sub>in</sub> · Var(w) · Var(x)   ⇒   Var(w) = 1/n<sub>in</sub> (Xavier)   or   2/n<sub>in</sub> (He, after ReLU)</div>
+<p><em>z</em> is one pre-activation output of the layer; <em>x<sub>i</sub></em> are its <em>n<sub>in</sub></em> inputs, assumed independent with zero mean and equal variance; <em>w<sub>i</sub></em> the weights, independent of the inputs with zero mean. Variances of independent products add, giving the factor <em>n<sub>in</sub></em>. Setting Var(w) = 1/<em>n<sub>in</sub></em> makes Var(<em>z</em>) = Var(<em>x</em>) layer after layer. With ReLU, E[ReLU(z)<sup>2</sup>] = ½Var(z) for symmetric <em>z</em>, so the weight variance is doubled to compensate. Glorot's original formula averages fan-in and fan-out, 2/(n<sub>in</sub>+n<sub>out</sub>), to also protect the backward pass.</p>
+</div>
+
+<figure class="fig">
+<svg viewBox="0 0 820 300" role="img" aria-label="Bar chart of activation standard deviation per layer for a 10-layer ReLU network under three initializations: too small weights shrink to zero within a few layers, too large weights explode, He initialization stays near one at every layer">
+  <defs><marker id="arr16-6" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+  <line x1="70" y1="240" x2="790" y2="240" class="axis" marker-end="url(#arr16-6)"/>
+  <line x1="70" y1="240" x2="70" y2="30" class="axis" marker-end="url(#arr16-6)"/>
+  <text x="430" y="272" text-anchor="middle" class="lbl">layer (10-layer ReLU MLP, input std = 1)</text>
+  <text x="34" y="135" text-anchor="middle" class="lbl" transform="rotate(-90 34 135)">std of activations (log scale)</text>
+  <g class="lbl" font-size="10">
+    <text x="62" y="244" text-anchor="end">1</text><line x1="66" y1="240" x2="74" y2="240" class="axis"/>
+    <text x="62" y="174" text-anchor="end">10</text><line x1="66" y1="170" x2="74" y2="170" class="axis"/>
+    <text x="62" y="104" text-anchor="end">100</text><line x1="66" y1="100" x2="74" y2="100" class="axis"/>
+    <text x="62" y="54" text-anchor="end">1000</text><line x1="66" y1="50" x2="74" y2="50" class="axis"/>
+  </g>
+  <line x1="70" y1="170" x2="790" y2="170" class="grid"/><line x1="70" y1="100" x2="790" y2="100" class="grid"/><line x1="70" y1="50" x2="790" y2="50" class="grid"/>
+  <!-- groups per layer: 3 bars each. heights from y=240 baseline; log scale: 70px per decade -->
+  <g>
+    <!-- layer positions 1..10 -->
+    <g transform="translate(90,0)"><rect x="0" y="228" width="14" height="12" fill="var(--s4)"/><rect x="16" y="240" width="14" height="0" fill="var(--s1)"/><rect x="32" y="238" width="14" height="2" fill="var(--critical)"/><text x="23" y="256" text-anchor="middle" class="lbl" font-size="10">1</text></g>
+    <g transform="translate(160,0)"><rect x="0" y="240" width="14" height="0" fill="var(--s4)"/><rect x="16" y="240" width="14" height="0" fill="var(--s1)"/><rect x="32" y="220" width="14" height="20" fill="var(--critical)"/><text x="23" y="256" text-anchor="middle" class="lbl" font-size="10">2</text></g>
+    <g transform="translate(230,0)"><rect x="0" y="240" width="14" height="0" fill="var(--s4)"/><rect x="16" y="240" width="14" height="0" fill="var(--s1)"/><rect x="32" y="200" width="14" height="40" fill="var(--critical)"/><text x="23" y="256" text-anchor="middle" class="lbl" font-size="10">3</text></g>
+    <g transform="translate(300,0)"><rect x="0" y="240" width="14" height="0" fill="var(--s4)"/><rect x="16" y="240" width="14" height="0" fill="var(--s1)"/><rect x="32" y="180" width="14" height="60" fill="var(--critical)"/><text x="23" y="256" text-anchor="middle" class="lbl" font-size="10">4</text></g>
+    <g transform="translate(370,0)"><rect x="0" y="240" width="14" height="0" fill="var(--s4)"/><rect x="16" y="240" width="14" height="0" fill="var(--s1)"/><rect x="32" y="160" width="14" height="80" fill="var(--critical)"/><text x="23" y="256" text-anchor="middle" class="lbl" font-size="10">5</text></g>
+    <g transform="translate(440,0)"><rect x="0" y="240" width="14" height="0" fill="var(--s4)"/><rect x="16" y="240" width="14" height="0" fill="var(--s1)"/><rect x="32" y="140" width="14" height="100" fill="var(--critical)"/><text x="23" y="256" text-anchor="middle" class="lbl" font-size="10">6</text></g>
+    <g transform="translate(510,0)"><rect x="0" y="240" width="14" height="0" fill="var(--s4)"/><rect x="16" y="240" width="14" height="0" fill="var(--s1)"/><rect x="32" y="120" width="14" height="120" fill="var(--critical)"/><text x="23" y="256" text-anchor="middle" class="lbl" font-size="10">7</text></g>
+    <g transform="translate(580,0)"><rect x="0" y="240" width="14" height="0" fill="var(--s4)"/><rect x="16" y="240" width="14" height="0" fill="var(--s1)"/><rect x="32" y="100" width="14" height="140" fill="var(--critical)"/><text x="23" y="256" text-anchor="middle" class="lbl" font-size="10">8</text></g>
+    <g transform="translate(650,0)"><rect x="0" y="240" width="14" height="0" fill="var(--s4)"/><rect x="16" y="240" width="14" height="0" fill="var(--s1)"/><rect x="32" y="80" width="14" height="160" fill="var(--critical)"/><text x="23" y="256" text-anchor="middle" class="lbl" font-size="10">9</text></g>
+    <g transform="translate(720,0)"><rect x="0" y="240" width="14" height="0" fill="var(--s4)"/><rect x="16" y="240" width="14" height="0" fill="var(--s1)"/><rect x="32" y="60" width="14" height="180" fill="var(--critical)"/><text x="23" y="256" text-anchor="middle" class="lbl" font-size="10">10</text></g>
+  </g>
+  <!-- He init line at std 1: draw as dots at baseline -->
+  <g fill="var(--s1)">
+    <circle cx="113" cy="240" r="4"/><circle cx="183" cy="240" r="4"/><circle cx="253" cy="241" r="4"/><circle cx="323" cy="239" r="4"/><circle cx="393" cy="240" r="4"/><circle cx="463" cy="241" r="4"/><circle cx="533" cy="239" r="4"/><circle cx="603" cy="240" r="4"/><circle cx="673" cy="240" r="4"/><circle cx="743" cy="241" r="4"/>
+  </g>
+  <g fill="var(--s4)">
+    <circle cx="97" cy="228" r="4"/><circle cx="167" cy="262" r="0"/>
+  </g>
+  <!-- annotations -->
+  <text x="140" y="212" class="lbl-strong" font-size="11" fill="var(--s4)">std = 0.5/√n: activations vanish (std &lt; 0.01 by layer 3, bars too short to see)</text>
+  <text x="590" y="70" text-anchor="end" class="lbl-strong" font-size="11" fill="var(--critical)">std = 2/√n: activations explode ≈ ×2 per layer</text>
+  <text x="430" y="228" text-anchor="middle" class="lbl-strong" font-size="11" fill="var(--s1)">He: std = √(2/n) → activations stay ≈ 1 at every depth (blue dots)</text>
+</svg>
+<figcaption><strong>Figure 16.6 — Why the initial weight scale matters.</strong> The same 10-layer ReLU network with three weight scales. Slightly too small and the signal is gone by the third layer; slightly too large and it doubles every layer; He initialization keeps the standard deviation near 1 all the way down, so gradients are also well scaled on the way back.</figcaption>
+</figure>
+
+<h3>Batch normalization and layer normalization</h3>
+<p>Initialization fixes the scale at step zero; training then moves the weights and the scale drifts again. <strong>Normalization layers</strong> re-standardize activations on every forward pass. <strong>Batch norm</strong> (<code>nn.BatchNorm1d/2d</code>) standardizes each feature (each neuron, or each channel in a CNN) using the mean and variance of the <em>current mini-batch</em>, then multiplies by a learned scale γ and adds a learned shift β so the network can undo the normalization if it wants. At evaluation time it uses running averages collected during training, which is why <code>model.eval()</code> matters. <strong>Layer norm</strong> (<code>nn.LayerNorm</code>) standardizes across the features of <em>each single example</em>, so it does not depend on the batch at all; it is the norm of choice for transformers and sequence models (Chapter 18) and for tiny batches.</p>
+
+<figure class="fig">
+<svg viewBox="0 0 820 330" role="img" aria-label="Left: a batch-by-features activation matrix; batch norm normalizes down each column across the batch, layer norm normalizes along each row across features. Right: where the normalization layer sits in a block, between the linear layer and the activation">
+  <defs><marker id="arr16-7" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+  <text x="200" y="24" text-anchor="middle" class="lbl-strong" font-size="14">What gets normalized (activation matrix, one layer)</text>
+  <!-- matrix: 6 rows (batch) x 8 cols (features) -->
+  <g>
+    <text x="30" y="60" class="lbl" font-size="11">batch →</text>
+    <text x="110" y="45" class="lbl" font-size="11">features (neurons) →</text>
+    <g transform="translate(100,52)">
+      <g fill="var(--s1)" fill-opacity=".35" stroke="var(--border)">
+        <rect x="0" y="0" width="30" height="24"/><rect x="30" y="0" width="30" height="24" fill-opacity=".6"/><rect x="60" y="0" width="30" height="24" fill-opacity=".2"/><rect x="90" y="0" width="30" height="24" fill-opacity=".5"/><rect x="120" y="0" width="30" height="24" fill-opacity=".8"/><rect x="150" y="0" width="30" height="24" fill-opacity=".3"/><rect x="180" y="0" width="30" height="24" fill-opacity=".45"/><rect x="210" y="0" width="30" height="24" fill-opacity=".7"/>
+        <rect x="0" y="24" width="30" height="24" fill-opacity=".5"/><rect x="30" y="24" width="30" height="24" fill-opacity=".3"/><rect x="60" y="24" width="30" height="24" fill-opacity=".7"/><rect x="90" y="24" width="30" height="24" fill-opacity=".2"/><rect x="120" y="24" width="30" height="24" fill-opacity=".4"/><rect x="150" y="24" width="30" height="24" fill-opacity=".85"/><rect x="180" y="24" width="30" height="24" fill-opacity=".25"/><rect x="210" y="24" width="30" height="24" fill-opacity=".5"/>
+        <rect x="0" y="48" width="30" height="24" fill-opacity=".2"/><rect x="30" y="48" width="30" height="24" fill-opacity=".8"/><rect x="60" y="48" width="30" height="24" fill-opacity=".45"/><rect x="90" y="48" width="30" height="24" fill-opacity=".6"/><rect x="120" y="48" width="30" height="24" fill-opacity=".3"/><rect x="150" y="48" width="30" height="24" fill-opacity=".5"/><rect x="180" y="48" width="30" height="24" fill-opacity=".7"/><rect x="210" y="48" width="30" height="24" fill-opacity=".2"/>
+        <rect x="0" y="72" width="30" height="24" fill-opacity=".7"/><rect x="30" y="72" width="30" height="24" fill-opacity=".4"/><rect x="60" y="72" width="30" height="24" fill-opacity=".3"/><rect x="90" y="72" width="30" height="24" fill-opacity=".8"/><rect x="120" y="72" width="30" height="24" fill-opacity=".55"/><rect x="150" y="72" width="30" height="24" fill-opacity=".2"/><rect x="180" y="72" width="30" height="24" fill-opacity=".6"/><rect x="210" y="72" width="30" height="24" fill-opacity=".35"/>
+        <rect x="0" y="96" width="30" height="24" fill-opacity=".4"/><rect x="30" y="96" width="30" height="24" fill-opacity=".2"/><rect x="60" y="96" width="30" height="24" fill-opacity=".85"/><rect x="90" y="96" width="30" height="24" fill-opacity=".3"/><rect x="120" y="96" width="30" height="24" fill-opacity=".7"/><rect x="150" y="96" width="30" height="24" fill-opacity=".45"/><rect x="180" y="96" width="30" height="24" fill-opacity=".3"/><rect x="210" y="96" width="30" height="24" fill-opacity=".6"/>
+        <rect x="0" y="120" width="30" height="24" fill-opacity=".3"/><rect x="30" y="120" width="30" height="24" fill-opacity=".55"/><rect x="60" y="120" width="30" height="24" fill-opacity=".4"/><rect x="90" y="120" width="30" height="24" fill-opacity=".7"/><rect x="120" y="120" width="30" height="24" fill-opacity=".2"/><rect x="150" y="120" width="30" height="24" fill-opacity=".6"/><rect x="180" y="120" width="30" height="24" fill-opacity=".8"/><rect x="210" y="120" width="30" height="24" fill-opacity=".4"/>
+      </g>
+      <!-- BN column highlight -->
+      <rect x="90" y="-4" width="30" height="152" fill="none" stroke="var(--s2)" stroke-width="3"/>
+      <line x1="105" y1="-14" x2="105" y2="-6" stroke="var(--s2)" stroke-width="2" marker-end="url(#arr16-7)"/>
+      <!-- LN row highlight -->
+      <rect x="-4" y="72" width="248" height="24" fill="none" stroke="var(--s7)" stroke-width="3"/>
+      <line x1="-16" y1="84" x2="-6" y2="84" stroke="var(--s7)" stroke-width="2" marker-end="url(#arr16-7)"/>
+    </g>
+  </g>
+  <text x="30" y="225" class="lbl-strong" font-size="12" fill="var(--s2)">Batch norm: one column at a time</text>
+  <text x="30" y="242" class="lbl" font-size="11">mean &amp; var over the batch, per feature; needs batch ≥ ~16;</text>
+  <text x="30" y="257" class="lbl" font-size="11">running stats used at eval. Great for MLPs and CNNs.</text>
+  <text x="30" y="285" class="lbl-strong" font-size="12" fill="var(--s7)">Layer norm: one row at a time</text>
+  <text x="30" y="302" class="lbl" font-size="11">mean &amp; var over the features of each example; batch-independent;</text>
+  <text x="30" y="317" class="lbl" font-size="11">same behavior in train and eval. Standard in transformers.</text>
+  <!-- right: block -->
+  <text x="620" y="24" text-anchor="middle" class="lbl-strong" font-size="14">Where it sits in a block</text>
+  <rect x="540" y="50" width="160" height="40" class="box"/><text x="620" y="75" text-anchor="middle" class="lbl-strong">Linear / Conv</text>
+  <line x1="620" y1="90" x2="620" y2="108" class="arrow" marker-end="url(#arr16-7)"/>
+  <rect x="540" y="110" width="160" height="40" class="box-accent"/><text x="620" y="135" text-anchor="middle" class="lbl-strong">BatchNorm / LayerNorm</text>
+  <text x="712" y="128" class="lbl" font-size="10">x̂ = (x − μ)/√(σ² + ε)</text>
+  <text x="712" y="143" class="lbl" font-size="10">y = γ·x̂ + β  (γ, β learned)</text>
+  <line x1="620" y1="150" x2="620" y2="168" class="arrow" marker-end="url(#arr16-7)"/>
+  <rect x="540" y="170" width="160" height="40" class="box"/><text x="620" y="195" text-anchor="middle" class="lbl-strong">ReLU</text>
+  <line x1="620" y1="210" x2="620" y2="228" class="arrow" marker-end="url(#arr16-7)"/>
+  <rect x="540" y="230" width="160" height="40" class="box"/><text x="620" y="255" text-anchor="middle" class="lbl-strong">Dropout (optional)</text>
+  <text x="620" y="300" text-anchor="middle" class="lbl" font-size="11">The Linear layer's bias is redundant before BN</text>
+  <text x="620" y="315" text-anchor="middle" class="lbl" font-size="11">(β absorbs it): use bias=False there.</text>
+</svg>
+<figcaption><strong>Figure 16.7 — Batch norm vs layer norm.</strong> Both standardize activations and then rescale with learned γ and β; they differ only in which direction of the activation matrix the statistics are computed over. Batch norm needs reasonably large batches and separate train/eval behavior; layer norm needs neither.</figcaption>
+</figure>
+
+<p><strong>Why they help.</strong> Normalization keeps every layer's input in the range where the activation function and the optimizer behave well, regardless of what earlier layers did. The practical effects: you can use a learning rate several times larger, training is far less sensitive to initialization, deep networks train at all, and batch norm adds a little noise (each example is normalized with a different batch's statistics) that acts as a regularizer. The original "internal covariate shift" explanation is mostly folklore; the more careful account is that normalization smooths the loss landscape, making gradients more predictable from step to step.</p>
+
+<div class="callout warn"><div class="title">Common mistake</div>
+<p><strong>Evaluating with <code>model.train()</code> still on, or training with batch size 1–4 while using batch norm.</strong> In train mode batch norm normalizes each example with the statistics of whatever batch it happens to be in, so predictions for one example depend on its neighbors — and with a batch of one, the variance is undefined. Always call <code>model.eval()</code> before validation and inference, and if your batches must be tiny, use layer norm (or group norm in CNNs) instead.</p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s7">7. Regularization and gradient clipping</h2>
+
+<p>A neural network with a few thousand parameters can memorize a few thousand rows of tabular data perfectly; everything in Chapter 7 about overfitting applies with extra force. Deep learning has four standard regularizers, and at work you will use all four together.</p>
+
+<h3>Weight decay</h3>
+<p>Pull every weight gently toward zero on every step: <em>w ← w − η·λ·w</em>. It is L2 regularization by another name (Chapter 5), and it discourages any single weight from becoming large enough to fit noise. With AdamW it is set through <code>weight_decay</code> and applied decoupled from the adaptive scaling, as discussed in §4. Typical values: 10<sup>−2</sup> for AdamW, 5×10<sup>−4</sup> for SGD. Do not decay the biases and normalization parameters; it does not help and slightly hurts (advanced recipes build two parameter groups for this reason).</p>
+
+<h3>Dropout</h3>
+<p>During training, each unit's output is set to zero with probability <em>p</em>, independently on every forward pass, and the survivors are scaled by 1/(1−<em>p</em>) so the expected sum stays the same. At test time nothing is dropped. The network can never rely on one specific unit being present, so it learns redundant, distributed features, and every forward pass trains a slightly different sub-network; the test-time network is an implicit average of all of them. <em>p</em> = 0.1–0.3 for hidden layers of an MLP is the useful range; 0.5 was the original paper's value and is usually too much for modern networks with batch norm.</p>
+
+<figure class="fig">
+<svg viewBox="0 0 820 300" role="img" aria-label="Left: a three-layer network during training with several hidden units crossed out by dropout and their connections removed; right: the full network at test time with all units present and outputs scaled to match the training-time expectation">
+  <defs><marker id="arr16-8" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+  <text x="200" y="26" text-anchor="middle" class="lbl-strong" font-size="14">Training pass (p = 0.4): a random sub-network</text>
+  <!-- left net: 4 inputs, 5 hidden, 5 hidden, 1 output -->
+  <g stroke="var(--ink-3)" stroke-width="1" stroke-opacity=".6">
+    <!-- in (x=60) to h1 (x=170); h1 alive: y=70,150,230 ; dropped: 110,190 -->
+    <line x1="60" y1="80" x2="170" y2="70"/><line x1="60" y1="80" x2="170" y2="150"/><line x1="60" y1="80" x2="170" y2="230"/>
+    <line x1="60" y1="130" x2="170" y2="70"/><line x1="60" y1="130" x2="170" y2="150"/><line x1="60" y1="130" x2="170" y2="230"/>
+    <line x1="60" y1="180" x2="170" y2="70"/><line x1="60" y1="180" x2="170" y2="150"/><line x1="60" y1="180" x2="170" y2="230"/>
+    <line x1="60" y1="230" x2="170" y2="70"/><line x1="60" y1="230" x2="170" y2="150"/><line x1="60" y1="230" x2="170" y2="230"/>
+    <!-- h1 alive to h2 (x=280) alive: y=70,110,190 ; dropped 150,230 -->
+    <line x1="170" y1="70" x2="280" y2="70"/><line x1="170" y1="70" x2="280" y2="110"/><line x1="170" y1="70" x2="280" y2="190"/>
+    <line x1="170" y1="150" x2="280" y2="70"/><line x1="170" y1="150" x2="280" y2="110"/><line x1="170" y1="150" x2="280" y2="190"/>
+    <line x1="170" y1="230" x2="280" y2="70"/><line x1="170" y1="230" x2="280" y2="110"/><line x1="170" y1="230" x2="280" y2="190"/>
+    <!-- h2 alive to out (x=380,150) -->
+    <line x1="280" y1="70" x2="380" y2="150"/><line x1="280" y1="110" x2="380" y2="150"/><line x1="280" y1="190" x2="380" y2="150"/>
+  </g>
+  <g fill="var(--s1)"><circle cx="60" cy="80" r="9"/><circle cx="60" cy="130" r="9"/><circle cx="60" cy="180" r="9"/><circle cx="60" cy="230" r="9"/></g>
+  <g fill="var(--s2)"><circle cx="170" cy="70" r="9"/><circle cx="170" cy="150" r="9"/><circle cx="170" cy="230" r="9"/><circle cx="280" cy="70" r="9"/><circle cx="280" cy="110" r="9"/><circle cx="280" cy="190" r="9"/></g>
+  <g fill="var(--surface-2)" stroke="var(--critical)" stroke-width="2"><circle cx="170" cy="110" r="9"/><circle cx="170" cy="190" r="9"/><circle cx="280" cy="150" r="9"/><circle cx="280" cy="230" r="9"/></g>
+  <g stroke="var(--critical)" stroke-width="2"><line x1="164" y1="104" x2="176" y2="116"/><line x1="176" y1="104" x2="164" y2="116"/><line x1="164" y1="184" x2="176" y2="196"/><line x1="176" y1="184" x2="164" y2="196"/><line x1="274" y1="144" x2="286" y2="156"/><line x1="286" y1="144" x2="274" y2="156"/><line x1="274" y1="224" x2="286" y2="236"/><line x1="286" y1="224" x2="274" y2="236"/></g>
+  <circle cx="380" cy="150" r="10" fill="var(--s3)"/>
+  <text x="60" y="262" text-anchor="middle" class="lbl" font-size="11">input</text>
+  <text x="225" y="262" text-anchor="middle" class="lbl" font-size="11">hidden (survivors × 1/(1−p) = ×1.67)</text>
+  <text x="380" y="262" text-anchor="middle" class="lbl" font-size="11">output</text>
+  <text x="200" y="288" text-anchor="middle" class="lbl" font-size="11">a different random mask on every forward pass</text>
+  <line x1="420" y1="40" x2="420" y2="280" class="grid" stroke-dasharray="4 4"/>
+  <!-- right net: full -->
+  <text x="620" y="26" text-anchor="middle" class="lbl-strong" font-size="14">Test pass: all units, no scaling needed</text>
+  <g stroke="var(--ink-3)" stroke-width="1" stroke-opacity=".5">
+    <line x1="480" y1="80" x2="590" y2="70"/><line x1="480" y1="80" x2="590" y2="110"/><line x1="480" y1="80" x2="590" y2="150"/><line x1="480" y1="80" x2="590" y2="190"/><line x1="480" y1="80" x2="590" y2="230"/>
+    <line x1="480" y1="130" x2="590" y2="70"/><line x1="480" y1="130" x2="590" y2="110"/><line x1="480" y1="130" x2="590" y2="150"/><line x1="480" y1="130" x2="590" y2="190"/><line x1="480" y1="130" x2="590" y2="230"/>
+    <line x1="480" y1="180" x2="590" y2="70"/><line x1="480" y1="180" x2="590" y2="110"/><line x1="480" y1="180" x2="590" y2="150"/><line x1="480" y1="180" x2="590" y2="190"/><line x1="480" y1="180" x2="590" y2="230"/>
+    <line x1="480" y1="230" x2="590" y2="70"/><line x1="480" y1="230" x2="590" y2="110"/><line x1="480" y1="230" x2="590" y2="150"/><line x1="480" y1="230" x2="590" y2="190"/><line x1="480" y1="230" x2="590" y2="230"/>
+    <line x1="590" y1="70" x2="700" y2="70"/><line x1="590" y1="70" x2="700" y2="110"/><line x1="590" y1="70" x2="700" y2="150"/><line x1="590" y1="70" x2="700" y2="190"/><line x1="590" y1="70" x2="700" y2="230"/>
+    <line x1="590" y1="110" x2="700" y2="70"/><line x1="590" y1="110" x2="700" y2="110"/><line x1="590" y1="110" x2="700" y2="150"/><line x1="590" y1="110" x2="700" y2="190"/><line x1="590" y1="110" x2="700" y2="230"/>
+    <line x1="590" y1="150" x2="700" y2="70"/><line x1="590" y1="150" x2="700" y2="110"/><line x1="590" y1="150" x2="700" y2="150"/><line x1="590" y1="150" x2="700" y2="190"/><line x1="590" y1="150" x2="700" y2="230"/>
+    <line x1="590" y1="190" x2="700" y2="70"/><line x1="590" y1="190" x2="700" y2="110"/><line x1="590" y1="190" x2="700" y2="150"/><line x1="590" y1="190" x2="700" y2="190"/><line x1="590" y1="190" x2="700" y2="230"/>
+    <line x1="590" y1="230" x2="700" y2="70"/><line x1="590" y1="230" x2="700" y2="110"/><line x1="590" y1="230" x2="700" y2="150"/><line x1="590" y1="230" x2="700" y2="190"/><line x1="590" y1="230" x2="700" y2="230"/>
+    <line x1="700" y1="70" x2="790" y2="150"/><line x1="700" y1="110" x2="790" y2="150"/><line x1="700" y1="150" x2="790" y2="150"/><line x1="700" y1="190" x2="790" y2="150"/><line x1="700" y1="230" x2="790" y2="150"/>
+  </g>
+  <g fill="var(--s1)"><circle cx="480" cy="80" r="9"/><circle cx="480" cy="130" r="9"/><circle cx="480" cy="180" r="9"/><circle cx="480" cy="230" r="9"/></g>
+  <g fill="var(--s2)"><circle cx="590" cy="70" r="9"/><circle cx="590" cy="110" r="9"/><circle cx="590" cy="150" r="9"/><circle cx="590" cy="190" r="9"/><circle cx="590" cy="230" r="9"/><circle cx="700" cy="70" r="9"/><circle cx="700" cy="110" r="9"/><circle cx="700" cy="150" r="9"/><circle cx="700" cy="190" r="9"/><circle cx="700" cy="230" r="9"/></g>
+  <circle cx="790" cy="150" r="10" fill="var(--s3)"/>
+  <text x="620" y="288" text-anchor="middle" class="lbl" font-size="11">model.eval() turns dropout off: an implicit average of all sub-networks</text>
+</svg>
+<figcaption><strong>Figure 16.8 — Dropout.</strong> Each training pass randomly silences a fraction <em>p</em> of the hidden units and scales the rest up by 1/(1−<em>p</em>) ("inverted dropout"). No unit can depend on any other being present. At test time the whole network runs unchanged.</figcaption>
+</figure>
+
+<h3>Data augmentation and early stopping</h3>
+<p><strong>Data augmentation</strong> creates new training examples by applying label-preserving transformations: flips, crops and color jitter for images (Chapter 17), synonym swaps and back-translation for text, small Gaussian noise or feature dropout for tabular data. It is the most effective regularizer when it is available, because it adds genuine information about the invariances of the problem. <strong>Early stopping</strong>, which you saw in the training loop, is the cheapest: monitor validation loss and keep the best weights. Use a patience of 5–20 epochs depending on how noisy the validation metric is, and always restore the best checkpoint rather than the last.</p>
+
+<h3>Gradient clipping</h3>
+<p>Occasionally a batch produces an enormous gradient (an outlier row, an unlucky combination of a large learning rate and a steep region) and one step throws the weights somewhere terrible. <strong>Clipping</strong> rescales the whole gradient vector so its norm is at most a threshold: <code>nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)</code>, called between <code>backward()</code> and <code>step()</code>. It is essential for recurrent networks and transformers and harmless elsewhere; a max norm of 1.0 is the near-universal default. It also returns the pre-clip norm, which is the cheapest gradient-health monitor you can log.</p>
+
+<p>Here is the full "regularized MLP" recipe: batch norm, dropout, AdamW weight decay, clipping — plus the loss-at-initialization sanity check from §8 and saving/loading via <code>state_dict</code>.</p>
+
+<pre class="code" data-lang="python"><code><span class="cm"># Regularized MLP: dropout + weight decay (AdamW) + gradient clipping + save/load</span>
+<span class="kw">import</span> torch, torch.nn <span class="kw">as</span> nn, io
+<span class="kw">from</span> sklearn.datasets <span class="kw">import</span> load_breast_cancer
+<span class="kw">from</span> sklearn.model_selection <span class="kw">import</span> train_test_split
+<span class="kw">from</span> sklearn.preprocessing <span class="kw">import</span> StandardScaler
+torch.manual_seed(<span class="nu">0</span>)
+
+X, y = load_breast_cancer(return_X_y=<span class="kw">True</span>)
+X_tr, X_te, y_tr, y_te = train_test_split(X, y, test_size=<span class="nu">0.25</span>, random_state=<span class="nu">0</span>, stratify=y)
+sc = StandardScaler().fit(X_tr)
+t = <span class="kw">lambda</span> a: torch.tensor(a, dtype=torch.float32)
+X_tr, X_te, y_tr, y_te = t(sc.transform(X_tr)), t(sc.transform(X_te)), t(y_tr).unsqueeze(<span class="nu">1</span>), t(y_te).unsqueeze(<span class="nu">1</span>)
+
+<span class="kw">class</span> MLP(nn.Module):
+    <span class="kw">def</span> __init__(self, d_in, hidden=<span class="nu">64</span>, p_drop=<span class="nu">0.3</span>):
+        <span class="fn">super</span>().__init__()
+        self.net = nn.Sequential(
+            nn.Linear(d_in, hidden), nn.BatchNorm1d(hidden), nn.ReLU(), nn.Dropout(p_drop),
+            nn.Linear(hidden, hidden), nn.BatchNorm1d(hidden), nn.ReLU(), nn.Dropout(p_drop),
+            nn.Linear(hidden, <span class="nu">1</span>))
+    <span class="kw">def</span> forward(self, x):
+        <span class="kw">return</span> self.net(x)
+
+model = MLP(<span class="nu">30</span>)
+<span class="fn">print</span>(<span class="st">"parameters:"</span>, <span class="fn">sum</span>(p.numel() <span class="kw">for</span> p <span class="kw">in</span> model.parameters()))
+<span class="out"># parameters: 6465</span>
+opt = torch.optim.AdamW(model.parameters(), lr=<span class="nu">1e-3</span>, weight_decay=<span class="nu">1e-2</span>)   <span class="cm"># decoupled L2</span>
+loss_fn = nn.BCEWithLogitsLoss()
+
+<span class="cm"># sanity check: loss at init for a balanced binary problem should be ≈ ln(2) = 0.693</span>
+model.eval()
+<span class="kw">with</span> torch.no_grad():
+    <span class="fn">print</span>(<span class="st">f"loss at init: {loss_fn(model(X_tr), y_tr).item():.3f}"</span>)
+<span class="out"># loss at init: 0.685</span>
+
+<span class="kw">for</span> epoch <span class="kw">in</span> <span class="fn">range</span>(<span class="nu">15</span>):
+    model.train()                           <span class="cm"># dropout ON, batchnorm uses batch stats</span>
+    perm = torch.randperm(<span class="fn">len</span>(X_tr))
+    <span class="kw">for</span> i <span class="kw">in</span> <span class="fn">range</span>(<span class="nu">0</span>, <span class="fn">len</span>(X_tr), <span class="nu">32</span>):
+        idx = perm[i:i+<span class="nu">32</span>]
+        loss = loss_fn(model(X_tr[idx]), y_tr[idx])
+        opt.zero_grad(); loss.backward()
+        nn.utils.clip_grad_norm_(model.parameters(), max_norm=<span class="nu">1.0</span>)   <span class="cm"># gradient clipping</span>
+        opt.step()
+
+model.eval()                                <span class="cm"># dropout OFF, batchnorm uses running stats</span>
+<span class="kw">with</span> torch.no_grad():
+    acc = ((model(X_te) &gt; <span class="nu">0</span>).<span class="fn">float</span>() == y_te).<span class="fn">float</span>().mean().item()
+<span class="fn">print</span>(<span class="st">f"test accuracy: {acc:.3f}"</span>)
+<span class="out"># test accuracy: ≈ 0.944</span>
+
+<span class="cm"># --- save &amp; load: persist the state_dict, not the object ---</span>
+torch.save(model.state_dict(), <span class="st">"mlp.pt"</span>)
+fresh = MLP(<span class="nu">30</span>)                              <span class="cm"># must rebuild the same architecture</span>
+fresh.load_state_dict(torch.load(<span class="st">"mlp.pt"</span>))
+fresh.eval()
+<span class="kw">with</span> torch.no_grad():
+    same = torch.allclose(fresh(X_te), model(X_te))
+<span class="fn">print</span>(<span class="st">"reloaded model gives identical outputs:"</span>, same)
+<span class="out"># reloaded model gives identical outputs: True</span></code></pre>
+
+<div class="callout key"><div class="title">Key idea</div>
+<p><strong>Regularizers stack, and each targets a different failure.</strong> Weight decay limits weight magnitude; dropout limits co-adaptation; augmentation encodes invariances; early stopping limits training time; clipping limits single-step damage. A tabular MLP at work typically wants all of them at mild settings rather than one at a strong setting.</p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s8">8. The debugging recipe and reading curves</h2>
+
+<p>Networks fail silently. A bug in a tree model usually throws an exception; a bug in a neural network produces a model that trains to 71% accuracy instead of 94% and nobody notices for a month. The defense is a fixed sequence of cheap checks that you run <em>before</em> training on the full data. Experienced practitioners do these reflexively.</p>
+
+<ol class="steps">
+  <li><strong>Check shapes at every boundary.</strong> Print <code>xb.shape</code>, <code>model(xb).shape</code>, <code>yb.shape</code> for one batch. A <code>(64,)</code> target against a <code>(64, 1)</code> output broadcasts into a 64×64 matrix inside <code>MSELoss</code> and trains on garbage without any error.</li>
+  <li><strong>Check the loss at initialization.</strong> Before any training, a C-class classifier with near-uniform outputs should have cross-entropy ≈ ln(C): 0.693 for two classes, 2.303 for ten. Much higher means the last layer's outputs are too large (bad init or unscaled inputs); much lower means you are leaking labels or the classes are imbalanced (then compare with ln of the prior).</li>
+  <li><strong>Overfit a single batch.</strong> Take 16 examples and train on them alone for a few hundred steps. Training loss must go to essentially zero. If it cannot memorize 16 rows, no amount of data will help: the model, loss, or update code is wrong.</li>
+  <li><strong>Watch for NaN and inf.</strong> A NaN loss is almost always the learning rate (too high), a log of zero (using <code>BCELoss</code> on unclamped probabilities), or a division by a zero variance. Add <code>torch.isnan(loss)</code> to your logging.</li>
+  <li><strong>Look at the gradients.</strong> Log the gradient norm every step (<code>clip_grad_norm_</code> returns it for free). Zero means a dead ReLU network or a detached graph; growing without bound means the rate is too high; a sudden spike identifies a bad batch.</li>
+  <li><strong>Then scale up.</strong> Only now train on the full data, with the validation loop, and read the curves.</li>
+</ol>
+
+<pre class="code" data-lang="python"><code><span class="cm"># The debugging recipe in code: overfit ONE batch before training on everything</span>
+<span class="kw">import</span> torch, torch.nn <span class="kw">as</span> nn
+<span class="kw">from</span> sklearn.datasets <span class="kw">import</span> load_breast_cancer
+<span class="kw">from</span> sklearn.preprocessing <span class="kw">import</span> StandardScaler
+torch.manual_seed(<span class="nu">0</span>)
+
+X, y = load_breast_cancer(return_X_y=<span class="kw">True</span>)
+X = torch.tensor(StandardScaler().fit_transform(X), dtype=torch.float32)
+y = torch.tensor(y, dtype=torch.float32).unsqueeze(<span class="nu">1</span>)
+xb, yb = X[:<span class="nu">16</span>], y[:<span class="nu">16</span>]                    <span class="cm"># a single batch of 16</span>
+
+model = nn.Sequential(nn.Linear(<span class="nu">30</span>, <span class="nu">32</span>), nn.ReLU(), nn.Linear(<span class="nu">32</span>, <span class="nu">1</span>))
+loss_fn = nn.BCEWithLogitsLoss()
+opt = torch.optim.Adam(model.parameters(), lr=<span class="nu">1e-2</span>)
+<span class="fn">print</span>(<span class="st">"shapes: x"</span>, <span class="fn">tuple</span>(xb.shape), <span class="st">"logits"</span>, <span class="fn">tuple</span>(model(xb).shape), <span class="st">"y"</span>, <span class="fn">tuple</span>(yb.shape))
+<span class="out"># shapes: x (16, 30) logits (16, 1) y (16, 1)</span>
+
+<span class="kw">for</span> step <span class="kw">in</span> <span class="fn">range</span>(<span class="nu">201</span>):
+    loss = loss_fn(model(xb), yb)
+    opt.zero_grad(); loss.backward()
+    gnorm = torch.nn.utils.clip_grad_norm_(model.parameters(), <span class="nu">1e9</span>)   <span class="cm"># measure, don't clip</span>
+    opt.step()
+    <span class="kw">if</span> step % <span class="nu">50</span> == <span class="nu">0</span>:
+        <span class="fn">print</span>(<span class="st">f"step {step:3d}  loss {loss.item():.4f}  grad-norm {gnorm:.3f}  nan? {torch.isnan(loss).item()}"</span>)
+<span class="cm"># loss must go to ~0. If it doesn't, the bug is in your code, not your data.</span>
+<span class="out"># step   0  loss 0.6292  grad-norm 1.514  nan? False</span>
+<span class="out"># step  50  loss 0.0002  grad-norm 0.001  nan? False</span>
+<span class="out"># step 100  loss 0.0001  grad-norm 0.001  nan? False</span>
+<span class="out"># step 150  loss 0.0001  grad-norm 0.001  nan? False</span>
+<span class="out"># step 200  loss 0.0001  grad-norm 0.000  nan? False</span></code></pre>
+
+<div class="callout eli9"><div class="title">Explain it like I'm 9</div>
+<p>Before you take a new bicycle on a 50 km ride, you ride it around the block. If it cannot do the block, the ride is not going to happen. "Overfit one batch" is riding around the block: the tiniest possible task that still exercises every part of the machine.</p>
+</div>
+
+<h3>Reading training curves</h3>
+<p>Once the full run is going, the pair of curves — training loss and validation loss (or metric) per epoch — is your primary instrument. Four shapes cover almost everything you will see.</p>
+
+<figure class="fig">
+<svg viewBox="0 0 820 420" role="img" aria-label="Four panels of training and validation loss curves: healthy (both decrease and stay close), overfitting (training keeps falling while validation turns up), learning rate too high (training loss jagged and stuck high), underfitting (both losses stay high and flat)">
+  <defs><marker id="arr16-9" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+  <!-- panel A healthy -->
+  <g>
+    <text x="210" y="24" text-anchor="middle" class="lbl-strong" font-size="13">A · Healthy</text>
+    <line x1="50" y1="180" x2="390" y2="180" class="axis" marker-end="url(#arr16-9)"/><line x1="50" y1="180" x2="50" y2="40" class="axis" marker-end="url(#arr16-9)"/>
+    <path d="M50,60 C 100,130 160,160 250,168 S 360,172 385,173" fill="none" stroke="var(--s1)" stroke-width="2.4"/>
+    <path d="M50,58 C 100,125 160,150 250,156 S 360,158 385,159" fill="none" stroke="var(--s2)" stroke-width="2.4" stroke-dasharray="6 3"/>
+    <text x="220" y="196" text-anchor="middle" class="lbl" font-size="10">epoch</text>
+    <text x="60" y="52" class="lbl" font-size="10">both fall, small steady gap → keep going or stop when flat</text>
+  </g>
+  <!-- panel B overfitting -->
+  <g transform="translate(410,0)">
+    <text x="210" y="24" text-anchor="middle" class="lbl-strong" font-size="13">B · Overfitting</text>
+    <line x1="50" y1="180" x2="390" y2="180" class="axis" marker-end="url(#arr16-9)"/><line x1="50" y1="180" x2="50" y2="40" class="axis" marker-end="url(#arr16-9)"/>
+    <path d="M50,60 C 100,130 160,160 250,170 S 360,176 385,177" fill="none" stroke="var(--s1)" stroke-width="2.4"/>
+    <path d="M50,58 C 100,120 150,128 190,126 S 300,140 385,165" fill="none" stroke="var(--s2)" stroke-width="2.4" stroke-dasharray="6 3"/>
+    <path d="M50,58 C 100,120 150,128 190,126" fill="none" stroke="none"/>
+    <line x1="190" y1="120" x2="190" y2="180" stroke="var(--s7)" stroke-width="1.5" stroke-dasharray="3 3"/>
+    <text x="196" y="118" class="lbl" font-size="10" fill="var(--s7)">early-stop here</text>
+    <text x="220" y="196" text-anchor="middle" class="lbl" font-size="10">epoch</text>
+    <text x="60" y="52" class="lbl" font-size="10">val turns up while train keeps falling → regularize, more data</text>
+  </g>
+  <!-- panel C LR too high -->
+  <g transform="translate(0,215)">
+    <text x="210" y="24" text-anchor="middle" class="lbl-strong" font-size="13">C · Learning rate too high</text>
+    <line x1="50" y1="180" x2="390" y2="180" class="axis" marker-end="url(#arr16-9)"/><line x1="50" y1="180" x2="50" y2="40" class="axis" marker-end="url(#arr16-9)"/>
+    <polyline points="50,60 75,110 100,80 125,120 150,90 175,125 200,95 225,118 250,100 275,122 300,96 325,120 350,102 385,116" fill="none" stroke="var(--s1)" stroke-width="2.4"/>
+    <polyline points="50,58 75,105 100,92 125,115 150,98 175,118 200,104 225,117 250,108 275,119 300,106 325,118 350,110 385,116" fill="none" stroke="var(--s2)" stroke-width="2.4" stroke-dasharray="6 3"/>
+    <text x="220" y="196" text-anchor="middle" class="lbl" font-size="10">epoch</text>
+    <text x="60" y="52" class="lbl" font-size="10">jagged, stuck high, may jump to NaN → lower lr ×3–10</text>
+  </g>
+  <!-- panel D underfitting -->
+  <g transform="translate(410,215)">
+    <text x="210" y="24" text-anchor="middle" class="lbl-strong" font-size="13">D · Underfitting</text>
+    <line x1="50" y1="180" x2="390" y2="180" class="axis" marker-end="url(#arr16-9)"/><line x1="50" y1="180" x2="50" y2="40" class="axis" marker-end="url(#arr16-9)"/>
+    <path d="M50,70 C 120,95 200,102 385,105" fill="none" stroke="var(--s1)" stroke-width="2.4"/>
+    <path d="M50,68 C 120,92 200,100 385,103" fill="none" stroke="var(--s2)" stroke-width="2.4" stroke-dasharray="6 3"/>
+    <line x1="50" y1="150" x2="385" y2="150" stroke="var(--ink-3)" stroke-dasharray="2 4"/>
+    <text x="380" y="146" text-anchor="end" class="lbl" font-size="10">loss a GBM reaches</text>
+    <text x="220" y="196" text-anchor="middle" class="lbl" font-size="10">epoch</text>
+    <text x="60" y="52" class="lbl" font-size="10">both flat and high, no gap → bigger model, higher lr, better features</text>
+  </g>
+  <!-- legend -->
+  <line x1="300" y1="410" x2="330" y2="410" stroke="var(--s1)" stroke-width="3"/><text x="336" y="414" class="lbl" font-size="11">train loss</text>
+  <line x1="430" y1="410" x2="460" y2="410" stroke="var(--s2)" stroke-width="3" stroke-dasharray="6 3"/><text x="466" y="414" class="lbl" font-size="11">validation loss</text>
+</svg>
+<figcaption><strong>Figure 16.9 — The four curve shapes and what to do about each.</strong> The train/validation gap tells you about capacity and regularization; the smoothness tells you about the learning rate; the absolute level, compared to a strong baseline, tells you whether the model is learning the problem at all.</figcaption>
+</figure>
+
+<div class="callout pro"><div class="title">At work</div>
+<p>Log every run: hyperparameters, git commit, data version, seed, per-epoch train/val loss and metric, gradient norm, learning rate. A spreadsheet or a lightweight tracker (MLflow, Weights &amp; Biases, or a CSV per run) is fine. The reason is not tidiness: two weeks in, the question "what changed between the run that worked and the one that didn't?" will be the only question that matters, and memory will not answer it. Chapter 21 covers experiment tracking properly.</p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s9">9. Hardware, precision, checkpoints, reproducibility</h2>
+
+<h3>GPUs and the device</h3>
+<p>A GPU makes the matrix multiplications in a network 10–100× faster than a CPU. Using one in PyTorch takes two lines: move the model to the device once, and move each batch to the device inside the loop. The rule that produces most device errors is simple: <strong>every tensor in one operation must be on the same device</strong>. The other rule: a tensor on the GPU cannot be turned into a NumPy array or plotted until it comes back with <code>.cpu()</code>. For tabular MLPs of the size in this chapter, a CPU is fine and often faster once you count the data-transfer overhead; GPUs pay off for images, text, and anything with millions of parameters.</p>
+
+<h3>Mixed precision</h3>
+<p>Modern GPUs multiply 16-bit floats several times faster than 32-bit ones and use half the memory. <strong>Automatic mixed precision</strong> (<code>torch.autocast</code>) runs the matmuls in <code>float16</code> or <code>bfloat16</code> and keeps the numerically sensitive pieces (loss, normalization, optimizer state) in <code>float32</code>. With <code>float16</code> small gradients underflow to zero, so a <code>GradScaler</code> multiplies the loss by a large factor before <code>backward()</code> and divides the gradients afterwards. <code>bfloat16</code> has the range of <code>float32</code> and needs no scaler; prefer it on hardware that supports it. On a CPU none of this helps, so the code below is written to switch itself off.</p>
+
+<h3>Checkpointing and saving models</h3>
+<p>Save the <code>state_dict</code>, not the model object: it is a plain dictionary of tensors, robust to code refactors, and loads into any module with matching parameter names. To <em>resume</em> training rather than merely reuse weights, you must also save the optimizer state (Adam's moment estimates), the scheduler state and the epoch counter, or the resumed run will behave differently from an uninterrupted one. Save a checkpoint every epoch and keep the best-validation one separately; you will need it after a preemption, a crash, or a bad late epoch.</p>
+
+<pre class="code" data-lang="python-noexec"><code><span class="cm"># Device placement, mixed precision and checkpointing (needs a GPU to matter; shown for reference)</span>
+<span class="kw">import</span> torch, torch.nn <span class="kw">as</span> nn
+
+device = <span class="st">"cuda"</span> <span class="kw">if</span> torch.cuda.is_available() <span class="kw">else</span> <span class="st">"cpu"</span>
+model = MLP(<span class="nu">30</span>).to(device)                              <span class="cm"># move parameters once</span>
+opt = torch.optim.AdamW(model.parameters(), lr=<span class="nu">1e-3</span>, weight_decay=<span class="nu">1e-2</span>)
+sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=<span class="nu">50</span>)
+scaler = torch.amp.GradScaler(enabled=(device == <span class="st">"cuda"</span>))   <span class="cm"># keeps small grads from underflowing in fp16</span>
+
+<span class="kw">for</span> epoch <span class="kw">in</span> <span class="fn">range</span>(<span class="nu">50</span>):
+    <span class="kw">for</span> xb, yb <span class="kw">in</span> train_dl:
+        xb, yb = xb.to(device), yb.to(device)            <span class="cm"># move each batch</span>
+        <span class="kw">with</span> torch.autocast(device_type=device, dtype=torch.float16, enabled=(device == <span class="st">"cuda"</span>)):
+            loss = loss_fn(model(xb), yb)                <span class="cm"># matmuls run in fp16, loss in fp32</span>
+        opt.zero_grad(set_to_none=<span class="kw">True</span>)
+        scaler.scale(loss).backward()                    <span class="cm"># scale loss up before backward</span>
+        scaler.unscale_(opt)                             <span class="cm"># unscale so clipping sees true grads</span>
+        nn.utils.clip_grad_norm_(model.parameters(), <span class="nu">1.0</span>)
+        scaler.step(opt); scaler.update()                <span class="cm"># skips the step if grads overflowed</span>
+    sched.step()
+
+    <span class="cm"># checkpoint EVERYTHING needed to resume, not just the weights</span>
+    torch.save({<span class="st">"epoch"</span>: epoch, <span class="st">"model"</span>: model.state_dict(), <span class="st">"opt"</span>: opt.state_dict(),
+                <span class="st">"sched"</span>: sched.state_dict(), <span class="st">"scaler"</span>: scaler.state_dict()}, <span class="st">"ckpt.pt"</span>)
+
+<span class="cm"># resume later</span>
+ckpt = torch.load(<span class="st">"ckpt.pt"</span>, map_location=device)
+model.load_state_dict(ckpt[<span class="st">"model"</span>]); opt.load_state_dict(ckpt[<span class="st">"opt"</span>])
+sched.load_state_dict(ckpt[<span class="st">"sched"</span>]); start_epoch = ckpt[<span class="st">"epoch"</span>] + <span class="nu">1</span>
+
+<span class="cm"># reproducibility: seeds first, determinism second (slower, and not always available)</span>
+torch.manual_seed(<span class="nu">0</span>); <span class="kw">import</span> random, numpy <span class="kw">as</span> np; random.seed(<span class="nu">0</span>); np.random.seed(<span class="nu">0</span>)
+torch.use_deterministic_algorithms(<span class="kw">True</span>, warn_only=<span class="kw">True</span>)</code></pre>
+
+<h3>Reproducibility</h3>
+<p>Seed everything — <code>torch</code>, <code>numpy</code>, Python's <code>random</code>, and the DataLoader's workers — and you will get the same run twice on the same machine with the same library versions. You will <em>not</em> get bit-identical results across GPU models, driver versions, or between CPU and GPU: some CUDA kernels (and some CPU ones, depending on thread count) sum in a nondeterministic order. <code>torch.use_deterministic_algorithms(True)</code> forces deterministic kernels where they exist, at a speed cost, and raises for the operations that have none. The honest position at work: seed for debuggability, report results as a mean over 3–5 seeds, and treat run-to-run variance of a fraction of a percent as noise rather than as evidence.</p>
+
+<div class="callout warn"><div class="title">Common mistake</div>
+<p><strong>Comparing two configurations with one run each.</strong> On small datasets the seed alone can move validation accuracy by a percentage point or more. Before concluding that "dropout 0.2 beats 0.3", run each three times and look at the spread. Most of the hyperparameter folklore you will read online is single-seed noise.</p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s10">10. Defaults for tabular MLPs, and MLP vs GBM</h2>
+
+<p>Tune in this order. Each item typically matters less than the one above it, so stop when the gains stop.</p>
+
+<div class="tbl-wrap">
+<table class="tbl">
+<thead><tr><th>Priority</th><th>Hyperparameter</th><th>Sane default</th><th>Search range</th><th>Notes</th></tr></thead>
+<tbody>
+<tr><td class="num">1</td><td>Learning rate</td><td>1e-3 (AdamW)</td><td>3e-4 – 3e-3 (log scale)</td><td>Range test first; nothing else matters until this is right.</td></tr>
+<tr><td class="num">2</td><td>Input preprocessing</td><td>StandardScaler; log-transform heavy tails; embeddings for high-cardinality categoricals</td><td>—</td><td>Not a hyperparameter, but the biggest lever after lr.</td></tr>
+<tr><td class="num">3</td><td>Width × depth</td><td>2–3 hidden layers of 128–256</td><td>1–4 layers, 64–512 wide</td><td>Make it overfit first, then regularize.</td></tr>
+<tr><td class="num">4</td><td>Weight decay</td><td>1e-2</td><td>1e-4 – 1e-1</td><td>With AdamW. Exclude biases/norm params if you can.</td></tr>
+<tr><td class="num">5</td><td>Dropout</td><td>0.1–0.2</td><td>0 – 0.5</td><td>More for small data, less with batch norm.</td></tr>
+<tr><td class="num">6</td><td>Batch size</td><td>128</td><td>32 – 512</td><td>Then re-tune lr if changed a lot.</td></tr>
+<tr><td class="num">7</td><td>Schedule</td><td>3-epoch warmup + cosine to 0 over 50–200 epochs, early stopping patience 15</td><td>—</td><td>Or ReduceLROnPlateau if the budget is open-ended.</td></tr>
+<tr><td class="num">8</td><td>Normalization</td><td>BatchNorm1d after each Linear</td><td>none / batch / layer</td><td>Layer norm if batches are tiny.</td></tr>
+<tr><td class="num">9</td><td>Activation</td><td>ReLU</td><td>ReLU / GELU / SiLU</td><td>Rarely matters on tabular data.</td></tr>
+</tbody>
+</table>
+</div>
+
+<h3>When to use an MLP vs a gradient-boosted tree on tabular data</h3>
+<p>Be honest with yourself here, because the field has measured this repeatedly. On typical business tables (tens of columns, thousands to a few million rows, mixed numeric and categorical, missing values, skewed distributions), a well-tuned gradient-boosted tree (Chapter 10) matches or beats a well-tuned MLP most of the time, with less preprocessing, less tuning, and faster training. Neural networks win on tabular data in specific situations, and you should be able to name which one you are in before choosing them.</p>
+
+<div class="tbl-wrap">
+<table class="tbl">
+<thead><tr><th>Situation</th><th>Reach for</th><th>Why</th></tr></thead>
+<tbody>
+<tr><td>Plain tabular problem, &lt; 1M rows, mixed types, deadline</td><td><strong>GBM</strong> (LightGBM / XGBoost / CatBoost)</td><td>Best accuracy per hour of effort; handles missing values, scale, and categoricals natively; strong with default settings.</td></tr>
+<tr><td>Very high-cardinality categoricals (user IDs, product IDs, text tokens) that need learned embeddings</td><td>MLP with embedding layers (or GBM + target encoding first)</td><td>Embeddings learn similarity between categories; trees can only split on them.</td></tr>
+<tr><td>Inputs include images, text, audio, or sequences alongside the table</td><td>Neural network (multi-modal)</td><td>Trees cannot consume raw pixels or tokens; a network can fuse them with tabular features.</td></tr>
+<tr><td>Tens of millions of rows and you need online / incremental updates</td><td>MLP</td><td>Mini-batch SGD updates on streaming data; GBMs must be retrained.</td></tr>
+<tr><td>Multi-task output (predict 20 related targets at once) or a custom differentiable loss</td><td>MLP</td><td>Shared hidden layers and arbitrary losses are natural in PyTorch.</td></tr>
+<tr><td>You need to reuse a pretrained representation (transfer learning)</td><td>Neural network</td><td>There is nothing to transfer in a tree.</td></tr>
+<tr><td>You are unsure</td><td>Both, and compare on the same validation split</td><td>The GBM takes ten minutes to set up; use it as the baseline the MLP must beat.</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="callout pro"><div class="title">At work</div>
+<p>The strongest tabular systems in production are frequently <em>both</em>: a GBM and an MLP trained on the same features, averaged (Chapter 10, stacking). Their errors are different enough that the blend beats either alone by a small, reliable margin. But that is the last 1%. Get the features, the validation scheme and the GBM baseline right first; the neural network is a refinement, not a rescue.</p>
+</div>
+
+<div class="callout lab"><div class="title">Lab</div>
+<p>Take the breast-cancer example from §7. (1) Train a <code>LightGBMClassifier</code> with default settings on the same split and compare test accuracy and log-loss with the MLP. (2) Run the MLP with three seeds and report the spread. (3) Remove the <code>StandardScaler</code> and watch what happens to the loss at initialization and the epochs needed. Write down the three numbers; they are the argument you will be making to colleagues for years.</p>
+</div>
+
+<div class="callout key"><div class="title">Key idea</div>
+<p><strong>Deep learning is a set of engineering defaults, not magic.</strong> AdamW at 1e-3 with warmup and cosine decay, He-initialized ReLU layers with batch norm, mild weight decay and dropout, gradient clipping at 1.0, early stopping on a validation set, seeds logged, checkpoints saved — that recipe trains almost everything in this book. Deviate from it only with a measured reason.</p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="quiz">Quiz</h2>
+<div class="quiz">
+  <h3>Check your understanding</h3>
+
+  <div class="q">
+    <p class="question">1. Your training loop omits <code>opt.zero_grad()</code>. What happens?</p>
+    <ul class="opts">
+      <li><button>PyTorch raises an error on the second <code>backward()</code></button></li>
+      <li><button data-correct>Gradients accumulate across batches, so each step uses the sum of all previous gradients</button></li>
+      <li><button>Nothing; gradients are reset automatically by <code>step()</code></button></li>
+      <li><button>The model trains faster because the effective learning rate grows</button></li>
+    </ul>
+    <div class="explain">Autograd <em>adds</em> to <code>.grad</code> by design. Without clearing, every update is driven by a growing sum of stale gradients; training degrades silently. (Some code exploits this deliberately for gradient accumulation across micro-batches, then clears every k steps.)</div>
+  </div>
+
+  <div class="q">
+    <p class="question">2. A colleague's binary classifier ends with <code>nn.Sigmoid()</code> and is trained with <code>nn.BCEWithLogitsLoss()</code>. The loss decreases but accuracy is mediocre. What is wrong?</p>
+    <ul class="opts">
+      <li><button>The learning rate is too low</button></li>
+      <li><button>They should use <code>CrossEntropyLoss</code> for binary problems</button></li>
+      <li><button data-correct>The sigmoid is applied twice; the model should output raw logits</button></li>
+      <li><button>Nothing; that is the recommended setup</button></li>
+    </ul>
+    <div class="explain"><code>BCEWithLogitsLoss</code> applies its own sigmoid. A second one compresses the outputs into (0, 1) before the loss sees them, which caps the achievable confidence and shrinks gradients. Remove the final activation.</div>
+  </div>
+
+  <div class="q">
+    <p class="question">3. A 10-class classifier prints a cross-entropy loss of 2.30 before any training. What does that tell you?</p>
+    <ul class="opts">
+      <li><button>The model is broken; loss should start near zero</button></li>
+      <li><button data-correct>The initialization is healthy: ln(10) ≈ 2.30 is the loss of a uniform guess</button></li>
+      <li><button>The learning rate is too high</button></li>
+      <li><button>The labels are leaking into the features</button></li>
+    </ul>
+    <div class="explain">A network with small initial weights predicts roughly uniform probabilities; cross-entropy of a uniform guess over C classes is ln(C). A much larger value means outputs are too large at init; a much smaller value suggests leakage.</div>
+  </div>
+
+  <div class="q">
+    <p class="question">4. Training loss is jagged, stuck well above where a simple baseline gets, and occasionally jumps to NaN. The first thing to try is…</p>
+    <ul class="opts">
+      <li><button>Add more layers</button></li>
+      <li><button>Increase the batch size to 4096</button></li>
+      <li><button data-correct>Reduce the learning rate by 3–10× (and add gradient clipping)</button></li>
+      <li><button>Switch from ReLU to tanh</button></li>
+    </ul>
+    <div class="explain">Jagged, non-decreasing loss and NaNs are the signature of a learning rate that is too high (Figure 16.4, Figure 16.9 panel C). Clipping prevents the single catastrophic step; lowering the rate fixes the cause.</div>
+  </div>
+
+  <div class="q">
+    <p class="question">5. Why does batch norm require calling <code>model.eval()</code> before validation?</p>
+    <ul class="opts">
+      <li><button>To turn off gradient computation</button></li>
+      <li><button data-correct>So it normalizes with running statistics instead of the current batch's statistics</button></li>
+      <li><button>To move the model to the CPU</button></li>
+      <li><button>It doesn't; only dropout needs <code>eval()</code></button></li>
+    </ul>
+    <div class="explain">In train mode batch norm uses the mean/variance of the mini-batch, so a prediction depends on which other examples are in the batch. In eval mode it uses the running averages accumulated during training. Gradient computation is a separate switch (<code>torch.no_grad()</code>).</div>
+  </div>
+
+  <div class="q">
+    <p class="question">6. You have 40,000 rows, 25 numeric and categorical columns, a few missing values, and a week. The most defensible first model is…</p>
+    <ul class="opts">
+      <li><button>A 6-layer MLP with layer norm and one-cycle schedule</button></li>
+      <li><button data-correct>A gradient-boosted tree with default settings, as the baseline any network must beat</button></li>
+      <li><button>A pretrained transformer fine-tuned on the table</button></li>
+      <li><button>Logistic regression only; neural networks never work on tables</button></li>
+    </ul>
+    <div class="explain">On ordinary tabular data a GBM is the strongest accuracy-per-effort choice and handles missing values and categoricals natively. Build it first; an MLP is justified only if it beats that baseline on the same validation split.</div>
+  </div>
+</div>
+
+<h2 id="exercises">Exercises</h2>
+
+<div class="exercise"><div class="title">Exercise 16.1 — Break the loop on purpose</div>
+<p>Take the training loop from §3 and introduce each of these bugs one at a time, re-running each time: (a) delete <code>opt.zero_grad()</code>; (b) add <code>nn.Sigmoid()</code> as the final layer; (c) pass <code>y_tr</code> with shape <code>(n,)</code> instead of <code>(n, 1)</code>; (d) set <code>lr=1.0</code>. For each, record what the loss curve looks like at epochs 5, 10, 15 and which check from the §8 recipe would have caught it.</p>
+<details class="answer"><summary>Show answer</summary>
+<p>(a) Loss falls for a few batches then stalls or oscillates as stale gradients accumulate; the gradient-norm log grows steadily — caught by "plot grads". (b) Loss decreases slowly and plateaus higher (around 0.3–0.4 instead of 0.15); the model cannot produce confident predictions — caught by the "loss at init" check being suspicious (≈ 0.63 rather than 0.69, since squashed outputs are pulled toward 0.5 twice) and by "overfit one batch" failing to reach ~0. (c) <code>BCEWithLogitsLoss</code> raises a shape-mismatch error; with <code>MSELoss</code> it would broadcast silently — caught by "check shapes". (d) Loss jumps around and typically hits NaN within an epoch — the learning-rate signature; caught by the NaN check and Figure 16.9 C.</p>
+</details>
+</div>
+
+<div class="exercise"><div class="title">Exercise 16.2 — An LR range test by hand</div>
+<p>On the breast-cancer MLP from §7, run 100 mini-batch steps with the learning rate growing geometrically from 10<sup>−5</sup> to 10 (multiply by ≈ 1.15 each step). Record (lr, loss) pairs and plot loss against log(lr). Identify the steepest-descent region and the explosion point. Then train normally at one-tenth of the "loss minimum" learning rate and at the explosion point, and compare.</p>
+<details class="answer"><summary>Show answer</summary>
+<p>You should see loss flat around 0.69 for lr &lt; 10<sup>−4</sup>, a steep drop between roughly 10<sup>−3</sup> and 3×10<sup>−2</sup>, a minimum around 10<sup>−2</sup>–3×10<sup>−2</sup>, and divergence above ≈ 0.1–0.3 (exact values depend on the seed and batch). A constant rate of ≈ 2×10<sup>−3</sup> trains smoothly to ~0.06 loss; the explosion-point rate oscillates or NaNs. The test costs seconds and replaces guessing.</p>
+</details>
+</div>
+
+<div class="exercise"><div class="title">Exercise 16.3 — Do it at work: MLP vs GBM on your own table</div>
+<p>Take a tabular dataset you actually use (or <code>load_wine</code> if you have none to hand). Build a proper split (Chapter 7), a scaled MLP using the §10 default configuration with early stopping, and a LightGBM or XGBoost model with defaults. Compare on the held-out set with the metric that matters to your business, run the MLP with three seeds, and write a five-line memo: which model, by how much, with what uncertainty, at what training cost, and what you would need to change for the other one to win.</p>
+<details class="answer"><summary>Show answer</summary>
+<p>There is no fixed answer, but expect: the GBM within a few minutes matches or beats the untuned MLP; the MLP's three seeds spread by a noticeable fraction of the gap; the MLP becomes competitive only after scaling, embeddings for high-cardinality columns, and some tuning of lr and weight decay. If the MLP wins clearly, check for leakage in your features first, then for high-cardinality categoricals — that is the usual honest reason.</p>
+</details>
+</div>
+
+<div class="summary">
+  <h3>Chapter summary</h3>
+  <ul class="checklist">
+    <li>Autograd records every tensor operation in a graph; <code>backward()</code> replays it in reverse. You write the forward pass only. Gradients accumulate, so clear them every step.</li>
+    <li>The cast: Tensor, Module (parameters, <code>state_dict</code>), loss, optimizer, Dataset/DataLoader, device. Scale inputs; use <code>float32</code>; labels <code>int64</code> for cross-entropy.</li>
+    <li>The loop: forward → loss → zero_grad → backward → step, per batch; then <code>eval()</code> + <code>no_grad()</code> validation and early stopping with the best <code>state_dict</code> restored.</li>
+    <li>Models output logits. <code>BCEWithLogitsLoss</code> and <code>CrossEntropyLoss</code> own the sigmoid/softmax. Never apply both.</li>
+    <li>Momentum averages gradients so ravine bounces cancel; Adam also normalizes step size per weight; AdamW decouples weight decay. Default: AdamW, lr 1e-3, wd 1e-2.</li>
+    <li>The learning rate is the hyperparameter. Too high: jagged, NaN. Too low: crawl. Measure with a range test; schedule with warmup + cosine or ReduceLROnPlateau; re-tune when batch size changes.</li>
+    <li>He/Xavier init keeps activation variance ≈ 1 through depth; batch norm (across the batch) and layer norm (across features) keep it there during training. Call <code>eval()</code> before inference.</li>
+    <li>Regularizers stack: weight decay, dropout 0.1–0.3, augmentation, early stopping, clipping at 1.0.</li>
+    <li>Before a real run: check shapes, loss at init ≈ ln(C), overfit one batch, watch NaNs and gradient norms. Then read the curves: healthy / overfitting / LR too high / underfitting.</li>
+    <li>Save <code>state_dict</code> plus optimizer and scheduler state; seed everything but report over several seeds. On plain tables, the GBM is the baseline an MLP must beat.</li>
+  </ul>
+</div>
+
+<div class="mark-done"></div>
+<nav class="pager"></nav>
+
+</div></main>
+</div>
+<script src="../assets/chapters.js"></script>
+<script src="../assets/app.js"></script>
+<script>
+(function () {
+  // ---------- Widget 1: optimizer race on an elongated quadratic ----------
+  var svg = document.getElementById("race-svg"), btn = document.getElementById("race-run");
+  var lrS = document.getElementById("race-lr"), stepOut = document.getElementById("race-step");
+  if (!svg || !btn) return;
+  var A = 1, B = 12, X0 = -4.3, Y0 = 1.8, N = 90, SC = 62, CX = 350, CY = 200, timer = null;
+  function sx(x) { return CX + x * SC; } function sy(y) { return CY - y * SC; }
+  function loss(p) { return 0.5 * (A * p[0] * p[0] + B * p[1] * p[1]); }
+  function clamp(p) { return [Math.max(-5.3, Math.min(5.3, p[0])), Math.max(-2.7, Math.min(2.7, p[1]))]; }
+  function run(kind, lr) {
+    var p = [X0, Y0], path = [p.slice()], v = [0, 0], m = [0, 0], s = [0, 0];
+    for (var t = 1; t <= N; t++) {
+      var g = [A * p[0], B * p[1]];
+      if (kind === "sgd") { p = [p[0] - lr * g[0], p[1] - lr * g[1]]; }
+      else if (kind === "mom") { v = [0.9 * v[0] + g[0], 0.9 * v[1] + g[1]]; p = [p[0] - lr * v[0], p[1] - lr * v[1]]; }
+      else {
+        m = [0.9 * m[0] + 0.1 * g[0], 0.9 * m[1] + 0.1 * g[1]];
+        s = [0.999 * s[0] + 0.001 * g[0] * g[0], 0.999 * s[1] + 0.001 * g[1] * g[1]];
+        var c1 = 1 - Math.pow(0.9, t), c2 = 1 - Math.pow(0.999, t);
+        p = [p[0] - lr * (m[0] / c1) / (Math.sqrt(s[0] / c2) + 1e-8), p[1] - lr * (m[1] / c1) / (Math.sqrt(s[1] / c2) + 1e-8)];
+      }
+      p = clamp(p); path.push(p.slice());
+    }
+    return path;
+  }
+  function base() {
+    var s = "";
+    var levels = [0.15, 0.6, 1.5, 3, 5.5, 9, 13.5];
+    for (var i = 0; i < levels.length; i++) {
+      var c = levels[i];
+      s += '<ellipse cx="' + CX + '" cy="' + CY + '" rx="' + (Math.sqrt(2 * c / A) * SC).toFixed(1) + '" ry="' + (Math.sqrt(2 * c / B) * SC).toFixed(1) + '" fill="none" stroke="currentColor" stroke-opacity=".28"/>';
+    }
+    s += '<circle cx="' + CX + '" cy="' + CY + '" r="4" fill="currentColor"/><text x="' + (CX + 8) + '" y="' + (CY + 16) + '" font-size="11" opacity=".7">minimum</text>';
+    s += '<circle cx="' + sx(X0) + '" cy="' + sy(Y0) + '" r="5" fill="none" stroke="currentColor" stroke-width="1.5"/><text x="' + (sx(X0) - 2) + '" y="' + (sy(Y0) - 10) + '" font-size="11" opacity=".7">start</text>';
+    s += '<text x="' + CX + '" y="372" text-anchor="middle" font-size="12" opacity=".7">x (flat direction)</text>';
+    s += '<text x="14" y="' + CY + '" font-size="12" opacity=".7" transform="rotate(-90 14 ' + CY + ')" text-anchor="middle">y (steep direction)</text>';
+    return s;
+  }
+  function pts(path, k) { var a = []; for (var i = 0; i <= k && i < path.length; i++) a.push(sx(path[i][0]).toFixed(1) + "," + sy(path[i][1]).toFixed(1)); return a.join(" "); }
+  function draw(paths, k) {
+    var cols = ["var(--s1)", "var(--s2)", "var(--s3)"], names = ["SGD", "momentum", "Adam"], s = base();
+    for (var i = 0; i < 3; i++) {
+      var p = paths[i], q = p[Math.min(k, p.length - 1)];
+      s += '<polyline points="' + pts(p, k) + '" fill="none" stroke="' + cols[i] + '" stroke-width="2" stroke-opacity=".9"/>';
+      s += '<circle cx="' + sx(q[0]).toFixed(1) + '" cy="' + sy(q[1]).toFixed(1) + '" r="5" fill="' + cols[i] + '"/>';
+      s += '<text x="' + (520 + 0) + '" y="' + (30 + 18 * i) + '" font-size="12" fill="' + cols[i] + '" font-weight="700">' + names[i] + ': loss ' + loss(q).toFixed(3) + '</text>';
+    }
+    svg.innerHTML = s; stepOut.textContent = String(Math.min(k, N));
+  }
+  function start() {
+    if (timer) clearInterval(timer);
+    var lr = +lrS.value, paths = [run("sgd", lr), run("mom", lr), run("adam", lr)], k = 0;
+    draw(paths, 0);
+    timer = setInterval(function () { k++; draw(paths, k); if (k >= N) { clearInterval(timer); timer = null; } }, 45);
+  }
+  btn.addEventListener("click", start);
+  lrS.addEventListener("input", function () { if (!timer) draw([run("sgd", +lrS.value), run("mom", +lrS.value), run("adam", +lrS.value)], 0); });
+  draw([run("sgd", +lrS.value), run("mom", +lrS.value), run("adam", +lrS.value)], 0);
+})();
+(function () {
+  // ---------- Widget 2: learning-rate schedule plotter ----------
+  var svg = document.getElementById("sch-svg"), sel = document.getElementById("sch-type");
+  var lrS = document.getElementById("sch-lr"), wS = document.getElementById("sch-warm"), eS = document.getElementById("sch-ep");
+  if (!svg || !sel) return;
+  function lrAt(e, T, W, mx, type) {
+    if (type === "const") return mx;
+    if (type === "one") { var pk = 0.3, u = e / (T - 1); return u < pk ? mx * (0.1 + 0.9 * u / pk) : mx * (0.001 + 0.999 * 0.5 * (1 + Math.cos(Math.PI * (u - pk) / (1 - pk)))); }
+    if (W > 0 && e < W) return mx * (e + 1) / W;
+    var t = (e - W) / Math.max(1, T - W);
+    if (type === "step") return mx * Math.pow(0.1, Math.min(2, Math.floor(t * 3)));
+    if (type === "exp") return mx * Math.pow(0.02, t);
+    return 0.5 * mx * (1 + Math.cos(Math.PI * t));
+  }
+  function render() {
+    var T = +eS.value, W = +wS.value, mx = +lrS.value, type = sel.value, s = "";
+    var L = 70, R = 670, TOP = 30, BOT = 250;
+    function px(e) { return L + (R - L) * e / (T - 1); } function py(v) { return BOT - (BOT - TOP) * v / (mx * 1.1); }
+    s += '<line x1="' + L + '" y1="' + BOT + '" x2="' + R + '" y2="' + BOT + '" stroke="currentColor" stroke-opacity=".5"/>';
+    s += '<line x1="' + L + '" y1="' + BOT + '" x2="' + L + '" y2="' + TOP + '" stroke="currentColor" stroke-opacity=".5"/>';
+    if (type !== "one" && W > 0) s += '<rect x="' + L + '" y="' + TOP + '" width="' + (px(W - 1) - L).toFixed(1) + '" height="' + (BOT - TOP) + '" fill="var(--s2)" fill-opacity=".12"/>';
+    var ticks = [0, 0.5, 1];
+    for (var i = 0; i < ticks.length; i++) { var v = mx * ticks[i]; s += '<line x1="' + L + '" y1="' + py(v).toFixed(1) + '" x2="' + R + '" y2="' + py(v).toFixed(1) + '" stroke="currentColor" stroke-opacity=".12"/><text x="' + (L - 6) + '" y="' + (py(v) + 4).toFixed(1) + '" text-anchor="end" font-size="11">' + v.toFixed(3) + '</text>'; }
+    var stepE = T <= 20 ? 2 : T <= 50 ? 5 : 10;
+    for (var e = 0; e < T; e += stepE) s += '<text x="' + px(e).toFixed(1) + '" y="' + (BOT + 16) + '" text-anchor="middle" font-size="11">' + (e + 1) + '</text>';
+    s += '<text x="' + ((L + R) / 2) + '" y="' + (BOT + 36) + '" text-anchor="middle" font-size="12" opacity=".7">epoch</text>';
+    s += '<text x="18" y="' + ((TOP + BOT) / 2) + '" text-anchor="middle" font-size="12" opacity=".7" transform="rotate(-90 18 ' + ((TOP + BOT) / 2) + ')">learning rate</text>';
+    var p = [];
+    for (var k = 0; k < T; k++) p.push(px(k).toFixed(1) + "," + py(lrAt(k, T, W, mx, type)).toFixed(1));
+    s += '<polyline points="' + p.join(" ") + '" fill="none" stroke="var(--s1)" stroke-width="2.5"/>';
+    for (var k2 = 0; k2 < T; k2++) s += '<circle cx="' + px(k2).toFixed(1) + '" cy="' + py(lrAt(k2, T, W, mx, type)).toFixed(1) + '" r="2.2" fill="var(--s1)"/>';
+    s += '<text x="' + R + '" y="' + (TOP - 8) + '" text-anchor="end" font-size="11" opacity=".8">last epoch lr = ' + lrAt(T - 1, T, W, mx, type).toExponential(2) + '</text>';
+    svg.innerHTML = s;
+  }
+  [sel, lrS, wS, eS].forEach(function (el) { el.addEventListener("input", render); el.addEventListener("change", render); });
+  render();
+})();
+</script>
+</body>
+</html>
