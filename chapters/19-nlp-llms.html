@@ -917,6 +917,10 @@ ASSISTANT
 <h3>RAG in depth</h3>
 <p><strong>Retrieval-augmented generation</strong> is search plus generation: find the passages that answer the question, paste them into the prompt, and ask the model to answer <em>from those passages</em>. It turns the LLM from an oracle into a reading assistant, which is a much more trustworthy job.</p>
 
+<div class="callout eli9"><div class="title">Explain it like I'm 9</div>
+<p>A closed-book exam tests what you memorized; an open-book exam lets you look things up and asks you to explain what you found. Prompting alone is closed-book — the model answers from whatever it half-remembers from training. RAG is open-book: first find the right page (retrieval), then read it and answer (generation). Open-book answers are more accurate, and you can point at the page you used.</p>
+</div>
+
 <figure class="fig">
 <svg viewBox="0 0 820 400" role="img" aria-label="RAG architecture: offline, documents are chunked, embedded and stored in a vector index; online, the user question is embedded, the top-k similar chunks are retrieved, combined with the question into a prompt, and the LLM generates an answer with citations; failure modes are annotated at chunking, retrieval, index staleness and generation">
   <defs><marker id="arr-g8" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>

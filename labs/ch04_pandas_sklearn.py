@@ -87,9 +87,8 @@ def load_orders(path: str) -> pd.DataFrame:
 
     Example: a CSV row `10001,7,north,pending,2024-03-02` -> amount NaN, ordered Timestamp('2024-03-02')
     """
-    orders = pd.read_csv(path, parse_dates=["ordered"])
-    orders["amount"] = pd.to_numeric(orders["amount"], errors="coerce")
-    return orders
+    # TODO: pd.read_csv(path, parse_dates=["ordered"]); then pd.to_numeric(orders["amount"], errors="coerce")
+    raise NotImplementedError("Task: load_orders")
 
 
 # ---------------------------------------------------------------- Task 2
@@ -107,10 +106,8 @@ def revenue_by_region(orders: pd.DataFrame) -> pd.DataFrame:
     north          2     10.0        10.0
     south          1      5.0         5.0
     """
-    out = orders.groupby("region").agg(n_orders=("order_id", "size"),
-                                       revenue=("amount", "sum"),
-                                       avg_amount=("amount", "mean"))
-    return out.sort_values("revenue", ascending=False)
+    # TODO: orders.groupby("region").agg(n_orders=("order_id", "size"), revenue=("amount", "sum"), ...) then sort_values
+    raise NotImplementedError("Task: revenue_by_region")
 
 
 # ---------------------------------------------------------------- Task 3
@@ -122,9 +119,8 @@ def attach_customer_tier(orders: pd.DataFrame, customers: pd.DataFrame) -> pd.Da
 
     Example: orders for customers [1, 999], customers table has 1 -> tiers [<tier of 1>, "unknown"]
     """
-    joined = pd.merge(orders, customers[["customer_id", "tier"]], on="customer_id", how="left")
-    joined["tier"] = joined["tier"].fillna("unknown")
-    return joined
+    # TODO: pd.merge(orders, customers, on="customer_id", how="left"); then .fillna("unknown") on tier
+    raise NotImplementedError("Task: attach_customer_tier")
 
 
 # ---------------------------------------------------------------- Task 4
@@ -140,12 +136,8 @@ def add_time_features(orders: pd.DataFrame) -> pd.DataFrame:
     Example: ordered = 2024-01-06 (a Saturday), earliest order 2024-01-01 ->
              month 1, weekday 5, is_weekend True, days_since_first 5
     """
-    out = orders.copy()
-    out["month"] = out["ordered"].dt.month
-    out["weekday"] = out["ordered"].dt.weekday
-    out["is_weekend"] = out["weekday"] >= 5
-    out["days_since_first"] = (out["ordered"] - out["ordered"].min()).dt.days
-    return out
+    # TODO: copy; use the .dt accessor (month, weekday); weekday >= 5; (ordered - ordered.min()).dt.days
+    raise NotImplementedError("Task: add_time_features")
 
 
 # ---------------------------------------------------------------- Task 5
@@ -159,21 +151,8 @@ def train_tumour_model(seed: int = 42) -> dict:
              "confusion_matrix": <2x2 ndarray from sklearn.metrics.confusion_matrix>,
              "feature_names": list[str]}.
     """
-    from sklearn.datasets import load_breast_cancer
-    from sklearn.linear_model import LogisticRegression
-    from sklearn.metrics import accuracy_score, confusion_matrix
-    from sklearn.model_selection import train_test_split
-    from sklearn.pipeline import Pipeline
-    from sklearn.preprocessing import StandardScaler
-
-    data = load_breast_cancer()
-    X, y = data.data, data.target
-    X_tr, X_te, y_tr, y_te = train_test_split(X, y, test_size=0.2, random_state=seed, stratify=y)
-    model = Pipeline([("scale", StandardScaler()), ("clf", LogisticRegression(max_iter=1000))])
-    model.fit(X_tr, y_tr)
-    pred = model.predict(X_te)
-    return {"model": model, "test_accuracy": float(accuracy_score(y_te, pred)),
-            "confusion_matrix": confusion_matrix(y_te, pred), "feature_names": list(data.feature_names)}
+    # TODO: follow the steps in the docstring; fit the Pipeline on X_tr only; score on X_te
+    raise NotImplementedError("Task: train_tumour_model")
 
 
 # ---------------------------------------------------------------- Task 6
@@ -183,11 +162,8 @@ def save_and_reload(model, path: str):
     Creates the parent directory if needed, joblib.dump(model, path), then returns
     joblib.load(path). The returned object must predict exactly like the original.
     """
-    import joblib
-
-    os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
-    joblib.dump(model, path)
-    return joblib.load(path)
+    # TODO: os.makedirs(..., exist_ok=True); joblib.dump(model, path); return joblib.load(path)
+    raise NotImplementedError("Task: save_and_reload")
 
 
 # ---------------------------------------------------------------- Task 7
@@ -203,11 +179,8 @@ def top_k_coefficients(model, feature_names: list[str], k: int = 5) -> pd.DataFr
     0         b  -2.0
     1         c   1.0
     """
-    coef = np.asarray(model.named_steps["clf"].coef_).ravel()
-    table = pd.DataFrame({"feature": list(feature_names), "coef": coef})
-    table["abs"] = table["coef"].abs()
-    return (table.sort_values("abs", ascending=False, kind="stable")
-                 .head(k).drop(columns="abs").reset_index(drop=True))
+    # TODO: model.named_steps["clf"].coef_.ravel(); build a DataFrame, sort by abs(coef) descending, head(k), reset_index(drop=True)
+    raise NotImplementedError("Task: top_k_coefficients")
 
 
 if __name__ == "__main__":

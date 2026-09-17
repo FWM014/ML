@@ -87,16 +87,8 @@ def build_mlp(d_in: int, hidden: tuple[int, ...] = (32, 32), d_out: int = 1,
     Example: build_mlp(2, (32, 16), 1) has 2*32+32 + 32*16+16 + 16*1+1 = 657 parameters
     and maps a (n, 2) batch to (n, 1) logits.
     """
-    layers: list[nn.Module] = []
-    prev = d_in
-    for h in hidden:
-        layers.append(nn.Linear(prev, h))
-        layers.append(nn.ReLU())
-        if dropout > 0:
-            layers.append(nn.Dropout(dropout))
-        prev = h
-    layers.append(nn.Linear(prev, d_out))
-    return nn.Sequential(*layers)
+    # TODO: loop over hidden widths appending nn.Linear, nn.ReLU (and nn.Dropout if dropout > 0); end with nn.Linear(prev, d_out); return nn.Sequential(*layers)
+    raise NotImplementedError("Task: build_mlp")
 
 
 # ---------------------------------------------------------------- Task 2
@@ -118,42 +110,8 @@ def train_with_early_stopping(model: nn.Module, X_tr: torch.Tensor, y_tr: torch.
     Returns {"train_loss": [...], "val_loss": [...], "best_epoch": int (1-based),
              "epochs_run": int}. len(train_loss) == len(val_loss) == epochs_run.
     """
-    torch.manual_seed(seed)
-    loss_fn = nn.BCEWithLogitsLoss()
-    if weight_decay > 0:
-        opt = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
-    else:
-        opt = torch.optim.Adam(model.parameters(), lr=lr)
-    history = {"train_loss": [], "val_loss": [], "best_epoch": 0, "epochs_run": 0}
-    best_val, best_state, bad = float("inf"), None, 0
-    n = len(X_tr)
-    for epoch in range(1, max_epochs + 1):
-        model.train()
-        perm = torch.randperm(n)
-        for i in range(0, n, batch_size):
-            idx = perm[i:i + batch_size]
-            loss = loss_fn(model(X_tr[idx]), y_tr[idx])
-            opt.zero_grad()
-            loss.backward()
-            opt.step()
-        model.eval()
-        with torch.no_grad():
-            tr = loss_fn(model(X_tr), y_tr).item()
-            va = loss_fn(model(X_va), y_va).item()
-        history["train_loss"].append(tr)
-        history["val_loss"].append(va)
-        history["epochs_run"] = epoch
-        if va < best_val - 1e-4:
-            best_val, bad = va, 0
-            history["best_epoch"] = epoch
-            best_state = {k: v.clone() for k, v in model.state_dict().items()}
-        else:
-            bad += 1
-        if bad >= patience:
-            break
-    model.load_state_dict(best_state)
-    model.eval()
-    return history
+    # TODO: seed -> optimizer + BCEWithLogitsLoss -> per epoch: train on shuffled mini-batches, then eval() + no_grad() losses; track best state_dict, stop after `patience` bad epochs, load the best state back
+    raise NotImplementedError("Task: train_with_early_stopping")
 
 
 # ---------------------------------------------------------------- Task 3
@@ -167,19 +125,8 @@ def compare_optimizers(X: torch.Tensor, y: torch.Tensor, steps: int = 60, seed: 
     Returns {"sgd": float, "adam": float}. Calling twice with the same seed must give the
     same numbers.
     """
-    loss_fn = nn.BCEWithLogitsLoss()
-    out = {}
-    for name, cls, kw in [("sgd", torch.optim.SGD, dict(lr=0.05)), ("adam", torch.optim.Adam, dict(lr=0.01))]:
-        torch.manual_seed(seed)
-        net = build_mlp(X.shape[1], (16,), 1)
-        opt = cls(net.parameters(), **kw)
-        for _ in range(steps):
-            loss = loss_fn(net(X), y)
-            opt.zero_grad()
-            loss.backward()
-            opt.step()
-        out[name] = float(loss.item())
-    return out
+    # TODO: for each of SGD(lr=0.05) and Adam(lr=0.01): torch.manual_seed(seed); net = build_mlp(d_in, (16,), 1); run `steps` full-batch steps; store the final loss
+    raise NotImplementedError("Task: compare_optimizers")
 
 
 # ---------------------------------------------------------------- Task 4
@@ -196,21 +143,8 @@ def lr_schedule(base_lr: float = 0.1, warmup: int = 3, total: int = 12) -> list[
     Example: lr_schedule(0.1, 3, 12)[:4] == [0.0333, 0.0667, 0.1, 0.1] (rounded), and the
     last value is ~0.003 — the schedule never reaches exactly 0 inside the loop.
     """
-    net = nn.Linear(4, 1)
-    opt = torch.optim.SGD(net.parameters(), lr=base_lr)
-
-    def lr_lambda(e: int) -> float:
-        if e < warmup:
-            return (e + 1) / warmup
-        return 0.5 * (1 + math.cos(math.pi * (e - warmup) / (total - warmup)))
-
-    sched = torch.optim.lr_scheduler.LambdaLR(opt, lr_lambda)
-    lrs = []
-    for _ in range(total):
-        lrs.append(float(opt.param_groups[0]["lr"]))
-        opt.step()
-        sched.step()
-    return lrs
+    # TODO: SGD on nn.Linear(4, 1) with lr=base_lr -> LambdaLR(opt, lr_lambda) -> per epoch: record opt.param_groups[0]['lr'], then opt.step(); sched.step()
+    raise NotImplementedError("Task: lr_schedule")
 
 
 # ---------------------------------------------------------------- Task 5
@@ -227,16 +161,8 @@ def regularization_gap(seed: int = 0, epochs: int = 30) -> dict:
     {"plain": {"train_loss", "val_loss", "gap"}, "regularized": {...}} with
     gap = val_loss - train_loss. The regularized gap must be clearly smaller.
     """
-    X_tr, X_va, y_tr, y_va = make_overfit_data(seed)
-    result = {}
-    for name, p_drop, wd in [("plain", 0.0, 0.0), ("regularized", 0.5, 0.3)]:
-        torch.manual_seed(seed)
-        model = build_mlp(X_tr.shape[1], (64, 64), 1, dropout=p_drop)
-        hist = train_with_early_stopping(model, X_tr, y_tr, X_va, y_va, lr=1e-3, max_epochs=epochs,
-                                         patience=epochs, batch_size=16, weight_decay=wd, seed=seed)
-        tr, va = hist["train_loss"][-1], hist["val_loss"][-1]
-        result[name] = {"train_loss": tr, "val_loss": va, "gap": va - tr}
-    return result
+    # TODO: make_overfit_data(seed); for (name, dropout, wd) in [('plain', 0, 0), ('regularized', 0.5, 0.3)]: seed, build_mlp(d, (64, 64), 1, dropout), train (patience=epochs), report last-epoch losses and gap
+    raise NotImplementedError("Task: regularization_gap")
 
 
 # ---------------------------------------------------------------- Task 6
@@ -249,12 +175,8 @@ def save_and_reload(model: nn.Module, builder, path: str) -> nn.Module:
       fresh.load_state_dict(torch.load(path)); fresh.eval().
     The reloaded model must give torch.allclose outputs to the original on any input.
     """
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    torch.save(model.state_dict(), path)
-    fresh = builder()
-    fresh.load_state_dict(torch.load(path))
-    fresh.eval()
-    return fresh
+    # TODO: makedirs -> torch.save(model.state_dict(), path) -> fresh = builder() -> fresh.load_state_dict(torch.load(path)) -> fresh.eval() -> return fresh
+    raise NotImplementedError("Task: save_and_reload")
 
 
 if __name__ == "__main__":

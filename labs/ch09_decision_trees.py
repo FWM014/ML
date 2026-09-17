@@ -89,14 +89,7 @@ def impurity(counts, criterion: str = "gini") -> float:
              impurity([8, 2]) -> 0.32;  impurity([4, 0], "entropy") -> 0.0
     """
     # TODO: p = counts / sum; gini = 1 - sum(p**2); entropy = -sum(p*log2 p) over p > 0; raise ValueError otherwise
-    p = np.asarray(counts, dtype=float)
-    p = p / p.sum()
-    if criterion == "gini":
-        return float(1.0 - np.sum(p ** 2))
-    if criterion == "entropy":
-        p = p[p > 0]
-        return float(-np.sum(p * np.log2(p)))
-    raise ValueError(f"unknown criterion {criterion!r}")
+    raise NotImplementedError("Task: impurity")
 
 
 # ---------------------------------------------------------------- Task 2
@@ -117,25 +110,7 @@ def split_candidates(x: np.ndarray, y: np.ndarray) -> pd.DataFrame:
     5/5 parent, which shifts every gain by +0.029).
     """
     # TODO: sort the distinct values, take midpoints, and for each threshold count (stay, churn) on each side
-    x = np.asarray(x, dtype=float)
-    y = np.asarray(y).astype(int)
-    n = len(y)
-    classes = np.unique(y)
-    parent = [int((y == c).sum()) for c in classes]
-    h_parent = impurity(parent, "entropy")
-    vals = np.unique(x)
-    rows = []
-    for t in (vals[:-1] + vals[1:]) / 2:
-        left, right = y[x <= t], y[x > t]
-        cl = [int((left == c).sum()) for c in classes]
-        cr = [int((right == c).sum()) for c in classes]
-        wl, wr = len(left) / n, len(right) / n
-        rows.append({
-            "threshold": float(t),
-            "weighted_gini": wl * impurity(cl) + wr * impurity(cr),
-            "info_gain": h_parent - (wl * impurity(cl, "entropy") + wr * impurity(cr, "entropy")),
-        })
-    return pd.DataFrame(rows, columns=["threshold", "weighted_gini", "info_gain"])
+    raise NotImplementedError("Task: split_candidates")
 
 
 # ---------------------------------------------------------------- Task 3
@@ -151,17 +126,7 @@ def best_split(X, y) -> tuple[int, float, float]:
              child impurity (and the same threshold up to float rounding).
     """
     # TODO: loop over columns, reuse split_candidates, keep the lowest weighted_gini
-    Xa = np.asarray(X, dtype=float)
-    best = (0, float("nan"), float("inf"))
-    for j in range(Xa.shape[1]):
-        table = split_candidates(Xa[:, j], y)
-        if table.empty:
-            continue
-        i = int(table["weighted_gini"].to_numpy().argmin())
-        g = float(table.loc[i, "weighted_gini"])
-        if g < best[2]:
-            best = (j, float(table.loc[i, "threshold"]), g)
-    return best
+    raise NotImplementedError("Task: best_split")
 
 
 # ---------------------------------------------------------------- Task 4
@@ -177,20 +142,7 @@ def best_depth(X, y, depths=(1, 2, 3, 4, 5, 6, 8), seed: int = 0) -> tuple[int, 
     Example: on load_wine the sweep peaks at depth 3 (cv ~ 0.94), exactly as in the chapter.
     """
     # TODO: loop over depths, cross_val_score + a full fit for train accuracy, pick argmax of cv mean
-    from sklearn.model_selection import StratifiedKFold, cross_val_score
-    from sklearn.tree import DecisionTreeClassifier
-
-    cv = StratifiedKFold(5, shuffle=True, random_state=seed)
-    rows = []
-    for d in depths:
-        tree = DecisionTreeClassifier(max_depth=d, random_state=seed)
-        s = cross_val_score(tree, X, y, cv=cv)
-        tree.fit(X, y)
-        rows.append({"max_depth": d, "train_acc": float(tree.score(X, y)),
-                     "cv_acc": float(s.mean()), "cv_std": float(s.std())})
-    table = pd.DataFrame(rows)
-    best = int(table.loc[table["cv_acc"].idxmax(), "max_depth"])
-    return best, table
+    raise NotImplementedError("Task: best_depth")
 
 
 # ---------------------------------------------------------------- Task 5
@@ -208,18 +160,7 @@ def prune_alpha(X_tr, y_tr, seed: int = 0, cv: int = 5):
              the pruned tree ~10, with higher held-out accuracy.
     """
     # TODO: fit the full tree, walk the pruning path with cross_val_score, refit at the best alpha
-    from sklearn.model_selection import cross_val_score
-    from sklearn.tree import DecisionTreeClassifier
-
-    full = DecisionTreeClassifier(random_state=seed).fit(X_tr, y_tr)
-    alphas = full.cost_complexity_pruning_path(X_tr, y_tr).ccp_alphas[:-1]
-    best_a, best_score = None, -1.0
-    for a in alphas:
-        score = cross_val_score(DecisionTreeClassifier(random_state=seed, ccp_alpha=a), X_tr, y_tr, cv=cv).mean()
-        if score > best_score:
-            best_a, best_score = float(a), float(score)
-    pruned = DecisionTreeClassifier(random_state=seed, ccp_alpha=best_a).fit(X_tr, y_tr)
-    return best_a, pruned, full
+    raise NotImplementedError("Task: prune_alpha")
 
 
 # ---------------------------------------------------------------- Task 6
@@ -238,13 +179,7 @@ def importance_report(tree, X_te, y_te, feature_names, n_repeats: int = 20,
              real driver is not.
     """
     # TODO: build the two Series, compute the suspect flag, sort
-    from sklearn.inspection import permutation_importance
-
-    perm = permutation_importance(tree, X_te, y_te, n_repeats=n_repeats, random_state=seed)
-    rep = pd.DataFrame({"impurity": tree.feature_importances_,
-                        "permutation": perm.importances_mean}, index=list(feature_names))
-    rep["suspect"] = rep["permutation"] <= tol
-    return rep.sort_values("impurity", ascending=False)
+    raise NotImplementedError("Task: importance_report")
 
 
 # ---------------------------------------------------------------- Task 7
@@ -265,27 +200,7 @@ def segment_table(X, y, feature_names, n_segments: int = 5, min_leaf_frac: float
              1500, every n >= 30, and the top rule mentions late_payments_24m.
     """
     # TODO: fit the tree, then recurse over tree_.children_left/right collecting conditions until a leaf (children == -1)
-    from sklearn.tree import DecisionTreeClassifier
-
-    n = len(y)
-    tree = DecisionTreeClassifier(max_leaf_nodes=n_segments, min_samples_leaf=math.ceil(min_leaf_frac * n),
-                                  random_state=seed).fit(X, y)
-    t = tree.tree_
-    rows = []
-
-    def walk(node: int, conds: list[str]) -> None:
-        if t.children_left[node] == -1:
-            counts = t.value[node][0]            # class counts (or fractions, in newer sklearn)
-            pos = counts[1] / counts.sum()
-            rows.append({"rule": " and ".join(conds) if conds else "all rows",
-                         "n": int(t.n_node_samples[node]), "positive_rate": float(pos)})
-            return
-        name, thr = feature_names[t.feature[node]], t.threshold[node]
-        walk(t.children_left[node], conds + [f"{name} <= {thr:.3g}"])
-        walk(t.children_right[node], conds + [f"{name} > {thr:.3g}"])
-
-    walk(0, [])
-    return pd.DataFrame(rows).sort_values("positive_rate", ascending=False).reset_index(drop=True)
+    raise NotImplementedError("Task: segment_table")
 
 
 if __name__ == "__main__":
