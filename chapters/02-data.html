@@ -1,0 +1,620 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>02 · Data: The Raw Material — ML: Zero to Expert</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body data-chapter="02">
+<header class="topbar"></header>
+<div class="progress-track"><div></div></div>
+<div class="shell">
+<nav class="sidebar"></nav>
+<main class="content"><div class="container">
+
+<header class="ch-header">
+  <div class="kicker">Part I · Foundations · Chapter 02</div>
+  <h1>Data: The Raw Material</h1>
+  <p class="lede">Models are only ever as good as the table they were trained on. This chapter teaches you to read a dataset like an expert: what its columns really are, how to split it so your results are honest, how to spot the leaks that make a model look brilliant right up until launch day, and how to audit data quality before you trust a single number.</p>
+  <div class="meta"><span class="level">Beginner</span> <span>⏱ 70 min read</span> <span>·</span> <span>Prereqs: Ch 1</span></div>
+</header>
+
+<div class="objectives">
+  <h3>By the end of this chapter you will be able to</h3>
+  <ul>
+    <li>Classify any column (numeric, categorical, boolean, datetime, text, ID) and say what the model can and cannot do with it.</li>
+    <li>Split a dataset into train / validation / test correctly, and choose random, stratified, time-based or group splits for the right reasons.</li>
+    <li>Recognise the three kinds of data leakage and run a "smell test" on any suspiciously good result.</li>
+    <li>Perform a first-pass exploratory data analysis (EDA) in pandas in under 30 minutes and know which findings matter.</li>
+    <li>Catalogue data-quality defects (sentinels, units, encodings, time zones) and fix them without silently destroying information.</li>
+    <li>Judge whether you have enough labelled data, and whether the labels mean what people think they mean.</li>
+  </ul>
+</div>
+
+<div class="toc-inline"><strong>In this chapter</strong>
+<ol>
+  <li><a href="#s1">The kinds of data ML eats</a></li>
+  <li><a href="#s2">Column types, and the ID trap</a></li>
+  <li><a href="#s3">The churn dataset we will use all chapter</a></li>
+  <li><a href="#s4">Train, validation, test: holding data back</a></li>
+  <li><a href="#s5">Data leakage: the #1 silent killer</a></li>
+  <li><a href="#s6">Exploratory data analysis (EDA)</a></li>
+  <li><a href="#s7">A catalogue of data-quality defects</a></li>
+  <li><a href="#s8">Labels: where they come from and how many you need</a></li>
+  <li><a href="#s9">Data ethics and privacy basics</a></li>
+  <li><a href="#s10">The data audit checklist</a></li>
+  <li><a href="#quiz">Quiz &amp; exercises</a></li>
+</ol></div>
+
+<!-- ============================================================ -->
+<h2 id="s1">1. The kinds of data ML eats</h2>
+
+<p>Chapter 1 told you a model is a function learned from data. Here is the practical corollary: <strong>every model in this book, from linear regression to a transformer, ultimately consumes a matrix of numbers.</strong> Rows are examples, columns are features. The whole art of "data" is getting the messy world into that matrix without lying to yourself about what the numbers mean.</p>
+
+<p>Data arrives in four common shapes, and each one needs a different route into the matrix:</p>
+
+<figure class="fig">
+<svg viewBox="0 0 800 320" role="img" aria-label="Four kinds of data — tabular, text, images, time series — each converted into rows of a numeric feature matrix">
+  <defs><marker id="arr-f1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+  <!-- panel 1: tabular -->
+  <rect x="20" y="20" width="180" height="190" rx="10" class="fill-surface2" stroke="var(--s1)" stroke-width="1.5"/>
+  <text x="110" y="44" text-anchor="middle" class="lbl-strong">Tabular</text>
+  <g stroke="var(--border)" fill="var(--surface)">
+    <rect x="40" y="60" width="140" height="18"/><rect x="40" y="78" width="140" height="18"/><rect x="40" y="96" width="140" height="18"/><rect x="40" y="114" width="140" height="18"/>
+  </g>
+  <g stroke="var(--border)"><line x1="75" y1="60" x2="75" y2="132"/><line x1="110" y1="60" x2="110" y2="132"/><line x1="145" y1="60" x2="145" y2="132"/></g>
+  <text x="57" y="73" text-anchor="middle" class="lbl" font-size="9">age</text><text x="92" y="73" text-anchor="middle" class="lbl" font-size="9">plan</text><text x="127" y="73" text-anchor="middle" class="lbl" font-size="9">spend</text><text x="162" y="73" text-anchor="middle" class="lbl" font-size="9">calls</text>
+  <text x="110" y="160" text-anchor="middle" class="lbl">Already a matrix.</text>
+  <text x="110" y="176" text-anchor="middle" class="lbl">Encode categories,</text>
+  <text x="110" y="192" text-anchor="middle" class="lbl">scale numbers (Ch 8).</text>
+  <!-- panel 2: text -->
+  <rect x="215" y="20" width="180" height="190" rx="10" class="fill-surface2" stroke="var(--s2)" stroke-width="1.5"/>
+  <text x="305" y="44" text-anchor="middle" class="lbl-strong">Text</text>
+  <text x="305" y="70" text-anchor="middle" class="lbl" font-style="italic">"cancel my plan, the app</text>
+  <text x="305" y="86" text-anchor="middle" class="lbl" font-style="italic">keeps crashing"</text>
+  <g fill="var(--s2)" fill-opacity=".25" stroke="var(--s2)">
+    <rect x="235" y="100" width="42" height="18" rx="4"/><rect x="282" y="100" width="42" height="18" rx="4"/><rect x="329" y="100" width="42" height="18" rx="4"/>
+  </g>
+  <text x="256" y="113" text-anchor="middle" class="lbl" font-size="10">cancel</text><text x="303" y="113" text-anchor="middle" class="lbl" font-size="10">plan</text><text x="350" y="113" text-anchor="middle" class="lbl" font-size="10">crash</text>
+  <text x="305" y="160" text-anchor="middle" class="lbl">Tokens → counts or</text>
+  <text x="305" y="176" text-anchor="middle" class="lbl">embeddings: one vector</text>
+  <text x="305" y="192" text-anchor="middle" class="lbl">per document (Ch 19).</text>
+  <!-- panel 3: images -->
+  <rect x="410" y="20" width="180" height="190" rx="10" class="fill-surface2" stroke="var(--s3)" stroke-width="1.5"/>
+  <text x="500" y="44" text-anchor="middle" class="lbl-strong">Images</text>
+  <g stroke="var(--border)" stroke-width=".5">
+    <rect x="465" y="58" width="12" height="12" fill="var(--s3)" fill-opacity=".15"/><rect x="477" y="58" width="12" height="12" fill="var(--s3)" fill-opacity=".35"/><rect x="489" y="58" width="12" height="12" fill="var(--s3)" fill-opacity=".6"/><rect x="501" y="58" width="12" height="12" fill="var(--s3)" fill-opacity=".85"/><rect x="513" y="58" width="12" height="12" fill="var(--s3)" fill-opacity=".5"/>
+    <rect x="465" y="70" width="12" height="12" fill="var(--s3)" fill-opacity=".3"/><rect x="477" y="70" width="12" height="12" fill="var(--s3)" fill-opacity=".8"/><rect x="489" y="70" width="12" height="12" fill="var(--s3)" fill-opacity="1"/><rect x="501" y="70" width="12" height="12" fill="var(--s3)" fill-opacity=".9"/><rect x="513" y="70" width="12" height="12" fill="var(--s3)" fill-opacity=".4"/>
+    <rect x="465" y="82" width="12" height="12" fill="var(--s3)" fill-opacity=".2"/><rect x="477" y="82" width="12" height="12" fill="var(--s3)" fill-opacity=".7"/><rect x="489" y="82" width="12" height="12" fill="var(--s3)" fill-opacity="1"/><rect x="501" y="82" width="12" height="12" fill="var(--s3)" fill-opacity=".7"/><rect x="513" y="82" width="12" height="12" fill="var(--s3)" fill-opacity=".3"/>
+    <rect x="465" y="94" width="12" height="12" fill="var(--s3)" fill-opacity=".1"/><rect x="477" y="94" width="12" height="12" fill="var(--s3)" fill-opacity=".3"/><rect x="489" y="94" width="12" height="12" fill="var(--s3)" fill-opacity=".6"/><rect x="501" y="94" width="12" height="12" fill="var(--s3)" fill-opacity=".3"/><rect x="513" y="94" width="12" height="12" fill="var(--s3)" fill-opacity=".1"/>
+  </g>
+  <text x="545" y="85" class="lbl" font-size="10">= 0…255</text>
+  <text x="500" y="160" text-anchor="middle" class="lbl">A grid of pixel numbers.</text>
+  <text x="500" y="176" text-anchor="middle" class="lbl">Flatten, or let a CNN</text>
+  <text x="500" y="192" text-anchor="middle" class="lbl">learn the features (Ch 17).</text>
+  <!-- panel 4: time series -->
+  <rect x="605" y="20" width="175" height="190" rx="10" class="fill-surface2" stroke="var(--s4)" stroke-width="1.5"/>
+  <text x="692" y="44" text-anchor="middle" class="lbl-strong">Time series</text>
+  <polyline points="625,120 640,112 655,118 670,100 685,104 700,90 715,96 730,78 745,84 760,70" fill="none" stroke="var(--s4)" stroke-width="2"/>
+  <line x1="625" y1="128" x2="762" y2="128" class="axis"/>
+  <rect x="700" y="66" width="45" height="66" fill="var(--s7)" fill-opacity=".12" stroke="var(--s7)" stroke-dasharray="3 2"/>
+  <text x="722" y="145" text-anchor="middle" class="lbl" font-size="10" fill="var(--s7)">window</text>
+  <text x="692" y="160" text-anchor="middle" class="lbl">Ordered values. Build</text>
+  <text x="692" y="176" text-anchor="middle" class="lbl">lags &amp; rolling stats;</text>
+  <text x="692" y="192" text-anchor="middle" class="lbl">never shuffle (Ch 14).</text>
+  <!-- bottom arrow -->
+  <line x1="400" y1="215" x2="400" y2="245" class="arrow" marker-end="url(#arr-f1)"/>
+  <rect x="200" y="250" width="400" height="50" rx="8" class="box-accent"/>
+  <text x="400" y="272" text-anchor="middle" class="lbl-strong" font-size="13">Feature matrix X : n rows × d columns of numbers</text>
+  <text x="400" y="290" text-anchor="middle" class="lbl">plus one label column y for supervised learning</text>
+</svg>
+<figcaption><strong>Figure 2.1 — Four data shapes, one destination.</strong> Tabular data is already a matrix. Text, images and time series each need a conversion step, but the model always sees rows of numbers in the end. Structured data has a fixed schema (columns with types); unstructured data (free text, pixels, audio) does not, and the conversion step <em>is</em> most of the work.</figcaption>
+</figure>
+
+<p><strong>Structured</strong> data lives in tables with a schema: every row has the same columns and each column has a type. Databases, spreadsheets and CSV exports are structured. <strong>Unstructured</strong> data has no fixed schema: emails, support tickets, photos, call recordings, PDFs. Roughly 80% of the data inside a company is unstructured, and roughly 80% of the ML that actually ships at most companies is done on structured tables. That asymmetry is not a coincidence: tables are where the labels are, and where a model can be plugged into a decision.</p>
+
+<div class="callout eli9"><div class="title">Explain it like I'm 9</div>
+<p>Imagine a robot that can only eat spreadsheets. A spreadsheet goes straight in. A story has to be chopped into words and counted ("the word <em>crash</em> appears twice") before the robot can eat it. A photo has to be turned into a huge grid of brightness numbers. A temperature chart has to be sliced into "what happened in the last 7 days" chunks. Different food, same robot.</p>
+</div>
+
+<p>The rest of this chapter focuses on tabular data, because that is where you will spend most of your working life, and because every lesson here (splits, leakage, quality, labels) applies unchanged to text and images once they have been converted.</p>
+
+<!-- ============================================================ -->
+<h2 id="s2">2. Column types, and the ID trap</h2>
+
+<p>Before you model anything, walk every column and answer one question: <em>what kind of thing is this?</em> The answer decides how the column must be encoded, which statistics make sense, and whether it belongs in the model at all.</p>
+
+<figure class="fig">
+<svg viewBox="0 0 800 300" role="img" aria-label="A decision tree for column types: numeric continuous or discrete, categorical nominal or ordinal, boolean, datetime, text, identifier">
+  <defs><marker id="arr-f2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+  <rect x="330" y="15" width="140" height="40" class="box-accent"/><text x="400" y="40" text-anchor="middle" class="lbl-strong">A column</text>
+  <!-- branches -->
+  <g class="arrow" marker-end="url(#arr-f2)">
+    <path d="M400,55 L400,70 L75,70 L75,95"/>
+    <path d="M400,70 L235,70 L235,95"/>
+    <path d="M400,70 L400,95"/>
+    <path d="M400,70 L565,70 L565,95"/>
+    <path d="M400,70 L725,70 L725,95"/>
+  </g>
+  <!-- numeric -->
+  <rect x="15" y="97" width="120" height="40" rx="6" fill="var(--s1)" fill-opacity=".18" stroke="var(--s1)" stroke-width="1.5"/><text x="75" y="121" text-anchor="middle" class="lbl-strong">Numeric</text>
+  <text x="75" y="160" text-anchor="middle" class="lbl-strong" font-size="11">continuous</text>
+  <text x="75" y="175" text-anchor="middle" class="lbl" font-size="11">spend 48.27</text>
+  <text x="75" y="196" text-anchor="middle" class="lbl-strong" font-size="11">discrete (count)</text>
+  <text x="75" y="211" text-anchor="middle" class="lbl" font-size="11">support calls 3</text>
+  <text x="75" y="240" text-anchor="middle" class="lbl" font-size="11">use as-is; scale</text>
+  <text x="75" y="255" text-anchor="middle" class="lbl" font-size="11">if the model cares</text>
+  <!-- categorical -->
+  <rect x="175" y="97" width="120" height="40" rx="6" fill="var(--s2)" fill-opacity=".18" stroke="var(--s2)" stroke-width="1.5"/><text x="235" y="121" text-anchor="middle" class="lbl-strong">Categorical</text>
+  <text x="235" y="160" text-anchor="middle" class="lbl-strong" font-size="11">nominal (no order)</text>
+  <text x="235" y="175" text-anchor="middle" class="lbl" font-size="11">country, plan</text>
+  <text x="235" y="196" text-anchor="middle" class="lbl-strong" font-size="11">ordinal (ordered)</text>
+  <text x="235" y="211" text-anchor="middle" class="lbl" font-size="11">S &lt; M &lt; L, rating 1–5</text>
+  <text x="235" y="240" text-anchor="middle" class="lbl" font-size="11">one-hot / target-encode;</text>
+  <text x="235" y="255" text-anchor="middle" class="lbl" font-size="11">ordinal → integers in order</text>
+  <!-- boolean + datetime -->
+  <rect x="340" y="97" width="120" height="40" rx="6" fill="var(--s3)" fill-opacity=".18" stroke="var(--s3)" stroke-width="1.5"/><text x="400" y="121" text-anchor="middle" class="lbl-strong">Boolean</text>
+  <text x="400" y="160" text-anchor="middle" class="lbl" font-size="11">autopay: yes/no</text>
+  <text x="400" y="175" text-anchor="middle" class="lbl" font-size="11">→ 0 / 1</text>
+  <text x="400" y="196" text-anchor="middle" class="lbl-strong" font-size="11">watch for a 3rd value:</text>
+  <text x="400" y="211" text-anchor="middle" class="lbl" font-size="11">"unknown" is not False</text>
+  <!-- datetime -->
+  <rect x="505" y="97" width="120" height="40" rx="6" fill="var(--s4)" fill-opacity=".18" stroke="var(--s4)" stroke-width="1.5"/><text x="565" y="121" text-anchor="middle" class="lbl-strong">Datetime</text>
+  <text x="565" y="160" text-anchor="middle" class="lbl" font-size="11">2024-03-08 14:02 UTC</text>
+  <text x="565" y="175" text-anchor="middle" class="lbl" font-size="11">never feed raw:</text>
+  <text x="565" y="196" text-anchor="middle" class="lbl-strong" font-size="11">derive features</text>
+  <text x="565" y="211" text-anchor="middle" class="lbl" font-size="11">age, weekday, hour,</text>
+  <text x="565" y="226" text-anchor="middle" class="lbl" font-size="11">days-since, month</text>
+  <!-- text + id -->
+  <rect x="665" y="97" width="120" height="40" rx="6" fill="var(--s7)" fill-opacity=".18" stroke="var(--s7)" stroke-width="1.5"/><text x="725" y="121" text-anchor="middle" class="lbl-strong">Text / ID</text>
+  <text x="725" y="160" text-anchor="middle" class="lbl-strong" font-size="11">free text</text>
+  <text x="725" y="175" text-anchor="middle" class="lbl" font-size="11">→ counts / embeddings</text>
+  <text x="725" y="196" text-anchor="middle" class="lbl-strong" font-size="11" fill="var(--critical)">identifier</text>
+  <text x="725" y="211" text-anchor="middle" class="lbl" font-size="11">customer_id, order_no</text>
+  <text x="725" y="226" text-anchor="middle" class="lbl-strong" font-size="11" fill="var(--critical)">→ DROP before fit</text>
+  <text x="400" y="288" text-anchor="middle" class="lbl">The pandas dtype is a hint, not the truth: a zip code stored as int64 is categorical; a "1/2/3" plan stored as int is ordinal at best.</text>
+</svg>
+<figcaption><strong>Figure 2.2 — Column types decide the treatment.</strong> The same digits can be a quantity (spend), a count (calls), a code (zip), an order (rating) or a name (customer ID). Only the first two can be averaged; only the last must be thrown away.</figcaption>
+</figure>
+
+<div class="tbl-wrap">
+<table class="tbl">
+<thead><tr><th>Type</th><th>Example</th><th>Meaningful operations</th><th>Typical handling</th></tr></thead>
+<tbody>
+<tr><td><strong>Numeric, continuous</strong></td><td>monthly_spend = 48.27</td><td>mean, difference, ratio</td><td>keep; scale for distance/gradient models (Ch 8)</td></tr>
+<tr><td><strong>Numeric, discrete</strong></td><td>support_calls = 3</td><td>mean, difference</td><td>keep; often log(1+x) when skewed</td></tr>
+<tr><td><strong>Categorical, nominal</strong></td><td>plan = "plus"</td><td>equality, frequency</td><td>one-hot (few levels) or target/frequency encoding (many levels)</td></tr>
+<tr><td><strong>Categorical, ordinal</strong></td><td>satisfaction = "high"</td><td>equality, order</td><td>map to integers <em>in the right order</em></td></tr>
+<tr><td><strong>Boolean</strong></td><td>autopay = True</td><td>equality</td><td>0/1; check whether missing means "no" or "unknown"</td></tr>
+<tr><td><strong>Datetime</strong></td><td>signup_date</td><td>difference, ordering, calendar</td><td>derive tenure, weekday, hour, seasonality; keep the raw column for splitting</td></tr>
+<tr><td><strong>Free text</strong></td><td>"app keeps crashing"</td><td>none directly</td><td>bag-of-words / embeddings (Ch 19), or simple derived flags</td></tr>
+<tr><td><strong>Identifier</strong></td><td>customer_id = 100042</td><td>equality only</td><td><strong>drop</strong>; use only for joining and for group splits</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="callout warn"><div class="title">Common mistake</div>
+<p><strong>Leaving IDs in the feature matrix.</strong> A customer ID, order number or row index is unique per row, so a flexible model (a tree, a boosting model) can memorise "ID 100042 → churned." Training accuracy shoots to 100%, test accuracy is garbage, and because IDs are often assigned sequentially they can also smuggle in time ("high IDs are recent customers, and recent customers churn less") that will not hold next year. IDs are for joining tables and for grouping rows in a split; they are never features. The same trap applies to anything that is unique per row: free-text notes, timestamps to the second, file names.</p>
+</div>
+
+<div class="callout pro"><div class="title">At work</div>
+<p>Ask for the <strong>data dictionary</strong> (what each column means, its unit, who produces it, when it is written) before you ask for the data. If one does not exist, write it as you go: a table with column name, type, unit, source system, and "known when?" (see §5). Half the modelling disasters I have reviewed trace back to a column whose meaning nobody actually checked.</p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s3">3. The churn dataset we will use all chapter</h2>
+
+<p>Every idea from here on is illustrated on one dataset: 2,000 customers of a subscription service, and whether each one cancelled (<em>churned</em>) in the following quarter. It is synthetic, so we know the truth, but its columns are the ones you will actually find in a customer table. Recall from Chapter 1: <strong>features</strong> are the columns the model may look at (<code>X</code>), and the <strong>label</strong> is the column we want to predict (<code>y</code>).</p>
+
+<pre class="code" data-lang="python"><code><span class="cm"># The churn dataset used throughout this chapter (synthetic, but realistic columns)</span>
+<span class="kw">import</span> numpy <span class="kw">as</span> np, pandas <span class="kw">as</span> pd
+rng = np.random.default_rng(<span class="nu">42</span>)
+n = <span class="nu">2000</span>
+df = pd.DataFrame({
+    <span class="st">"customer_id"</span>:      np.arange(<span class="nu">100001</span>, <span class="nu">100001</span> + n),
+    <span class="st">"signup_date"</span>:      pd.to_datetime(<span class="st">"2021-01-01"</span>) + pd.to_timedelta(rng.integers(<span class="nu">0</span>, <span class="nu">1400</span>, n), <span class="st">"D"</span>),
+    <span class="st">"plan"</span>:             rng.choice([<span class="st">"basic"</span>, <span class="st">"plus"</span>, <span class="st">"premium"</span>], n, p=[<span class="nu">.5</span>, <span class="nu">.3</span>, <span class="nu">.2</span>]),
+    <span class="st">"age"</span>:              rng.integers(<span class="nu">18</span>, <span class="nu">75</span>, n),
+    <span class="st">"tenure_months"</span>:    rng.integers(<span class="nu">1</span>, <span class="nu">60</span>, n),
+    <span class="st">"monthly_spend"</span>:    rng.gamma(<span class="nu">4</span>, <span class="nu">12</span>, n).round(<span class="nu">2</span>),
+    <span class="st">"support_calls"</span>:    rng.poisson(<span class="nu">1.2</span>, n),
+    <span class="st">"days_since_login"</span>: rng.integers(<span class="nu">0</span>, <span class="nu">90</span>, n),
+    <span class="st">"autopay"</span>:          rng.random(n) &lt; <span class="nu">0.6</span>,
+})
+<span class="cm"># the hidden truth: churn is driven by inactivity, support pain, short tenure, no autopay</span>
+logit = -<span class="nu">2.6</span> + <span class="nu">0.035</span>*df.days_since_login + <span class="nu">0.5</span>*df.support_calls - <span class="nu">0.02</span>*df.tenure_months - <span class="nu">0.6</span>*df.autopay
+df[<span class="st">"churned"</span>] = (rng.random(n) &lt; <span class="nu">1</span>/(<span class="nu">1</span>+np.exp(-logit))).astype(<span class="fn">int</span>)
+
+<span class="fn">print</span>(df.shape)
+<span class="fn">print</span>(df.dtypes)
+<span class="fn">print</span>(<span class="st">f"churn rate = {df.churned.mean():.1%}"</span>)
+<span class="out"># (2000, 10)</span>
+<span class="out"># customer_id                  int64</span>
+<span class="out"># signup_date         datetime64[us]</span>
+<span class="out"># plan                           str</span>
+<span class="out"># age                          int64</span>
+<span class="out"># tenure_months                int64</span>
+<span class="out"># monthly_spend              float64</span>
+<span class="out"># support_calls                int64</span>
+<span class="out"># days_since_login             int64</span>
+<span class="out"># autopay                       bool</span>
+<span class="out"># churned                      int64</span>
+<span class="out"># churn rate = 26.2%</span></code></pre>
+
+<p>Walk the columns with Figure 2.2 in hand: <code>customer_id</code> is an identifier (drop). <code>signup_date</code> is a datetime (derive <code>tenure</code>; keep for time splits). <code>plan</code> is nominal categorical, or ordinal if you believe basic &lt; plus &lt; premium is a meaningful order. <code>age</code>, <code>tenure_months</code>, <code>monthly_spend</code> are numeric. <code>support_calls</code> is a count. <code>days_since_login</code> is numeric but really a <em>recency</em> signal. <code>autopay</code> is boolean. <code>churned</code> is the label: binary, so this is classification, and at 26% positive it is <strong>moderately imbalanced</strong> (a model that always says "stays" is already 74% accurate; remember that when you read accuracy numbers later).</p>
+
+<div class="callout key"><div class="title">Key idea</div>
+<p>A dataset is not a pile of numbers; it is a set of <strong>claims about the world</strong> ("this customer made 3 calls", "this customer churned"). Every column was produced by some process at some time. Knowing that process, especially <em>when</em> each value becomes known, is what separates a feature you can use from a leak that will sink the project.</p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s4">4. Train, validation, test: holding data back</h2>
+
+<p>You have 2,000 labelled customers. The temptation is to train on all of them; more data, better model. But then how would you know how good the model is? Scoring it on the same rows it memorised tells you nothing about the next 2,000 customers, which is the only thing anyone cares about (Chapter 1 called this <em>generalization</em>). So we hold data back.</p>
+
+<div class="callout eli9"><div class="title">Explain it like I'm 9</div>
+<p>If a teacher gives you the exact exam questions to study, then gives you the same exam, your 100% proves nothing. A fair teacher gives you practice problems (<strong>train</strong>), a few mock exams to see which study method works (<strong>validation</strong>), and keeps the real exam locked in a drawer until the very end (<strong>test</strong>). You only open the drawer once.</p>
+</div>
+
+<figure class="fig">
+<svg viewBox="0 0 800 300" role="img" aria-label="A dataset split into train, validation and test sets, with each set's role: fit the model, choose between models and settings, report the final score once">
+  <defs><marker id="arr-f3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+  <text x="20" y="28" class="lbl-strong" font-size="13">All labelled rows (n = 2,000), shuffled once with a fixed seed</text>
+  <rect x="20" y="40" width="760" height="30" fill="var(--surface-2)" stroke="var(--border)"/>
+  <!-- split bar -->
+  <rect x="20" y="95" width="456" height="34" fill="var(--s1)"/>
+  <rect x="476" y="95" width="152" height="34" fill="var(--s2)"/>
+  <rect x="628" y="95" width="152" height="34" fill="var(--s3)"/>
+  <text x="248" y="117" text-anchor="middle" font-size="13" font-weight="700" fill="#fff">TRAIN  60%  (1,200 rows)</text>
+  <text x="554" y="117" text-anchor="middle" font-size="12" font-weight="700" fill="#fff">VAL 20% (400)</text>
+  <text x="704" y="117" text-anchor="middle" font-size="12" font-weight="700" fill="#fff">TEST 20% (400)</text>
+  <g class="arrow" marker-end="url(#arr-f3)">
+    <line x1="400" y1="70" x2="400" y2="93"/>
+  </g>
+  <!-- roles -->
+  <g class="arrow" marker-end="url(#arr-f3)">
+    <line x1="248" y1="129" x2="248" y2="160"/><line x1="554" y1="129" x2="554" y2="160"/><line x1="704" y1="129" x2="704" y2="160"/>
+  </g>
+  <rect x="120" y="162" width="256" height="62" rx="6" fill="var(--s1)" fill-opacity=".12" stroke="var(--s1)"/>
+  <text x="248" y="183" text-anchor="middle" class="lbl-strong">Fit the parameters</text>
+  <text x="248" y="200" text-anchor="middle" class="lbl">model.fit(X_train, y_train)</text>
+  <text x="248" y="216" text-anchor="middle" class="lbl">used thousands of times</text>
+  <rect x="470" y="162" width="168" height="62" rx="6" fill="var(--s2)" fill-opacity=".12" stroke="var(--s2)"/>
+  <text x="554" y="183" text-anchor="middle" class="lbl-strong">Choose &amp; tune</text>
+  <text x="554" y="200" text-anchor="middle" class="lbl">which model? which</text>
+  <text x="554" y="216" text-anchor="middle" class="lbl">hyperparameters? features?</text>
+  <rect x="646" y="162" width="140" height="62" rx="6" fill="var(--s3)" fill-opacity=".12" stroke="var(--s3)"/>
+  <text x="716" y="183" text-anchor="middle" class="lbl-strong">Report, once</text>
+  <text x="716" y="200" text-anchor="middle" class="lbl">the number you tell</text>
+  <text x="716" y="216" text-anchor="middle" class="lbl">your boss</text>
+  <!-- lock -->
+  <text x="716" y="250" text-anchor="middle" class="lbl-strong" fill="var(--critical)">🔒 locked until the end</text>
+  <text x="248" y="250" text-anchor="middle" class="lbl">Validation is "used up" by repeated peeking;</text>
+  <text x="248" y="266" text-anchor="middle" class="lbl">that is why the test set exists.</text>
+  <text x="554" y="250" text-anchor="middle" class="lbl">later: replace with</text>
+  <text x="554" y="266" text-anchor="middle" class="lbl">k-fold CV (Ch 7)</text>
+</svg>
+<figcaption><strong>Figure 2.3 — Three sets, three jobs.</strong> Train fits the model. Validation is where you make every decision (which features, which algorithm, which settings) and is therefore slowly contaminated by your choices. Test is opened once, at the end, to get an honest number.</figcaption>
+</figure>
+
+<h3>What each set is for</h3>
+<ol class="steps">
+  <li><strong>Training set.</strong> The rows the algorithm sees while fitting parameters. Bigger is better, up to a point (§8).</li>
+  <li><strong>Validation set.</strong> Rows you score on while you develop: comparing logistic regression with a forest, picking a tree depth, deciding whether a feature helps. Because you make dozens of choices by looking at this score, it drifts optimistic: you are, in effect, fitting <em>yourself</em> to it. In Chapter 7 you will usually replace a single validation set with <em>k-fold cross-validation</em>, which uses the training data more efficiently; the role stays the same.</li>
+  <li><strong>Test set.</strong> Rows nobody looks at until the model is final. It exists precisely because the validation score is no longer trustworthy. Score once. If you then go back and change the model "because the test score was disappointing", the test set has become a second validation set and you no longer have an honest estimate.</li>
+</ol>
+
+<h3>Typical proportions</h3>
+<div class="tbl-wrap">
+<table class="tbl">
+<thead><tr><th>Dataset size</th><th>Train / Val / Test</th><th>Why</th></tr></thead>
+<tbody>
+<tr><td>&lt; 5,000 rows</td><td>60 / 20 / 20, or 80 / 20 with k-fold CV inside the 80</td><td>Every row is precious; use CV so no row is wasted on a single validation split.</td></tr>
+<tr><td>5,000 – 500,000</td><td>70 / 15 / 15 or 80 / 10 / 10</td><td>A few thousand test rows give a tight enough estimate.</td></tr>
+<tr><td>Millions</td><td>98 / 1 / 1</td><td>1% of 10 million is 100,000 rows: more than enough to estimate a score to ±0.3 points.</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>The proportions are a trade-off, and the widget below lets you feel it. A small test set gives a <em>noisy</em> score: with 100 test rows, an accuracy of 75% has a 95% confidence interval of roughly ±8.5 points, so you literally cannot tell a 72% model from a 78% one. A small training set gives a <em>weaker</em> model. Neither number is free.</p>
+
+<div class="callout math"><div class="title">The math (optional)</div>
+<p>The accuracy you measure on a test set is a sample proportion. Its standard error, and the usual 95% interval, are</p>
+<div class="formula">SE = √( p(1−p) / n<sub>test</sub> ),   95% CI ≈ p ± 1.96 · SE</div>
+<p><em>p</em> is the measured accuracy (as a fraction), <em>n<sub>test</sub></em> is the number of test rows, and 1.96 is the normal-distribution multiplier for 95% (Chapter 3). With <em>p</em> = 0.75 and <em>n</em> = 400 the half-width is 1.96 · √(0.1875/400) ≈ 0.042, i.e. ±4.2 points. Quadrupling the test set halves the interval.</p>
+</div>
+
+<div class="widget" id="w-split">
+  <div class="w-title">Interactive: choose your split proportions</div>
+  <div class="controls">
+    <label>Train % <input type="range" id="sp-train" min="40" max="90" value="60" data-out="sp-train-out"> <output id="sp-train-out"></output></label>
+    <label>Validation % <input type="range" id="sp-val" min="0" max="40" value="20" data-out="sp-val-out"> <output id="sp-val-out"></output></label>
+    <span>Test rows: <span class="readout" id="sp-ntest">–</span></span>
+    <span>95% CI on a 75% test accuracy: <span class="readout" id="sp-ci">–</span></span>
+  </div>
+  <svg viewBox="0 0 700 150" id="sp-svg" role="img" aria-label="Bar showing the train, validation and test proportions and the resulting confidence interval width"></svg>
+  <div class="note" id="sp-note">Drag the sliders. Watch the confidence interval on the test score widen as the test set shrinks, and the training set shrink as you try to fix that. For n = 2,000 rows there is no split that gives you both a strong model and a tight score, which is why Chapter 7 introduces cross-validation.</div>
+</div>
+
+<h3>Random, stratified, time-based, group: which split, and when it is mandatory</h3>
+
+<p>How you <em>choose</em> the rows for each set matters as much as the proportions. A plain random shuffle is the default, and it is wrong more often than beginners expect. The question to ask is: <strong>"When this model is used for real, how will the new rows differ from the rows I trained on?"</strong> Your split must reproduce that difference.</p>
+
+<figure class="fig">
+<svg viewBox="0 0 800 380" role="img" aria-label="Four split strategies: random shuffle, stratified (class ratio preserved in every set), time-based (train on the past, test on the future), and group (all rows of one entity stay in the same set)">
+  <!-- panel 1: random -->
+  <rect x="15" y="15" width="380" height="170" rx="8" class="fill-surface2" stroke="var(--border)"/>
+  <text x="30" y="38" class="lbl-strong" font-size="13">Random</text>
+  <text x="120" y="38" class="lbl" font-size="11">rows are exchangeable, no time, no groups</text>
+  <g>
+    <rect x="30" y="55" width="16" height="16" fill="var(--s1)"/><rect x="50" y="55" width="16" height="16" fill="var(--s1)"/><rect x="70" y="55" width="16" height="16" fill="var(--s3)"/><rect x="90" y="55" width="16" height="16" fill="var(--s1)"/><rect x="110" y="55" width="16" height="16" fill="var(--s1)"/><rect x="130" y="55" width="16" height="16" fill="var(--s2)"/><rect x="150" y="55" width="16" height="16" fill="var(--s1)"/><rect x="170" y="55" width="16" height="16" fill="var(--s1)"/><rect x="190" y="55" width="16" height="16" fill="var(--s3)"/><rect x="210" y="55" width="16" height="16" fill="var(--s1)"/>
+    <rect x="30" y="75" width="16" height="16" fill="var(--s2)"/><rect x="50" y="75" width="16" height="16" fill="var(--s1)"/><rect x="70" y="75" width="16" height="16" fill="var(--s1)"/><rect x="90" y="75" width="16" height="16" fill="var(--s1)"/><rect x="110" y="75" width="16" height="16" fill="var(--s3)"/><rect x="130" y="75" width="16" height="16" fill="var(--s1)"/><rect x="150" y="75" width="16" height="16" fill="var(--s1)"/><rect x="170" y="75" width="16" height="16" fill="var(--s2)"/><rect x="190" y="75" width="16" height="16" fill="var(--s1)"/><rect x="210" y="75" width="16" height="16" fill="var(--s1)"/>
+  </g>
+  <text x="30" y="115" class="lbl" font-size="11">Each row gets a random ticket: train / val / test.</text>
+  <text x="30" y="132" class="lbl" font-size="11">Fine when rows are independent draws from the same world.</text>
+  <text x="30" y="160" class="lbl-strong" font-size="11" fill="var(--s1)">sklearn: train_test_split(X, y, random_state=0)</text>
+  <!-- panel 2: stratified -->
+  <rect x="405" y="15" width="380" height="170" rx="8" class="fill-surface2" stroke="var(--border)"/>
+  <text x="420" y="38" class="lbl-strong" font-size="13">Stratified</text>
+  <text x="510" y="38" class="lbl" font-size="11">classification with a rare class</text>
+  <!-- bars showing class ratio in each set -->
+  <text x="420" y="70" class="lbl" font-size="10">train</text><rect x="455" y="58" width="200" height="14" fill="var(--s1)"/><rect x="603" y="58" width="52" height="14" fill="var(--s2)"/>
+  <text x="420" y="92" class="lbl" font-size="10">val</text><rect x="455" y="80" width="200" height="14" fill="var(--s1)"/><rect x="603" y="80" width="52" height="14" fill="var(--s2)"/>
+  <text x="420" y="114" class="lbl" font-size="10">test</text><rect x="455" y="102" width="200" height="14" fill="var(--s1)"/><rect x="603" y="102" width="52" height="14" fill="var(--s2)"/>
+  <text x="665" y="70" class="lbl" font-size="10">26% churn</text><text x="665" y="92" class="lbl" font-size="10">26% churn</text><text x="665" y="114" class="lbl" font-size="10">26% churn</text>
+  <text x="420" y="140" class="lbl" font-size="11">Random split of 2,000 rows can put 22% churners in val and 30% in test:</text>
+  <text x="420" y="155" class="lbl" font-size="11">the scores would differ for no real reason. Stratify by the label (or by a</text>
+  <text x="420" y="170" class="lbl" font-size="11">key segment). Mandatory when the positive class is rare.</text>
+  <!-- panel 3: time -->
+  <rect x="15" y="195" width="380" height="170" rx="8" class="fill-surface2" stroke="var(--border)"/>
+  <text x="30" y="218" class="lbl-strong" font-size="13">Time-based</text>
+  <text x="125" y="218" class="lbl" font-size="11">the model will predict the future</text>
+  <line x1="35" y1="260" x2="380" y2="260" class="axis"/>
+  <rect x="35" y="248" width="230" height="24" fill="var(--s1)" fill-opacity=".8"/>
+  <rect x="265" y="248" width="60" height="24" fill="var(--s2)" fill-opacity=".8"/>
+  <rect x="325" y="248" width="55" height="24" fill="var(--s3)" fill-opacity=".8"/>
+  <text x="150" y="265" text-anchor="middle" font-size="11" font-weight="700" fill="#fff">train: 2021 – mid-2023</text>
+  <text x="295" y="265" text-anchor="middle" font-size="10" font-weight="700" fill="#fff">val</text>
+  <text x="352" y="265" text-anchor="middle" font-size="10" font-weight="700" fill="#fff">test</text>
+  <text x="35" y="288" class="lbl" font-size="10">2021</text><text x="380" y="288" text-anchor="end" class="lbl" font-size="10">2024 →</text>
+  <line x1="265" y1="240" x2="265" y2="280" stroke="var(--s7)" stroke-width="2" stroke-dasharray="4 3"/>
+  <text x="265" y="236" text-anchor="middle" class="lbl-strong" font-size="10" fill="var(--s7)">cut date</text>
+  <text x="30" y="312" class="lbl" font-size="11">Never shuffle. Train on the past, validate on the next block, test on</text>
+  <text x="30" y="327" class="lbl" font-size="11">the latest block. A random split lets the model "see" the future and</text>
+  <text x="30" y="342" class="lbl" font-size="11">overstates performance, sometimes wildly. Mandatory for any forecast,</text>
+  <text x="30" y="357" class="lbl" font-size="11">and wise for anything where the world drifts (fraud, pricing, demand).</text>
+  <!-- panel 4: group -->
+  <rect x="405" y="195" width="380" height="170" rx="8" class="fill-surface2" stroke="var(--border)"/>
+  <text x="420" y="218" class="lbl-strong" font-size="13">Group</text>
+  <text x="470" y="218" class="lbl" font-size="11">several rows per entity (customer, patient, device)</text>
+  <!-- clusters -->
+  <g fill="var(--s1)"><circle cx="445" cy="255" r="5"/><circle cx="458" cy="248" r="5"/><circle cx="452" cy="265" r="5"/></g>
+  <ellipse cx="452" cy="256" rx="20" ry="16" fill="none" stroke="var(--s1)" stroke-dasharray="3 2"/>
+  <g fill="var(--s1)"><circle cx="500" cy="258" r="5"/><circle cx="513" cy="250" r="5"/><circle cx="508" cy="268" r="5"/><circle cx="520" cy="264" r="5"/></g>
+  <ellipse cx="509" cy="259" rx="22" ry="17" fill="none" stroke="var(--s1)" stroke-dasharray="3 2"/>
+  <g fill="var(--s1)"><circle cx="560" cy="252" r="5"/><circle cx="572" cy="262" r="5"/></g>
+  <ellipse cx="566" cy="257" rx="18" ry="14" fill="none" stroke="var(--s1)" stroke-dasharray="3 2"/>
+  <g fill="var(--s3)"><circle cx="640" cy="255" r="5"/><circle cx="653" cy="248" r="5"/><circle cx="648" cy="266" r="5"/></g>
+  <ellipse cx="647" cy="256" rx="20" ry="16" fill="none" stroke="var(--s3)" stroke-dasharray="3 2"/>
+  <g fill="var(--s3)"><circle cx="700" cy="258" r="5"/><circle cx="712" cy="250" r="5"/><circle cx="706" cy="268" r="5"/></g>
+  <ellipse cx="706" cy="258" rx="20" ry="16" fill="none" stroke="var(--s3)" stroke-dasharray="3 2"/>
+  <line x1="605" y1="232" x2="605" y2="282" stroke="var(--s7)" stroke-width="2" stroke-dasharray="4 3"/>
+  <text x="510" y="292" text-anchor="middle" class="lbl-strong" font-size="10" fill="var(--s1)">train: whole groups</text>
+  <text x="680" y="292" text-anchor="middle" class="lbl-strong" font-size="10" fill="var(--s3)">test: other groups</text>
+  <text x="420" y="312" class="lbl" font-size="11">If one patient has 12 scans, a random split puts 10 in train and 2 in</text>
+  <text x="420" y="327" class="lbl" font-size="11">test; the model recognises the patient, not the disease. Keep every</text>
+  <text x="420" y="342" class="lbl" font-size="11">group entirely on one side. Mandatory when the model must work on</text>
+  <text x="420" y="357" class="lbl" font-size="11">new entities. sklearn: GroupShuffleSplit, GroupKFold.</text>
+</svg>
+<figcaption><strong>Figure 2.4 — The split must imitate deployment.</strong> Random is the default; stratified keeps class ratios stable; time-based is required whenever the future is the target; group is required whenever the same entity contributes several rows. Time and group can be combined (Chapter 14).</figcaption>
+</figure>
+
+<pre class="code" data-lang="python"><code><span class="cm"># A stratified 60 / 20 / 20 split, done as two cuts (re-creates df from the block above)</span>
+<span class="kw">import</span> numpy <span class="kw">as</span> np, pandas <span class="kw">as</span> pd
+<span class="kw">from</span> sklearn.model_selection <span class="kw">import</span> train_test_split
+rng = np.random.default_rng(<span class="nu">42</span>); n = <span class="nu">2000</span>
+df = pd.DataFrame({<span class="st">"customer_id"</span>: np.arange(<span class="nu">100001</span>, <span class="nu">100001</span>+n),
+    <span class="st">"signup_date"</span>: pd.to_datetime(<span class="st">"2021-01-01"</span>) + pd.to_timedelta(rng.integers(<span class="nu">0</span>, <span class="nu">1400</span>, n), <span class="st">"D"</span>),
+    <span class="st">"plan"</span>: rng.choice([<span class="st">"basic"</span>,<span class="st">"plus"</span>,<span class="st">"premium"</span>], n, p=[<span class="nu">.5</span>,<span class="nu">.3</span>,<span class="nu">.2</span>]), <span class="st">"age"</span>: rng.integers(<span class="nu">18</span>, <span class="nu">75</span>, n),
+    <span class="st">"tenure_months"</span>: rng.integers(<span class="nu">1</span>, <span class="nu">60</span>, n), <span class="st">"monthly_spend"</span>: rng.gamma(<span class="nu">4</span>, <span class="nu">12</span>, n).round(<span class="nu">2</span>),
+    <span class="st">"support_calls"</span>: rng.poisson(<span class="nu">1.2</span>, n), <span class="st">"days_since_login"</span>: rng.integers(<span class="nu">0</span>, <span class="nu">90</span>, n), <span class="st">"autopay"</span>: rng.random(n) &lt; <span class="nu">0.6</span>})
+logit = -<span class="nu">2.6</span> + <span class="nu">0.035</span>*df.days_since_login + <span class="nu">0.5</span>*df.support_calls - <span class="nu">0.02</span>*df.tenure_months - <span class="nu">0.6</span>*df.autopay
+df[<span class="st">"churned"</span>] = (rng.random(n) &lt; <span class="nu">1</span>/(<span class="nu">1</span>+np.exp(-logit))).astype(<span class="fn">int</span>)
+
+X = df.drop(columns=[<span class="st">"churned"</span>]); y = df[<span class="st">"churned"</span>]
+<span class="cm"># cut 1: 80% train+val, 20% test.  stratify=y keeps the churn rate equal on both sides.</span>
+X_trval, X_test, y_trval, y_test = train_test_split(X, y, test_size=<span class="nu">0.20</span>, stratify=y, random_state=<span class="nu">0</span>)
+<span class="cm"># cut 2: 25% of the remaining 80% becomes validation  ->  60 / 20 / 20 overall</span>
+X_train, X_val, y_train, y_val = train_test_split(X_trval, y_trval, test_size=<span class="nu">0.25</span>, stratify=y_trval, random_state=<span class="nu">0</span>)
+<span class="kw">for</span> name, part <span class="kw">in</span> [(<span class="st">"train"</span>, y_train), (<span class="st">"val"</span>, y_val), (<span class="st">"test"</span>, y_test)]:
+    <span class="fn">print</span>(<span class="st">f"{name:5s} n={len(part):4d}  churn rate={part.mean():.3f}"</span>)
+<span class="out"># train n=1200  churn rate=0.262</span>
+<span class="out"># val   n= 400  churn rate=0.263</span>
+<span class="out"># test  n= 400  churn rate=0.263</span></code></pre>
+
+<pre class="code" data-lang="python"><code><span class="cm"># Time-based and group splits on the same data (df built exactly as above)</span>
+<span class="kw">import</span> numpy <span class="kw">as</span> np, pandas <span class="kw">as</span> pd
+<span class="kw">from</span> sklearn.model_selection <span class="kw">import</span> GroupShuffleSplit
+rng = np.random.default_rng(<span class="nu">42</span>); n = <span class="nu">2000</span>
+df = pd.DataFrame({<span class="st">"signup_date"</span>: pd.to_datetime(<span class="st">"2021-01-01"</span>) + pd.to_timedelta(rng.integers(<span class="nu">0</span>, <span class="nu">1400</span>, n), <span class="st">"D"</span>)})
+
+<span class="cm"># --- time-based: sort by date, cut at a date, never shuffle</span>
+df = df.sort_values(<span class="st">"signup_date"</span>)
+cut = df[<span class="st">"signup_date"</span>].quantile(<span class="nu">0.8</span>)
+train_t, test_t = df[df.signup_date &lt; cut], df[df.signup_date &gt;= cut]
+<span class="fn">print</span>(<span class="st">"time split :"</span>, <span class="fn">len</span>(train_t), <span class="fn">len</span>(test_t), <span class="st">"| test starts"</span>, test_t.signup_date.min().date())
+
+<span class="cm"># --- group split: pretend customers belong to ~300 companies; all rows of a company stay together</span>
+df[<span class="st">"company_id"</span>] = rng.integers(<span class="nu">0</span>, <span class="nu">300</span>, n)
+gss = GroupShuffleSplit(n_splits=<span class="nu">1</span>, test_size=<span class="nu">0.2</span>, random_state=<span class="nu">0</span>)
+tr_idx, te_idx = <span class="fn">next</span>(gss.split(df, groups=df[<span class="st">"company_id"</span>]))
+overlap = <span class="fn">set</span>(df.company_id.iloc[tr_idx]) &amp; <span class="fn">set</span>(df.company_id.iloc[te_idx])
+<span class="fn">print</span>(<span class="st">"group split:"</span>, <span class="fn">len</span>(tr_idx), <span class="fn">len</span>(te_idx), <span class="st">"| companies in both:"</span>, <span class="fn">len</span>(overlap))
+<span class="out"># time split : 1600 400 | test starts 2024-01-26</span>
+<span class="out"># group split: 1624 376 | companies in both: 0</span></code></pre>
+
+<div class="callout pro"><div class="title">At work</div>
+<p>Decide the split strategy <em>in the problem-definition meeting</em>, not in the notebook. Ask: "Will this model score customers we have never seen (→ group split)? Will it score next month's data (→ time split)? Both (→ group-aware time split)?" Then write the split code once, save the row IDs of each set to a file, and make every experiment load the same file. Re-splitting with a different seed for each experiment is how teams end up comparing models on different data without noticing.</p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s5">5. Data leakage: the #1 silent killer</h2>
+
+<p><strong>Leakage</strong> is when information that would not be available at prediction time sneaks into training. The model learns to use it, scores brilliantly on your test set (which has the same leak), and then falls apart in production where the information is missing. It is silent because <em>nothing errors</em>. In fact everything looks better than usual. An unusually good result is the main symptom.</p>
+
+<div class="callout eli9"><div class="title">Explain it like I'm 9</div>
+<p>You are trying to guess whether it will rain tomorrow. Your friend hands you a list of clues, and one of the clues is "did people carry umbrellas tomorrow?" You will guess perfectly every time, and learn nothing about weather. On the day you actually have to predict, that clue does not exist yet. That clue is a leak.</p>
+</div>
+
+<figure class="fig">
+<svg viewBox="0 0 800 330" role="img" aria-label="Three leakage mechanisms drawn on a timeline: target leakage where a feature is a consequence of the label, train-test contamination where preprocessing or duplicates cross the split boundary, and temporal leakage where a feature contains future information">
+  <defs><marker id="arr-f5" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+  <!-- A: target leakage -->
+  <rect x="15" y="15" width="250" height="300" rx="8" class="fill-surface2" stroke="var(--critical)" stroke-width="1.5"/>
+  <text x="140" y="40" text-anchor="middle" class="lbl-strong" font-size="13">A · Target leakage</text>
+  <text x="140" y="58" text-anchor="middle" class="lbl" font-size="11">feature is a consequence of the label</text>
+  <line x1="40" y1="130" x2="245" y2="130" class="axis" marker-end="url(#arr-f5)"/>
+  <text x="140" y="148" text-anchor="middle" class="lbl" font-size="10">time →</text>
+  <rect x="55" y="95" width="70" height="26" class="box"/><text x="90" y="112" text-anchor="middle" class="lbl-strong" font-size="10">predict here</text>
+  <rect x="150" y="95" width="60" height="26" rx="4" fill="var(--s2)" fill-opacity=".25" stroke="var(--s2)"/><text x="180" y="112" text-anchor="middle" class="lbl-strong" font-size="10">churns</text>
+  <rect x="150" y="170" width="90" height="26" rx="4" fill="var(--critical)" fill-opacity=".2" stroke="var(--critical)"/><text x="195" y="187" text-anchor="middle" class="lbl-strong" font-size="10">refund_issued</text>
+  <path d="M180,121 L190,168" class="arrow" marker-end="url(#arr-f5)"/>
+  <text x="140" y="225" text-anchor="middle" class="lbl" font-size="11">The refund happens <tspan font-weight="700">because</tspan> of the</text>
+  <text x="140" y="240" text-anchor="middle" class="lbl" font-size="11">cancellation. At prediction time</text>
+  <text x="140" y="255" text-anchor="middle" class="lbl" font-size="11">it is always 0. Test says 92%,</text>
+  <text x="140" y="270" text-anchor="middle" class="lbl" font-size="11">production says 60%.</text>
+  <text x="140" y="298" text-anchor="middle" class="lbl-strong" font-size="11" fill="var(--critical)">Fix: drop it. Ask "known when?"</text>
+  <!-- B: contamination -->
+  <rect x="275" y="15" width="250" height="300" rx="8" class="fill-surface2" stroke="var(--critical)" stroke-width="1.5"/>
+  <text x="400" y="40" text-anchor="middle" class="lbl-strong" font-size="13">B · Train–test contamination</text>
+  <text x="400" y="58" text-anchor="middle" class="lbl" font-size="11">the split boundary is crossed</text>
+  <rect x="295" y="85" width="140" height="40" fill="var(--s1)" fill-opacity=".8"/><rect x="435" y="85" width="70" height="40" fill="var(--s3)" fill-opacity=".8"/>
+  <text x="365" y="110" text-anchor="middle" font-size="11" font-weight="700" fill="#fff">train</text><text x="470" y="110" text-anchor="middle" font-size="11" font-weight="700" fill="#fff">test</text>
+  <rect x="295" y="135" width="210" height="22" rx="4" fill="var(--critical)" fill-opacity=".18" stroke="var(--critical)" stroke-dasharray="4 2"/>
+  <text x="400" y="150" text-anchor="middle" class="lbl-strong" font-size="10">scaler / imputer / selector .fit(ALL)</text>
+  <!-- duplicate -->
+  <circle cx="380" cy="105" r="6" fill="var(--s7)"/><circle cx="470" cy="105" r="6" fill="var(--s7)"/>
+  <path d="M386,105 L464,105" stroke="var(--s7)" stroke-width="1.5" stroke-dasharray="3 2"/>
+  <text x="425" y="98" text-anchor="middle" class="lbl" font-size="9" fill="var(--s7)">same row twice</text>
+  <text x="400" y="185" text-anchor="middle" class="lbl" font-size="11">Statistics computed on all rows</text>
+  <text x="400" y="200" text-anchor="middle" class="lbl" font-size="11">(means, target encodings, "best"</text>
+  <text x="400" y="215" text-anchor="middle" class="lbl" font-size="11">features) carry test information</text>
+  <text x="400" y="230" text-anchor="middle" class="lbl" font-size="11">into training. Duplicates across</text>
+  <text x="400" y="245" text-anchor="middle" class="lbl" font-size="11">the split let the model "remember"</text>
+  <text x="400" y="260" text-anchor="middle" class="lbl" font-size="11">test rows.</text>
+  <text x="400" y="290" text-anchor="middle" class="lbl-strong" font-size="11" fill="var(--critical)">Fix: split first, Pipeline,</text>
+  <text x="400" y="304" text-anchor="middle" class="lbl-strong" font-size="11" fill="var(--critical)">de-duplicate before splitting</text>
+  <!-- C: temporal -->
+  <rect x="535" y="15" width="250" height="300" rx="8" class="fill-surface2" stroke="var(--critical)" stroke-width="1.5"/>
+  <text x="660" y="40" text-anchor="middle" class="lbl-strong" font-size="13">C · Temporal leakage</text>
+  <text x="660" y="58" text-anchor="middle" class="lbl" font-size="11">a feature contains the future</text>
+  <line x1="555" y1="130" x2="770" y2="130" class="axis" marker-end="url(#arr-f5)"/>
+  <text x="660" y="148" text-anchor="middle" class="lbl" font-size="10">time →</text>
+  <line x1="640" y1="90" x2="640" y2="130" stroke="var(--s7)" stroke-width="2" stroke-dasharray="4 3"/>
+  <text x="640" y="84" text-anchor="middle" class="lbl-strong" font-size="10" fill="var(--s7)">prediction date</text>
+  <rect x="560" y="100" width="150" height="22" rx="4" fill="var(--critical)" fill-opacity=".18" stroke="var(--critical)"/>
+  <text x="635" y="115" text-anchor="middle" class="lbl-strong" font-size="10">"total spend this year"</text>
+  <text x="660" y="185" text-anchor="middle" class="lbl" font-size="11">An aggregate computed over a</text>
+  <text x="660" y="200" text-anchor="middle" class="lbl" font-size="11">window that extends past the</text>
+  <text x="660" y="215" text-anchor="middle" class="lbl" font-size="11">prediction date; a record that was</text>
+  <text x="660" y="230" text-anchor="middle" class="lbl" font-size="11">updated after the fact ("status =</text>
+  <text x="660" y="245" text-anchor="middle" class="lbl" font-size="11">closed"); a random split of</text>
+  <text x="660" y="260" text-anchor="middle" class="lbl" font-size="11">time-ordered rows.</text>
+  <text x="660" y="290" text-anchor="middle" class="lbl-strong" font-size="11" fill="var(--critical)">Fix: point-in-time features,</text>
+  <text x="660" y="304" text-anchor="middle" class="lbl-strong" font-size="11" fill="var(--critical)">time-based split</text>
+</svg>
+<figcaption><strong>Figure 2.5 — The three leaks.</strong> Target leakage: the feature is caused by the label. Contamination: something (a fitted transformer, a duplicate row) crosses the train/test boundary. Temporal leakage: the feature encodes information from after the moment of prediction. All three inflate your offline score and vanish in production.</figcaption>
+</figure>
+
+<h3>Three realistic examples</h3>
+
+<div class="grid3">
+  <div class="card bad"><h4>1. The refund column (target leakage)</h4>
+  <p>A churn model includes <code>refund_issued</code>. Refunds are processed <em>after</em> a cancellation request, so the column is essentially the label with a delay. Offline AUC 0.94. In production, the model must score customers who have not cancelled yet, so the column is always 0; AUC collapses to what the other features give, around 0.73. The code below reproduces this exactly.</p></div>
+  <div class="card bad"><h4>2. Feature selection before the split (contamination)</h4>
+  <p>A team with 300 patients and 2,000 gene-expression features picks the 20 genes most correlated with the disease using all 300 patients, then cross-validates a classifier on those 20. Cross-validated accuracy: 75%. The genes were chosen using the held-out patients' labels, so every fold has already seen its own test answers. Done correctly (selection inside each fold), accuracy is 50% because in this example the data were pure noise.</p></div>
+  <div class="card bad"><h4>3. Averages that include tomorrow (temporal leakage)</h4>
+  <p>A demand forecast uses "average daily sales of this product" as a feature, computed over the whole dataset. For a row from March, that average includes April through December. The model learns that products with high averages sell well, which is trivially true and completely useless on the day you actually forecast. Fix: rolling averages that end strictly before each row's date.</p></div>
+</div>
+
+<pre class="code" data-lang="python"><code><span class="cm"># Example 1 reproduced: a leaky feature that is a consequence of the label</span>
+<span class="kw">import</span> numpy <span class="kw">as</span> np, pandas <span class="kw">as</span> pd
+<span class="kw">from</span> sklearn.model_selection <span class="kw">import</span> train_test_split
+<span class="kw">from</span> sklearn.ensemble <span class="kw">import</span> GradientBoostingClassifier
+<span class="kw">from</span> sklearn.metrics <span class="kw">import</span> accuracy_score, roc_auc_score
+rng = np.random.default_rng(<span class="nu">42</span>); n = <span class="nu">2000</span>
+df = pd.DataFrame({<span class="st">"customer_id"</span>: np.arange(<span class="nu">100001</span>, <span class="nu">100001</span>+n),
+    <span class="st">"signup_date"</span>: pd.to_datetime(<span class="st">"2021-01-01"</span>) + pd.to_timedelta(rng.integers(<span class="nu">0</span>, <span class="nu">1400</span>, n), <span class="st">"D"</span>),
+    <span class="st">"plan"</span>: rng.choice([<span class="st">"basic"</span>,<span class="st">"plus"</span>,<span class="st">"premium"</span>], n, p=[<span class="nu">.5</span>,<span class="nu">.3</span>,<span class="nu">.2</span>]), <span class="st">"age"</span>: rng.integers(<span class="nu">18</span>, <span class="nu">75</span>, n),
+    <span class="st">"tenure_months"</span>: rng.integers(<span class="nu">1</span>, <span class="nu">60</span>, n), <span class="st">"monthly_spend"</span>: rng.gamma(<span class="nu">4</span>, <span class="nu">12</span>, n).round(<span class="nu">2</span>),
+    <span class="st">"support_calls"</span>: rng.poisson(<span class="nu">1.2</span>, n), <span class="st">"days_since_login"</span>: rng.integers(<span class="nu">0</span>, <span class="nu">90</span>, n), <span class="st">"autopay"</span>: rng.random(n) &lt; <span class="nu">0.6</span>})
+logit = -<span class="nu">2.6</span> + <span class="nu">0.035</span>*df.days_since_login + <span class="nu">0.5</span>*df.support_calls - <span class="nu">0.02</span>*df.tenure_months - <span class="nu">0.6</span>*df.autopay
+df[<span class="st">"churned"</span>] = (rng.random(n) &lt; <span class="nu">1</span>/(<span class="nu">1</span>+np.exp(-logit))).astype(<span class="fn">int</span>)
+
+<span class="cm"># refunds are issued BECAUSE the customer cancelled: 75% of churners, 3% of stayers</span>
+df[<span class="st">"refund_issued"</span>] = (((df.churned == <span class="nu">1</span>) &amp; (rng.random(n) &lt; <span class="nu">0.75</span>)) |
+                      ((df.churned == <span class="nu">0</span>) &amp; (rng.random(n) &lt; <span class="nu">0.03</span>))).astype(<span class="fn">int</span>)
+honest = [<span class="st">"age"</span>, <span class="st">"tenure_months"</span>, <span class="st">"monthly_spend"</span>, <span class="st">"support_calls"</span>, <span class="st">"days_since_login"</span>, <span class="st">"autopay"</span>]
+leaky  = honest + [<span class="st">"refund_issued"</span>]
+y = df[<span class="st">"churned"</span>]
+<span class="kw">for</span> name, cols <span class="kw">in</span> [(<span class="st">"honest"</span>, honest), (<span class="st">"leaky "</span>, leaky)]:
+    Xtr, Xte, ytr, yte = train_test_split(df[cols], y, test_size=<span class="nu">0.2</span>, stratify=y, random_state=<span class="nu">0</span>)
+    m = GradientBoostingClassifier(random_state=<span class="nu">0</span>).fit(Xtr, ytr)
+    <span class="fn">print</span>(<span class="st">f"{name}: test acc={accuracy_score(yte, m.predict(Xte)):.3f}  AUC={roc_auc_score(yte, m.predict_proba(Xte)[:,1]):.3f}"</span>)
+<span class="out"># honest: test acc=0.735  AUC=0.729</span>
+<span class="out"># leaky : test acc=0.925  AUC=0.939</span></code></pre>
+
+<p>Note what the test set did <em>not</em> do: it did not catch the leak. The test rows have the same refund column, so the leaky model looks wonderful on them. <strong>A held-out set protects you from overfitting, not from leakage.</strong> Only understanding where each column comes from does that. The widget shows what happens next: the model ships, the refund column is 0 for every customer who has not cancelled yet, and the score falls to roughly what the honest features alone can deliver, or worse, because the model learned to lean on a column that no longer varies.</p>
+
+<div class="widget" id="w-leak">
+  <div class="w-title">Interactive: the leakage detector</div>
+  <div class="controls">
+    <label><input type="checkbox" id="lk-toggle" checked> include <code>refund_issued</code> as a feature</label>
+    <span>Offline test accuracy: <span class="readout" id="lk-off">–</span></span>
+    <span>First month in production: <span class="readout" id="lk-prod">–</span></span>
+  </div>
+  <svg viewBox="0 0 700 220" id="lk-svg" role="img" aria-label="Bar chart comparing offline test accuracy with production accuracy, with and without the leaky feature"></svg>
+  <div class="note" id="lk-note">Toggle the checkbox. With the leak, the offline score is spectacular and the production score is below the honest model's, because the model relies on a column that is always zero at prediction time. Without the leak, offline and production scores agree, which is the whole point of a test set. (Production numbers are simulated for illustration; the offline ones come from the code above.)</div>
+</div>
+
+<pre class="code" data-lang="python"><code><span class="cm"># Example 2 reproduced: feature selection outside vs. inside cross-validation, on PURE NOISE</span>
+<span class="kw">import</span> numpy <span class="kw">as</span> np
+<span class="kw">from</span> sklearn.feature_selection <span class="kw">import</span> SelectKBest, f_classif
+<span class="kw">from</span> sklearn.linear_model <span class="kw">import</span> LogisticRegression
+<span class="kw">from</span> sklearn.pipeline <span class="kw">import</span> make_pipeline
+<span class="kw">from</span> sklearn.model_selection <span class="kw">import</span> cross_val_score, StratifiedKFold
+rng = np.random.default_rng(<span class="nu">0</span>)
+X = rng.normal(size=(<span class="nu">300</span>, <span class="nu">2000</span>))          <span class="cm"># 300 patients, 2000 "genes" of random noise</span>
+y = rng.integers(<span class="nu">0</span>, <span class="nu">2</span>, <span class="nu">300</span>)               <span class="cm"># coin-flip labels: there is NOTHING to learn</span>
+cv = StratifiedKFold(<span class="nu">5</span>, shuffle=<span class="kw">True</span>, random_state=<span class="nu">0</span>)
+
+<span class="cm"># WRONG: choose the 20 "best" features using ALL rows, then cross-validate</span>
+X_sel = SelectKBest(f_classif, k=<span class="nu">20</span>).fit_transform(X, y)
+wrong = cross_val_score(LogisticRegression(), X_sel, y, cv=cv).mean()
+<span class="cm"># RIGHT: selection lives inside the Pipeline, so each fold selects using only its own training rows</span>
+right = cross_val_score(make_pipeline(SelectKBest(f_classif, k=<span class="nu">20</span>), LogisticRegression()), X, y, cv=cv).mean()
+<span class="fn">print</span>(<span class="st">f"selection outside CV: {wrong:.2f}   selection inside pipeline: {right:.2f}   (truth: 0.50)"</span>)
+<span class="out"># selection outside CV: 0.75   selection inside pipeline: 0.50   (truth: 0.50)</span></code></pre>
+
+<div class="callout key"><div class="title">Key idea</div>
+<p><strong>Anything that is <em>fitted</em> must be fitted on training rows only</strong>: scalers, imputers, encoders, feature selectors, the model itself. The mechanical way to guarantee this is to put every fitted step inside a scikit-learn <code>Pipeline</code> and call <code>.fit()</code> exactly once, on the training set. Chapter 8 makes this the default way you build everything.</p>
+</div>
+
+<h3>The leakage smell test</h3>
+<p>Run this checklist whenever a result looks better than you expected, and once more before you present anything.</p>
+<ol class="steps">
+  <li><strong>Is the score too good?</strong> Accuracy above 95%, AUC above 0.95, or a big jump after adding one feature: assume leakage until proven otherwise. Real business problems are noisy.</li>
+  <li><strong>Known when?</strong> For every feature, write the moment its value is written to the database. If that moment is after the moment you will make the prediction, it leaks.</li>
+  <li><strong>Is any feature caused by the label?</strong> Refunds, cancellation reasons, "account closed" flags, collections calls, complaint tickets filed after the decision. Anything downstream of the outcome.</li>
+  <li><strong>Which one feature does the model love?</strong> Look at feature importance (Chapter 20). If one column dominates, look at it very hard.</li>
+  <li><strong>Was anything fitted on all rows?</strong> Scaling, imputation, target encoding, feature selection, dimensionality reduction, oversampling: all of them, before or after the split?</li>
+  <li><strong>Are there duplicates or near-duplicates across the split?</strong> Same customer, same image with a different filename, same document re-uploaded.</li>
+  <li><strong>Is time ordered and did you shuffle it?</strong> If rows have dates, does your test set sit strictly after your training set?</li>
+  <li><strong>Does the label define the population?</strong> If the dataset only contains customers who called support, a model trained on it will not work on customers who did not.</li>
+</ol>
+
+<div class="callout warn"><div class="title">Common mistake</div>
+<p><strong>Oversampling the minority class before splitting.</strong> Techniques such as SMOTE create synthetic churners that are interpolations of real churners. If you oversample and then split, copies of test-set churners end up in training. Accuracy on the "test" set becomes meaningless. Always split first; resample only the training fold, inside a pipeline (Chapter 13).</p>
+</div>
+

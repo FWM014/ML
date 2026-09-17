@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>24 · Cheat Sheets, Glossary &amp; Interview Prep — ML: Zero to Expert</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body data-chapter="24">
+<header class="topbar"></header>
+<div class="progress-track"><div></div></div>
+<div class="shell">
+<nav class="sidebar"></nav>
+<main class="content"><div class="container">
+
+<header class="ch-header">
+  <div class="kicker">Part IV · Expert &amp; Production · Chapter 24</div>
+  <h1>Cheat Sheets, Glossary &amp; Interview Prep</h1>
+  <p class="lede">The whole book on a few pages. Maps, tables, formulas, code templates, a debugging flowchart, a 130-term glossary and 40 interview questions — the reference you will keep open in a second tab for the rest of your career.</p>
+  <div class="meta"><span class="level expert">All levels</span> <span>⏱ Reference — dip in as needed</span> <span>·</span> <span>Prereqs: the whole book (but usable on its own)</span></div>
+</header>
+
+<div class="objectives">
+  <h3>By the end of this chapter you will be able to</h3>
+  <ul>
+    <li>Place any ML problem, algorithm or technique on a single mental map and say which chapter covers it.</li>
+    <li>Pick a first model, a metric and a validation scheme for a new problem in under five minutes.</li>
+    <li>Read and write every formula this book used, and say in one sentence what each one means.</li>
+    <li>Type the scikit-learn, pandas and PyTorch patterns you need from memory, with correct API names.</li>
+    <li>Diagnose a badly performing model with a flowchart instead of a panic.</li>
+    <li>Answer 40 interview questions, from "what is bias–variance?" to "RAG or fine-tune?", crisply.</li>
+  </ul>
+</div>
+
+<div class="toc-inline"><strong>In this chapter</strong>
+<ol>
+  <li><a href="#s1">The ML landscape map</a></li>
+  <li><a href="#s2">The workflow at a glance &amp; leakage checklist</a></li>
+  <li><a href="#s3">Algorithm master table</a></li>
+  <li><a href="#s4">Which model first? Which metric?</a></li>
+  <li><a href="#s5">Formula sheet</a></li>
+  <li><a href="#s6">scikit-learn, pandas &amp; PyTorch cheat sheets</a></li>
+  <li><a href="#s7">Hyperparameter tuning cheat sheet</a></li>
+  <li><a href="#s8">The debugging flowchart</a></li>
+  <li><a href="#s9">Glossary</a></li>
+  <li><a href="#s10">Interview &amp; self-test: 40 questions</a></li>
+  <li><a href="#s11">Your learning path &amp; next steps</a></li>
+  <li><a href="#s12">Interactive: metric calculator</a></li>
+  <li><a href="#quiz">Quiz &amp; exercises</a></li>
+</ol></div>
+
+<p>This chapter is different from the other twenty-three. It teaches nothing new. Instead it compresses everything you have learned into the form you will actually use at work: a map to orient by, tables to look things up in, formulas to check, code to copy, a flowchart to debug with, a glossary to settle arguments, and questions to test yourself against before an interview or a design review. Read it once end-to-end now, then treat it as a reference. Every entry names the chapter where the full explanation lives.</p>
+
+<div class="callout eli9"><div class="title">Explain it like I'm 9</div>
+<p>After a long trip you make a scrapbook: one map of everywhere you went, the best photos, and a list of the words you learned. You don't reread the whole diary each time — you open the scrapbook. This chapter is your ML scrapbook. The map is Figure 24.1, the photos are the tables and figures, and the word list is the glossary.</p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s1">1. The ML landscape map</h2>
+
+<p>Everything in this book hangs off one tree. At the root: <em>learn a function from data</em>. The first split is by the kind of feedback in the data (Chapter 1): labels give you <strong>supervised</strong> learning, no labels give you <strong>unsupervised</strong> learning, and rewards give you <strong>reinforcement</strong> learning. <strong>Deep learning</strong> is not a fourth family but a family of <em>models</em> (stacked differentiable layers) that can be used in any of the three; we draw it as its own column because its tooling, failure modes and vocabulary are different enough to deserve one. Along the bottom run the cross-cutting skills that every project needs regardless of branch.</p>
+
+<figure class="fig">
+<svg viewBox="0 0 900 540" role="img" aria-label="Tree map of machine learning: a root node splits into supervised, unsupervised and deep learning columns, each with sub-branches and algorithm boxes labeled with chapter numbers; a bottom band lists cross-cutting chapters">
+  <defs><marker id="arr-f1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+  <!-- root -->
+  <rect x="360" y="12" width="180" height="36" rx="8" fill="var(--s7)" fill-opacity=".18" stroke="var(--s7)" stroke-width="2"/>
+  <text x="450" y="35" text-anchor="middle" class="lbl-strong" font-size="14">Machine learning</text>
+  <text x="450" y="60" text-anchor="middle" class="lbl" font-size="11">learn a function from data (Ch 1)</text>
+  <!-- branch lines -->
+  <path d="M450,48 L450,66 L150,66 L150,78" class="arrow" marker-end="url(#arr-f1)"/>
+  <path d="M450,66 L450,78" class="arrow" marker-end="url(#arr-f1)"/>
+  <path d="M450,66 L750,66 L750,78" class="arrow" marker-end="url(#arr-f1)"/>
+
+  <!-- ===== Supervised column ===== -->
+  <rect x="20" y="80" width="270" height="340" rx="10" fill="var(--s1)" fill-opacity=".06" stroke="var(--s1)" stroke-width="1.5"/>
+  <rect x="45" y="88" width="220" height="36" rx="7" fill="var(--s1)" fill-opacity=".22" stroke="var(--s1)" stroke-width="1.5"/>
+  <text x="155" y="106" text-anchor="middle" class="lbl-strong" font-size="13">Supervised</text>
+  <text x="155" y="119" text-anchor="middle" class="lbl" font-size="10">inputs + correct answers (Ch 1, 5–11)</text>
+  <path d="M100,124 L100,144" class="arrow" marker-end="url(#arr-f1)"/>
+  <path d="M210,124 L210,144" class="arrow" marker-end="url(#arr-f1)"/>
+  <rect x="45" y="146" width="105" height="30" class="box"/><text x="97" y="161" text-anchor="middle" class="lbl-strong" font-size="11">Regression</text><text x="97" y="172" text-anchor="middle" class="lbl" font-size="9">predict a number · Ch 5</text>
+  <rect x="160" y="146" width="105" height="30" class="box"/><text x="212" y="161" text-anchor="middle" class="lbl-strong" font-size="11">Classification</text><text x="212" y="172" text-anchor="middle" class="lbl" font-size="9">predict a class · Ch 6</text>
+  <path d="M97,176 L97,190 L155,190 L155,200" class="arrow" marker-end="url(#arr-f1)"/>
+  <path d="M212,176 L212,190 L155,190" class="arrow"/>
+  <g font-size="11">
+    <rect x="40" y="202" width="230" height="28" class="box"/><text x="155" y="220" text-anchor="middle" class="lbl-strong">Linear · Ridge · Lasso — Ch 5</text>
+    <rect x="40" y="236" width="230" height="28" class="box"/><text x="155" y="254" text-anchor="middle" class="lbl-strong">Logistic regression — Ch 6</text>
+    <rect x="40" y="270" width="230" height="28" class="box"/><text x="155" y="288" text-anchor="middle" class="lbl-strong">Decision trees — Ch 9</text>
+    <rect x="40" y="304" width="230" height="28" class="box-accent"/><text x="155" y="322" text-anchor="middle" class="lbl-strong">Random forest · Gradient boosting — Ch 10</text>
+    <rect x="40" y="338" width="230" height="28" class="box"/><text x="155" y="356" text-anchor="middle" class="lbl-strong">kNN · SVM · Naive Bayes — Ch 11</text>
+    <rect x="40" y="372" width="230" height="28" class="box"/><text x="155" y="390" text-anchor="middle" class="lbl-strong">Time-series forecasting — Ch 14</text>
+  </g>
+  <text x="155" y="414" text-anchor="middle" class="lbl" font-size="10">most business ML lives here · highlighted = usual winner on tables</text>
+
+  <!-- ===== Unsupervised column ===== -->
+  <rect x="315" y="80" width="270" height="340" rx="10" fill="var(--s3)" fill-opacity=".07" stroke="var(--s3)" stroke-width="1.5"/>
+  <rect x="340" y="88" width="220" height="36" rx="7" fill="var(--s3)" fill-opacity=".22" stroke="var(--s3)" stroke-width="1.5"/>
+  <text x="450" y="106" text-anchor="middle" class="lbl-strong" font-size="13">Unsupervised</text>
+  <text x="450" y="119" text-anchor="middle" class="lbl" font-size="10">inputs only, find structure (Ch 12)</text>
+  <path d="M378,124 L378,144" class="arrow" marker-end="url(#arr-f1)"/>
+  <path d="M450,124 L450,144" class="arrow" marker-end="url(#arr-f1)"/>
+  <path d="M522,124 L522,144" class="arrow" marker-end="url(#arr-f1)"/>
+  <rect x="338" y="146" width="76" height="30" class="box"/><text x="376" y="165" text-anchor="middle" class="lbl-strong" font-size="10">Clustering</text>
+  <rect x="418" y="146" width="76" height="30" class="box"/><text x="456" y="165" text-anchor="middle" class="lbl-strong" font-size="10">Dim. reduce</text>
+  <rect x="498" y="146" width="64" height="30" class="box"/><text x="530" y="165" text-anchor="middle" class="lbl-strong" font-size="10">Anomaly</text>
+  <g font-size="11">
+    <rect x="335" y="202" width="230" height="28" class="box"/><text x="450" y="220" text-anchor="middle" class="lbl-strong">k-means · DBSCAN · hierarchical — Ch 12</text>
+    <rect x="335" y="236" width="230" height="28" class="box"/><text x="450" y="254" text-anchor="middle" class="lbl-strong">PCA · t-SNE · UMAP — Ch 12</text>
+    <rect x="335" y="270" width="230" height="28" class="box"/><text x="450" y="288" text-anchor="middle" class="lbl-strong">Isolation Forest · autoencoders — Ch 22</text>
+  </g>
+  <path d="M376,176 L376,190 L450,190 L450,200" class="arrow" marker-end="url(#arr-f1)"/>
+  <path d="M456,176 L456,190" class="arrow"/>
+  <path d="M530,176 L530,190 L450,190" class="arrow"/>
+  <text x="450" y="322" text-anchor="middle" class="lbl-strong" font-size="11" fill="var(--s2)">Other families (Ch 22)</text>
+  <g font-size="11">
+    <rect x="335" y="330" width="230" height="28" rx="6" fill="var(--s2)" fill-opacity=".14" stroke="var(--s2)"/><text x="450" y="348" text-anchor="middle" class="lbl-strong">Reinforcement learning: Q-learning, policies</text>
+    <rect x="335" y="364" width="230" height="28" rx="6" fill="var(--s2)" fill-opacity=".14" stroke="var(--s2)"/><text x="450" y="382" text-anchor="middle" class="lbl-strong">Recommenders · causal inference · uplift</text>
+  </g>
+  <text x="450" y="414" text-anchor="middle" class="lbl" font-size="10">no answer key: you judge by usefulness, not accuracy</text>
+
+  <!-- ===== Deep learning column ===== -->
+  <rect x="610" y="80" width="270" height="340" rx="10" fill="var(--s2)" fill-opacity=".06" stroke="var(--s2)" stroke-width="1.5"/>
+  <rect x="635" y="88" width="220" height="36" rx="7" fill="var(--s2)" fill-opacity=".22" stroke="var(--s2)" stroke-width="1.5"/>
+  <text x="745" y="106" text-anchor="middle" class="lbl-strong" font-size="13">Deep learning</text>
+  <text x="745" y="119" text-anchor="middle" class="lbl" font-size="10">stacked differentiable layers (Ch 15–19)</text>
+  <path d="M673,124 L673,144" class="arrow" marker-end="url(#arr-f1)"/>
+  <path d="M745,124 L745,144" class="arrow" marker-end="url(#arr-f1)"/>
+  <path d="M817,124 L817,144" class="arrow" marker-end="url(#arr-f1)"/>
+  <rect x="633" y="146" width="76" height="30" class="box"/><text x="671" y="165" text-anchor="middle" class="lbl-strong" font-size="10">MLP</text>
+  <rect x="713" y="146" width="64" height="30" class="box"/><text x="745" y="165" text-anchor="middle" class="lbl-strong" font-size="10">CNN</text>
+  <rect x="781" y="146" width="76" height="30" class="box"/><text x="819" y="165" text-anchor="middle" class="lbl-strong" font-size="10">Sequence</text>
+  <path d="M671,176 L671,190 L745,190 L745,200" class="arrow" marker-end="url(#arr-f1)"/>
+  <path d="M745,176 L745,190" class="arrow"/>
+  <path d="M819,176 L819,190 L745,190" class="arrow"/>
+  <g font-size="11">
+    <rect x="630" y="202" width="230" height="28" class="box"/><text x="745" y="220" text-anchor="middle" class="lbl-strong">Neurons · backprop from scratch — Ch 15</text>
+    <rect x="630" y="236" width="230" height="28" class="box"/><text x="745" y="254" text-anchor="middle" class="lbl-strong">PyTorch training loop · regularization — Ch 16</text>
+    <rect x="630" y="270" width="230" height="28" class="box"/><text x="745" y="288" text-anchor="middle" class="lbl-strong">Convolutions · transfer learning — Ch 17</text>
+    <rect x="630" y="304" width="230" height="28" class="box-accent"/><text x="745" y="322" text-anchor="middle" class="lbl-strong">RNN · attention · Transformer — Ch 18</text>
+    <rect x="630" y="338" width="230" height="28" class="box-accent"/><text x="745" y="356" text-anchor="middle" class="lbl-strong">Embeddings · LLMs · RAG — Ch 19</text>
+  </g>
+  <text x="745" y="390" text-anchor="middle" class="lbl" font-size="10">wins on images, text, audio, huge data;</text>
+  <text x="745" y="404" text-anchor="middle" class="lbl" font-size="10">usually loses to boosting on small tables</text>
+
+  <!-- ===== cross-cutting band ===== -->
+  <text x="20" y="447" class="lbl-strong" font-size="12">Cross-cutting skills — needed on every branch:</text>
+  <g font-size="10">
+    <rect x="20" y="456" width="88" height="42" class="box"/><text x="64" y="473" text-anchor="middle" class="lbl-strong">Data</text><text x="64" y="488" text-anchor="middle" class="lbl">Ch 2</text>
+    <rect x="116" y="456" width="88" height="42" class="box"/><text x="160" y="473" text-anchor="middle" class="lbl-strong">Math</text><text x="160" y="488" text-anchor="middle" class="lbl">Ch 3</text>
+    <rect x="212" y="456" width="88" height="42" class="box"/><text x="256" y="473" text-anchor="middle" class="lbl-strong">Python stack</text><text x="256" y="488" text-anchor="middle" class="lbl">Ch 4</text>
+    <rect x="308" y="456" width="88" height="42" class="box-accent"/><text x="352" y="473" text-anchor="middle" class="lbl-strong">Generalization</text><text x="352" y="488" text-anchor="middle" class="lbl">Ch 7</text>
+    <rect x="404" y="456" width="88" height="42" class="box-accent"/><text x="448" y="473" text-anchor="middle" class="lbl-strong">Features</text><text x="448" y="488" text-anchor="middle" class="lbl">Ch 8</text>
+    <rect x="500" y="456" width="88" height="42" class="box"/><text x="544" y="473" text-anchor="middle" class="lbl-strong">Tuning</text><text x="544" y="488" text-anchor="middle" class="lbl">Ch 13</text>
+    <rect x="596" y="456" width="88" height="42" class="box"/><text x="640" y="473" text-anchor="middle" class="lbl-strong">Explaining</text><text x="640" y="488" text-anchor="middle" class="lbl">Ch 20</text>
+    <rect x="692" y="456" width="88" height="42" class="box"/><text x="736" y="473" text-anchor="middle" class="lbl-strong">MLOps</text><text x="736" y="488" text-anchor="middle" class="lbl">Ch 21</text>
+    <rect x="788" y="456" width="92" height="42" class="box"/><text x="834" y="473" text-anchor="middle" class="lbl-strong">Playbook</text><text x="834" y="488" text-anchor="middle" class="lbl">Ch 23</text>
+  </g>
+  <text x="450" y="524" text-anchor="middle" class="lbl" font-size="11">Highlighted boxes are the ones you will open most often at work.</text>
+</svg>
+<figcaption><strong>Figure 24.1 — The ML landscape in one tree.</strong> Three columns for the three ways of learning (supervised, unsupervised, and the deep-learning model family), each ending in the algorithm boxes and chapter numbers, with the cross-cutting skills every project needs along the bottom. If a new technique appears at work, find its box first; it almost always has one.</figcaption>
+</figure>
+
+<div class="callout key"><div class="title">Key idea</div>
+<p>The map is not a ranking. Boosted trees win on most business tables (Chapter 10); deep learning wins when the input is an image, text, audio or a truly huge dataset (Chapters 17–19); unsupervised methods win when there is no label yet (Chapter 12). The columns are separated by <em>what the data gives you</em>, not by how sophisticated the method is.</p>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s2">2. The workflow at a glance &amp; leakage checklist</h2>
+
+<p>Chapter 1 introduced the seven-step loop and Chapter 23 ran it end to end. Here it is compressed to the one question you must answer at each step and the tool you will reach for. If you can answer all seven questions for a project, you understand the project; if one is blank, that is where it will fail.</p>
+
+<figure class="fig">
+<svg viewBox="0 0 940 330" role="img" aria-label="Seven columns for the seven workflow steps, each showing the key question to ask and the main tool, with chapter references and a loop arrow from step seven back to step one">
+  <defs><marker id="arr-f2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+  <!-- columns: x = 6 + i*134, width 128 -->
+  <g font-size="11">
+    <!-- 1 -->
+    <rect x="6" y="18" width="128" height="250" rx="8" class="box-accent"/>
+    <circle cx="70" cy="42" r="14" fill="var(--accent)"/><text x="70" y="47" text-anchor="middle" font-size="13" font-weight="700" fill="#fff">1</text>
+    <text x="70" y="74" text-anchor="middle" class="lbl-strong" font-size="12">Define</text>
+    <text x="70" y="96" text-anchor="middle" class="lbl-strong" font-size="10" fill="var(--s2)">ASK</text>
+    <text x="70" y="111" text-anchor="middle" class="lbl">What decision?</text>
+    <text x="70" y="125" text-anchor="middle" class="lbl">Which metric?</text>
+    <text x="70" y="139" text-anchor="middle" class="lbl">What baseline?</text>
+    <text x="70" y="166" text-anchor="middle" class="lbl-strong" font-size="10" fill="var(--s3)">TOOL</text>
+    <text x="70" y="181" text-anchor="middle" class="lbl">problem one-pager,</text>
+    <text x="70" y="195" text-anchor="middle" class="lbl">DummyClassifier</text>
+    <text x="70" y="232" text-anchor="middle" class="lbl-strong" font-size="10">Ch 1, 23</text>
+    <text x="70" y="252" text-anchor="middle" class="lbl" font-size="9">where projects die #1</text>
+    <!-- 2 -->
+    <rect x="140" y="18" width="128" height="250" rx="8" class="box"/>
+    <circle cx="204" cy="42" r="14" fill="var(--accent)"/><text x="204" y="47" text-anchor="middle" font-size="13" font-weight="700" fill="#fff">2</text>
+    <text x="204" y="74" text-anchor="middle" class="lbl-strong" font-size="12">Get data</text>
+    <text x="204" y="96" text-anchor="middle" class="lbl-strong" font-size="10" fill="var(--s2)">ASK</text>
+    <text x="204" y="111" text-anchor="middle" class="lbl">Is the label real?</text>
+    <text x="204" y="125" text-anchor="middle" class="lbl">Enough rows?</text>
+    <text x="204" y="139" text-anchor="middle" class="lbl">Allowed to use it?</text>
+    <text x="204" y="166" text-anchor="middle" class="lbl-strong" font-size="10" fill="var(--s3)">TOOL</text>
+    <text x="204" y="181" text-anchor="middle" class="lbl">SQL, pandas,</text>
+    <text x="204" y="195" text-anchor="middle" class="lbl">label audit</text>
+    <text x="204" y="232" text-anchor="middle" class="lbl-strong" font-size="10">Ch 2</text>
+    <!-- 3 -->
+    <rect x="274" y="18" width="128" height="250" rx="8" class="box"/>
+    <circle cx="338" cy="42" r="14" fill="var(--accent)"/><text x="338" y="47" text-anchor="middle" font-size="13" font-weight="700" fill="#fff">3</text>
+    <text x="338" y="74" text-anchor="middle" class="lbl-strong" font-size="12">Explore &amp; clean</text>
+    <text x="338" y="96" text-anchor="middle" class="lbl-strong" font-size="10" fill="var(--s2)">ASK</text>
+    <text x="338" y="111" text-anchor="middle" class="lbl">What is missing,</text>
+    <text x="338" y="125" text-anchor="middle" class="lbl">duplicated, odd?</text>
+    <text x="338" y="139" text-anchor="middle" class="lbl">Any impossible values?</text>
+    <text x="338" y="166" text-anchor="middle" class="lbl-strong" font-size="10" fill="var(--s3)">TOOL</text>
+    <text x="338" y="181" text-anchor="middle" class="lbl">df.describe(), isna(),</text>
+    <text x="338" y="195" text-anchor="middle" class="lbl">histograms, groupby</text>
+    <text x="338" y="232" text-anchor="middle" class="lbl-strong" font-size="10">Ch 2, 4</text>
+    <!-- 4 -->
+    <rect x="408" y="18" width="128" height="250" rx="8" class="box"/>
+    <circle cx="472" cy="42" r="14" fill="var(--accent)"/><text x="472" y="47" text-anchor="middle" font-size="13" font-weight="700" fill="#fff">4</text>
+    <text x="472" y="74" text-anchor="middle" class="lbl-strong" font-size="12">Features</text>
+    <text x="472" y="96" text-anchor="middle" class="lbl-strong" font-size="10" fill="var(--s2)">ASK</text>
+    <text x="472" y="111" text-anchor="middle" class="lbl">Known at prediction</text>
+    <text x="472" y="125" text-anchor="middle" class="lbl">time? Encoded right?</text>
+    <text x="472" y="139" text-anchor="middle" class="lbl">Fitted on train only?</text>
+    <text x="472" y="166" text-anchor="middle" class="lbl-strong" font-size="10" fill="var(--s3)">TOOL</text>
+    <text x="472" y="181" text-anchor="middle" class="lbl">ColumnTransformer</text>
+    <text x="472" y="195" text-anchor="middle" class="lbl">inside a Pipeline</text>
+    <text x="472" y="232" text-anchor="middle" class="lbl-strong" font-size="10">Ch 8</text>
+    <text x="472" y="252" text-anchor="middle" class="lbl" font-size="9">leakage lives here</text>
+    <!-- 5 -->
+    <rect x="542" y="18" width="128" height="250" rx="8" class="box"/>
+    <circle cx="606" cy="42" r="14" fill="var(--accent)"/><text x="606" y="47" text-anchor="middle" font-size="13" font-weight="700" fill="#fff">5</text>
+    <text x="606" y="74" text-anchor="middle" class="lbl-strong" font-size="12">Train</text>
+    <text x="606" y="96" text-anchor="middle" class="lbl-strong" font-size="10" fill="var(--s2)">ASK</text>
+    <text x="606" y="111" text-anchor="middle" class="lbl">Does it beat the</text>
+    <text x="606" y="125" text-anchor="middle" class="lbl">baseline? By how</text>
+    <text x="606" y="139" text-anchor="middle" class="lbl">much, on CV?</text>
+    <text x="606" y="166" text-anchor="middle" class="lbl-strong" font-size="10" fill="var(--s3)">TOOL</text>
+    <text x="606" y="181" text-anchor="middle" class="lbl">sklearn, LightGBM,</text>
+    <text x="606" y="195" text-anchor="middle" class="lbl">XGBoost, PyTorch</text>
+    <text x="606" y="232" text-anchor="middle" class="lbl-strong" font-size="10">Ch 5–19</text>
+    <!-- 6 -->
+    <rect x="676" y="18" width="128" height="250" rx="8" class="box"/>
+    <circle cx="740" cy="42" r="14" fill="var(--accent)"/><text x="740" y="47" text-anchor="middle" font-size="13" font-weight="700" fill="#fff">6</text>
+    <text x="740" y="74" text-anchor="middle" class="lbl-strong" font-size="12">Evaluate</text>
+    <text x="740" y="96" text-anchor="middle" class="lbl-strong" font-size="10" fill="var(--s2)">ASK</text>
+    <text x="740" y="111" text-anchor="middle" class="lbl">Right metric? Honest</text>
+    <text x="740" y="125" text-anchor="middle" class="lbl">split? Stable across</text>
+    <text x="740" y="139" text-anchor="middle" class="lbl">folds and segments?</text>
+    <text x="740" y="166" text-anchor="middle" class="lbl-strong" font-size="10" fill="var(--s3)">TOOL</text>
+    <text x="740" y="181" text-anchor="middle" class="lbl">cross_validate, holdout,</text>
+    <text x="740" y="195" text-anchor="middle" class="lbl">SHAP, error analysis</text>
+    <text x="740" y="232" text-anchor="middle" class="lbl-strong" font-size="10">Ch 7, 13, 20</text>
+    <!-- 7 -->
+    <rect x="810" y="18" width="124" height="250" rx="8" class="box-accent"/>
+    <circle cx="872" cy="42" r="14" fill="var(--accent)"/><text x="872" y="47" text-anchor="middle" font-size="13" font-weight="700" fill="#fff">7</text>
+    <text x="872" y="74" text-anchor="middle" class="lbl-strong" font-size="12">Deploy &amp; monitor</text>
+    <text x="872" y="96" text-anchor="middle" class="lbl-strong" font-size="10" fill="var(--s2)">ASK</text>
+    <text x="872" y="111" text-anchor="middle" class="lbl">Same features live?</text>
+    <text x="872" y="125" text-anchor="middle" class="lbl">Is it still working?</text>
+    <text x="872" y="139" text-anchor="middle" class="lbl">Who gets paged?</text>
+    <text x="872" y="166" text-anchor="middle" class="lbl-strong" font-size="10" fill="var(--s3)">TOOL</text>
+    <text x="872" y="181" text-anchor="middle" class="lbl">API + registry,</text>
+    <text x="872" y="195" text-anchor="middle" class="lbl">PSI / drift, retrain</text>
+    <text x="872" y="232" text-anchor="middle" class="lbl-strong" font-size="10">Ch 21</text>
+    <text x="872" y="252" text-anchor="middle" class="lbl" font-size="9">where projects die #2</text>
+  </g>
+  <!-- arrows between columns -->
+  <g class="arrow">
+    <path d="M134,150 L140,150" marker-end="url(#arr-f2)"/><path d="M268,150 L274,150" marker-end="url(#arr-f2)"/><path d="M402,150 L408,150" marker-end="url(#arr-f2)"/>
+    <path d="M536,150 L542,150" marker-end="url(#arr-f2)"/><path d="M670,150 L676,150" marker-end="url(#arr-f2)"/><path d="M804,150 L810,150" marker-end="url(#arr-f2)"/>
+  </g>
+  <!-- loop back -->
+  <path d="M872,268 L872,300 L70,300 L70,272" class="arrow" stroke-dasharray="6 4" marker-end="url(#arr-f2)"/>
+  <text x="470" y="294" text-anchor="middle" class="lbl" font-size="11">iterate: monitoring findings feed the next problem definition</text>
+  <text x="470" y="322" text-anchor="middle" class="lbl" font-size="10">Rough effort split: steps 1–4 ≈ 60% · step 5 ≈ 15% · steps 6–7 ≈ 25%</text>
+</svg>
+<figcaption><strong>Figure 24.2 — The seven steps, one question and one tool each.</strong> Steps 1 and 7 are highlighted because they are where projects die; step 4 is where leakage is born. The dashed loop is the part beginners forget: a deployed model is the start of the next iteration, not the end.</figcaption>
+</figure>
+
+<div class="callout warn"><div class="title">Common mistake — the leakage checklist (Chapters 7, 8, 13, 23)</div>
+<p>Leakage is the single most common reason a model looks great in the notebook and useless in production. Before you trust any score, tick every box:</p>
+<ul>
+  <li><strong>Time:</strong> every feature is computable from information available <em>at the moment the prediction would be made</em>. No "days until cancellation", no post-outcome fields (refund issued, ticket closed).</li>
+  <li><strong>Split first:</strong> scalers, imputers, encoders, feature selectors and target encoders are fitted on the training fold only — i.e. they sit <em>inside</em> the <code>Pipeline</code> that cross-validation refits.</li>
+  <li><strong>Groups:</strong> rows from the same customer / patient / device are all in the same fold (<code>GroupKFold</code>), so the model can't memorize an entity.</li>
+  <li><strong>Time series:</strong> validation folds are strictly later than training folds (<code>TimeSeriesSplit</code>); no random shuffling of a time axis.</li>
+  <li><strong>Duplicates:</strong> near-identical rows (re-exports, retries) are deduplicated before splitting, or they straddle the split and inflate the score.</li>
+  <li><strong>Target proxies:</strong> no feature is a renamed or aggregated version of the target (e.g. "customer risk tier" set by the same fraud team whose decisions are the label).</li>
+  <li><strong>Suspiciously good:</strong> an AUC above 0.95 on a hard business problem, or one feature with 80% of the importance, is a leak until proven otherwise.</li>
+  <li><strong>Train/serve parity:</strong> the production feature code is the same code (ideally the same pickled pipeline) as the training feature code.</li>
+</ul>
+</div>

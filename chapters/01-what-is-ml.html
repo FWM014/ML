@@ -17,7 +17,7 @@
   <div class="kicker">Part I · Foundations · Chapter 01</div>
   <h1>What Machine Learning Really Is</h1>
   <p class="lede">Before touching a single algorithm, you need the mental map: what machine learning is, what it is not, the three big families, and the seven-step loop that every real project follows.</p>
-  <div class="meta"><span class="level">Beginner</span> <span>⏱ 45 min read</span> <span>·</span> <span>No prerequisites</span></div>
+  <div class="meta"><span class="level">Beginner</span> <span>⏱ 60 min read</span> <span>·</span> <span>No prerequisites</span></div>
 </header>
 
 <div class="objectives">
@@ -35,11 +35,13 @@
 <ol>
   <li><a href="#s1">Programs vs. learners</a></li>
   <li><a href="#s2">The three families of ML</a></li>
+  <li><a href="#s2b">ML, AI, data science, statistics</a></li>
   <li><a href="#s3">Regression vs. classification</a></li>
   <li><a href="#s4">The vocabulary you'll use every day</a></li>
   <li><a href="#s5">The 7-step ML workflow</a></li>
   <li><a href="#s6">When NOT to use ML</a></li>
   <li><a href="#s7">Try it: your first "model"</a></li>
+  <li><a href="#s8">Your first real model in 12 lines</a></li>
   <li><a href="#quiz">Quiz &amp; exercises</a></li>
 </ol></div>
 
@@ -165,6 +167,56 @@
 <p>When someone brings you a problem, your first question is: <em>"Do we have historical examples where we know the right answer?"</em> If yes → supervised. If no, but we have lots of data → unsupervised (or go collect labels!). If the problem is sequential decision-making with feedback → reinforcement. Sorting the problem correctly in the first five minutes saves weeks.</p>
 </div>
 
+
+<!-- ============================================================ -->
+<h2 id="s2b">Where ML sits: AI, data science, statistics</h2>
+
+<p>People use these words interchangeably in meetings. They are not the same, and knowing the difference makes you sound (and think) like a professional.</p>
+
+<figure class="fig">
+<svg viewBox="0 0 780 300" role="img" aria-label="Nested view: artificial intelligence contains machine learning, which contains deep learning; data science overlaps machine learning and statistics; statistics underpins machine learning">
+  <ellipse cx="270" cy="150" rx="250" ry="130" fill="var(--s1)" fill-opacity=".08" stroke="var(--s1)" stroke-width="1.5"/>
+  <text x="90" y="60" class="lbl-strong" fill="var(--s1)" font-size="14">Artificial Intelligence</text>
+  <text x="90" y="78" class="lbl" font-size="11">any technique that makes machines act smart</text>
+  <ellipse cx="300" cy="165" rx="170" ry="90" fill="var(--s3)" fill-opacity=".12" stroke="var(--s3)" stroke-width="1.5"/>
+  <text x="180" y="130" class="lbl-strong" fill="var(--s3)" font-size="14">Machine Learning</text>
+  <text x="180" y="148" class="lbl" font-size="11">learning rules from data</text>
+  <ellipse cx="340" cy="185" rx="85" ry="45" fill="var(--s2)" fill-opacity=".18" stroke="var(--s2)" stroke-width="1.5"/>
+  <text x="340" y="182" text-anchor="middle" class="lbl-strong" fill="var(--s2)" font-size="13">Deep Learning</text>
+  <text x="340" y="199" text-anchor="middle" class="lbl" font-size="11">neural networks (Part III)</text>
+  <ellipse cx="560" cy="150" rx="190" ry="110" fill="var(--s7)" fill-opacity=".08" stroke="var(--s7)" stroke-width="1.5" stroke-dasharray="6 4"/>
+  <text x="640" y="70" text-anchor="middle" class="lbl-strong" fill="var(--s7)" font-size="14">Data Science</text>
+  <text x="640" y="88" text-anchor="middle" class="lbl" font-size="11">questions → data → insight → decision</text>
+  <text x="640" y="250" text-anchor="middle" class="lbl" font-size="11">includes SQL, dashboards, A/B tests,</text>
+  <text x="640" y="266" text-anchor="middle" class="lbl" font-size="11">storytelling, and ML</text>
+  <rect x="30" y="245" width="180" height="40" rx="8" fill="var(--surface-2)" stroke="var(--ink-3)"/>
+  <text x="120" y="262" text-anchor="middle" class="lbl-strong" font-size="12">Statistics</text>
+  <text x="120" y="277" text-anchor="middle" class="lbl" font-size="10">the foundation under all of it</text>
+  <line x1="150" y1="245" x2="200" y2="215" class="arrow"/>
+</svg>
+<figcaption><strong>Figure 1.7 — The word map.</strong> AI is the umbrella goal. ML is the dominant technique for reaching it. Deep learning is one family of ML models. Data science is the job of turning data into decisions, and ML is one of its tools. Statistics is the ground everything stands on.</figcaption>
+</figure>
+
+<div class="callout eli9"><div class="title">Explain it like I'm 9</div>
+<p><strong>AI</strong> is the wish: "make the computer smart." <strong>Machine learning</strong> is the trick that mostly makes the wish come true: let it learn from examples. <strong>Deep learning</strong> is one very powerful kind of that trick, using "brain-inspired" layers. <strong>Data science</strong> is the whole detective job: asking the question, finding clues in the data, and explaining who did it. <strong>Statistics</strong> is the detective's rulebook for not fooling yourself.</p>
+</div>
+
+<div class="tbl-wrap">
+<table class="tbl">
+<thead><tr><th>Field</th><th>Core question</th><th>Typical output</th><th>Where this book covers it</th></tr></thead>
+<tbody>
+<tr><td><strong>Statistics</strong></td><td>"What can I conclude from this sample, and how sure am I?"</td><td>estimates, confidence intervals, tests</td><td>Ch 3, 13</td></tr>
+<tr><td><strong>Machine learning</strong></td><td>"Can I predict this accurately on new data?"</td><td>a model that predicts</td><td>Ch 5–19</td></tr>
+<tr><td><strong>Deep learning</strong></td><td>"Can I learn from raw, unstructured data (images, text)?"</td><td>neural networks</td><td>Ch 15–19</td></tr>
+<tr><td><strong>Data science</strong></td><td>"What should the business do, and why?"</td><td>analyses, decisions, models in production</td><td>Ch 2, 20–23</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="callout key"><div class="title">Key idea</div>
+<p>Statistics asks <em>"is this effect real?"</em> Machine learning asks <em>"does this prediction hold up on new data?"</em> Both matter at work. A great practitioner uses ML to predict and statistics to avoid fooling themselves about how good the predictions are (Chapter 13).</p>
+</div>
+
 <!-- ============================================================ -->
 <h2 id="s3">3. Regression vs. classification</h2>
 
@@ -250,6 +302,14 @@
 <tr><td><strong>Generalization</strong></td><td>How well the model does on data it has <em>never seen</em>. The only thing that matters.</td><td>out-of-sample performance</td></tr>
 </tbody>
 </table>
+</div>
+
+<div class="callout eli9"><div class="title">Explain it like I'm 9</div>
+<p>Think of a spreadsheet of your classmates. Each <strong>row</strong> is one classmate (an <em>example</em>). The columns "height", "shoe size", "favorite subject" are <strong>features</strong>. If the teacher wants to guess the column "will join the basketball team", that column is the <strong>label</strong>. The <strong>model</strong> is the teacher's rule of thumb after looking at many classmates. <strong>Loss</strong> is how many guesses were wrong.</p>
+</div>
+
+<div class="callout warn"><div class="title">Common mistake</div>
+<p>Confusing <strong>training score</strong> with <strong>real performance</strong>. A model can memorize its training examples and score 100% on them while being useless on new customers. The only score that counts is on data the model never saw. Chapter 7 is entirely about this.</p>
 </div>
 
 <figure class="fig">
@@ -430,6 +490,81 @@ best_thr, best_acc = <span class="kw">None</span>, <span class="nu">0</span>
 <p>Training a model is like playing "hot or cold." The model guesses, you tell it how wrong it was (that's the <em>loss</em>), and it nudges its guess to be less wrong. Do that a million times very fast and you get a model.</p>
 </div>
 
+
+<!-- ============================================================ -->
+<h2 id="s8">Your first real model in 12 lines</h2>
+
+<p>Here is a preview of the exact pattern you will use for the rest of the book and at work. Don't worry about every line yet; Chapter 4 explains the library and Chapters 5–7 explain what's inside the model. The point is to see how little code separates you from a working classifier — and to see the <strong>baseline rule</strong> in action.</p>
+
+<pre class="code" data-lang="python"><code><span class="cm"># The universal scikit-learn pattern: split → baseline → model → evaluate on unseen data</span>
+<span class="kw">from</span> sklearn.datasets <span class="kw">import</span> load_breast_cancer
+<span class="kw">from</span> sklearn.model_selection <span class="kw">import</span> train_test_split
+<span class="kw">from</span> sklearn.dummy <span class="kw">import</span> DummyClassifier
+<span class="kw">from</span> sklearn.linear_model <span class="kw">import</span> LogisticRegression
+<span class="kw">from</span> sklearn.pipeline <span class="kw">import</span> make_pipeline
+<span class="kw">from</span> sklearn.preprocessing <span class="kw">import</span> StandardScaler
+
+X, y = load_breast_cancer(return_X_y=<span class="kw">True</span>)           <span class="cm"># 569 tumors, 30 features, label: malignant/benign</span>
+X_tr, X_te, y_tr, y_te = train_test_split(X, y, test_size=<span class="nu">0.25</span>, random_state=<span class="nu">0</span>, stratify=y)
+
+baseline = DummyClassifier(strategy=<span class="st">"most_frequent"</span>).fit(X_tr, y_tr)   <span class="cm"># always predicts the common class</span>
+model = make_pipeline(StandardScaler(), LogisticRegression(max_iter=<span class="nu">1000</span>)).fit(X_tr, y_tr)
+
+<span class="fn">print</span>(<span class="st">f"baseline accuracy on unseen data: {baseline.score(X_te, y_te):.3f}"</span>)
+<span class="fn">print</span>(<span class="st">f"model    accuracy on unseen data: {model.score(X_te, y_te):.3f}"</span>)
+<span class="out"># baseline accuracy on unseen data: 0.629</span>
+<span class="out"># model    accuracy on unseen data: 0.958</span></code></pre>
+
+<p>Read it top to bottom:</p>
+<ol class="steps">
+  <li><strong>Load data.</strong> <code>X</code> is the feature table (569 rows × 30 columns), <code>y</code> is the label column. Exactly Figure 1.4.</li>
+  <li><strong>Split.</strong> A quarter of the rows are locked away as the <em>test set</em>. The model never sees them during training. <code>stratify=y</code> keeps the class mix the same in both halves.</li>
+  <li><strong>Baseline.</strong> The dumbest possible model: always predict the most common class. It scores 63% simply because 63% of tumors in this dataset are benign. Any real model must beat 63%, not 0%.</li>
+  <li><strong>Model.</strong> Scale the features, then fit a logistic regression (Chapter 6). The <code>.fit()</code> call is the "propose, measure, adjust, repeat" loop running automatically.</li>
+  <li><strong>Evaluate on unseen data.</strong> Both models are scored on the test rows only. 96% versus 63%: the model learned something real.</li>
+</ol>
+
+<div class="callout eli9"><div class="title">Explain it like I'm 9</div>
+<p>Imagine studying for a test with a practice booklet (<em>training data</em>). If the teacher then gives you the exact same booklet as the exam, a perfect score proves nothing; you might have memorized it. So the teacher keeps some questions secret (<em>test data</em>) and only those count. That is why we split.</p>
+</div>
+
+<div class="callout warn"><div class="title">Common mistake</div>
+<p>Peeking at the test set more than once. If you tweak the model, look at the test score, tweak again, look again — you have quietly turned the test set into training data and your final number is inflated. Use a separate <em>validation</em> set or cross-validation for tuning (Chapter 7) and touch the test set exactly once at the end.</p>
+</div>
+
+<div class="callout pro"><div class="title">At work</div>
+<p>This 12-line skeleton is the first thing to build on any new project, before any meeting about "which advanced model to use." It answers the two questions that matter on day one: <em>Is there signal at all?</em> (does anything beat the baseline?) and <em>How hard is this?</em> (how far is the simple model from good enough?). It also produces the first honest number you can put in front of a stakeholder.</p>
+</div>
+
+<p>One more thing you can do right now: swap the model. Because every scikit-learn model shares the same <code>fit</code>/<code>score</code> interface, trying a random forest (Chapter 10) is a one-line change:</p>
+
+<pre class="code" data-lang="python"><code><span class="kw">from</span> sklearn.ensemble <span class="kw">import</span> RandomForestClassifier
+<span class="kw">from</span> sklearn.datasets <span class="kw">import</span> load_breast_cancer
+<span class="kw">from</span> sklearn.model_selection <span class="kw">import</span> train_test_split
+
+X, y = load_breast_cancer(return_X_y=<span class="kw">True</span>)
+X_tr, X_te, y_tr, y_te = train_test_split(X, y, test_size=<span class="nu">0.25</span>, random_state=<span class="nu">0</span>, stratify=y)
+
+forest = RandomForestClassifier(n_estimators=<span class="nu">300</span>, random_state=<span class="nu">0</span>).fit(X_tr, y_tr)
+<span class="fn">print</span>(<span class="st">f"random forest accuracy on unseen data: {forest.score(X_te, y_te):.3f}"</span>)
+<span class="out"># random forest accuracy on unseen data: 0.944</span></code></pre>
+
+<p>Notice the forest did <em>not</em> beat the simpler model here. That happens constantly. "More powerful" does not mean "better on your data," and the only way to know is to measure honestly. That habit — measure, don't assume — is the whole discipline in one sentence.</p>
+
+<div class="callout key"><div class="title">Key idea</div>
+<p>The scikit-learn pattern is always the same: <code>split → fit(train) → score(test)</code>. Models are interchangeable parts. What changes between projects is the data work around them, the metric you choose, and how honestly you validate. That is what the next 23 chapters teach.</p>
+</div>
+
+<pre class="code" data-lang="python"><code><span class="cm"># Framing the same business question two ways (Section 3): regression vs. classification</span>
+<span class="kw">import</span> numpy <span class="kw">as</span> np
+rng = np.random.default_rng(<span class="nu">0</span>)
+days_until_churn = rng.integers(<span class="nu">1</span>, <span class="nu">365</span>, size=<span class="nu">8</span>)          <span class="cm"># a regression target: a number</span>
+churns_within_30 = (days_until_churn &lt;= <span class="nu">30</span>).astype(<span class="fn">int</span>)  <span class="cm"># a classification target: yes/no</span>
+<span class="fn">print</span>(<span class="st">"regression target:    "</span>, days_until_churn)
+<span class="fn">print</span>(<span class="st">"classification target:"</span>, churns_within_30)
+<span class="out"># regression target:     [310 232 187  99 113  15  28   7]</span>
+<span class="out"># classification target: [0 0 0 0 0 1 1 1]</span></code></pre>
+
 <!-- ============================================================ -->
 <h2 id="quiz">Quiz</h2>
 <div class="quiz">
@@ -489,6 +624,17 @@ best_thr, best_acc = <span class="kw">None</span>, <span class="nu">0</span>
     </ul>
     <div class="explain">"If overdue &gt; 30 days, send reminder" is a rule. The first box of Figure 1.6 exits here. Save ML for problems where the rule is unknown or too complex.</div>
   </div>
+
+  <div class="q">
+    <p class="question">6. Your model scores 99% on the rows it was trained on and 71% on rows it has never seen. What is the most accurate description?</p>
+    <ul class="opts">
+      <li><button>The model is excellent; report 99%</button></li>
+      <li><button data-correct>The model memorized the training data; the honest number is 71%</button></li>
+      <li><button>The test data must be wrong</button></li>
+      <li><button>Average the two: 85%</button></li>
+    </ul>
+    <div class="explain">Only performance on unseen data counts. A large gap between training and test scores is the signature of overfitting (Chapter 7). The reportable number is 71%, and the next job is to close the gap.</div>
+  </div>
 </div>
 
 <h2 id="exercises">Exercises</h2>
@@ -534,6 +680,8 @@ best_thr, best_acc = <span class="kw">None</span>, <span class="nu">0</span>
     <li>The 7-step loop: define → data → explore → features → train → evaluate → deploy/monitor. Data is most of the work.</li>
     <li>Always build a baseline first. Always ask whether a simple rule would do.</li>
     <li>All learning = propose parameters, measure error, adjust, repeat.</li>
+    <li>AI ⊃ ML ⊃ deep learning; data science uses ML to drive decisions; statistics keeps everyone honest.</li>
+    <li>The scikit-learn pattern is split → fit(train) → score(test); models are interchangeable parts, and "more powerful" is not "better" until measured.</li>
   </ul>
 </div>
 
