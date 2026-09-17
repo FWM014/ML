@@ -137,7 +137,7 @@
     <text x="344" y="150">2 days</text>
     <text x="576" y="168">done = frozen model + log</text>
     <text x="576" y="198">done = one test-set look + CIs</text>
-    <text x="692" y="228">done = deployed + rollback</text>
+    <text x="566" y="228" text-anchor="end">done = deployed + rollback</text>
   </g>
   <!-- kill gate -->
   <line x1="340" y1="60" x2="340" y2="290" stroke="var(--critical)" stroke-width="2" stroke-dasharray="6 3"/>
@@ -179,7 +179,7 @@
 <p>Every chapter in Parts II and III ended with a "which one at work" table. This section is the master version: one flowchart that routes any problem to a first and a second model, and one that routes it to a metric. The first model is always the one you can build and explain in a day; the second is the one that usually wins the leaderboard. Build both; the gap between them tells you how much the problem rewards complexity.</p>
 
 <figure class="fig">
-<svg viewBox="0 0 800 640" role="img" aria-label="Master decision flowchart: start from the data type; tabular splits by size and interpretability need into linear models, gradient boosting, random forests; image goes to pretrained CNN fine-tuning; text goes to TF-IDF plus linear then transformer embeddings; time series to seasonal baselines then gradient boosting on lag features; recommendations, anomaly and causal branch to Chapter 22; deep learning only with large data">
+<svg viewBox="0 0 800 662" role="img" aria-label="Master decision flowchart: start from the data type; tabular splits by size and interpretability need into linear models, gradient boosting, random forests; image goes to pretrained CNN fine-tuning; text goes to TF-IDF plus linear then transformer embeddings; time series to seasonal baselines then gradient boosting on lag features; recommendations, anomaly and causal branch to Chapter 22; deep learning only with large data">
   <defs><marker id="arr-f23-2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
   <rect x="300" y="16" width="200" height="44" class="box-accent"/><text x="400" y="43" text-anchor="middle" class="lbl-strong">What does one row look like?</text>
   <!-- branches from root -->
@@ -190,26 +190,26 @@
   <rect x="20" y="98" width="196" height="40" class="box"/><text x="118" y="116" text-anchor="middle" class="lbl-strong">Image / audio / video</text><text x="118" y="131" text-anchor="middle" class="lbl" font-size="11">(Chapter 17)</text>
   <line x1="118" y1="138" x2="118" y2="158" class="arrow" marker-end="url(#arr-f23-2)"/>
   <rect x="20" y="160" width="196" height="66" rx="6" fill="var(--s3)" fill-opacity=".14" stroke="var(--s3)" stroke-width="1.5"/>
-  <text x="118" y="178" text-anchor="middle" class="lbl-strong" font-size="11">1st: pretrained CNN/ViT, fine-tune</text>
+  <text x="118" y="178" text-anchor="middle" class="lbl-strong" font-size="11">1st: pretrained CNN, fine-tune</text>
   <text x="118" y="194" text-anchor="middle" class="lbl" font-size="11">2nd: larger backbone + augmentation</text>
   <text x="118" y="210" text-anchor="middle" class="lbl" font-size="11">never from scratch under 100k images</text>
   <rect x="20" y="246" width="196" height="40" class="box"/><text x="118" y="264" text-anchor="middle" class="lbl-strong">Free text</text><text x="118" y="279" text-anchor="middle" class="lbl" font-size="11">(Chapters 18–19)</text>
   <line x1="118" y1="286" x2="118" y2="306" class="arrow" marker-end="url(#arr-f23-2)"/>
   <rect x="20" y="308" width="196" height="66" rx="6" fill="var(--s3)" fill-opacity=".14" stroke="var(--s3)" stroke-width="1.5"/>
   <text x="118" y="326" text-anchor="middle" class="lbl-strong" font-size="11">1st: TF-IDF + logistic regression</text>
-  <text x="118" y="342" text-anchor="middle" class="lbl" font-size="11">2nd: sentence embeddings + GBM,</text>
-  <text x="118" y="358" text-anchor="middle" class="lbl" font-size="11">or fine-tuned small transformer / LLM</text>
+  <text x="118" y="342" text-anchor="middle" class="lbl" font-size="11">2nd: embeddings + GBM, or</text>
+  <text x="118" y="358" text-anchor="middle" class="lbl" font-size="11">fine-tuned transformer / LLM</text>
   <!-- tabular column (centre) -->
   <rect x="300" y="98" width="200" height="40" class="box"/><text x="400" y="116" text-anchor="middle" class="lbl-strong">Tabular (rows × columns)</text><text x="400" y="131" text-anchor="middle" class="lbl" font-size="11">~80% of business ML</text>
   <line x1="400" y1="138" x2="400" y2="158" class="arrow" marker-end="url(#arr-f23-2)"/>
   <rect x="300" y="160" width="200" height="40" class="box-accent"/><text x="400" y="178" text-anchor="middle" class="lbl-strong">How many rows?</text><text x="400" y="193" text-anchor="middle" class="lbl" font-size="11">and must every prediction be explained?</text>
   <!-- three tabular outcomes -->
   <line x1="300" y1="180" x2="262" y2="180" class="arrow"/><line x1="262" y1="180" x2="262" y2="224" class="arrow" marker-end="url(#arr-f23-2)"/>
-  <text x="256" y="205" text-anchor="end" class="lbl" font-size="10">&lt; 1k rows, or</text><text x="256" y="217" text-anchor="end" class="lbl" font-size="10">coefficients required</text>
+  <text x="268" y="209" class="lbl" font-size="10">&lt; 1k rows, or</text><text x="268" y="220" class="lbl" font-size="10">must explain</text>
   <line x1="400" y1="200" x2="400" y2="224" class="arrow" marker-end="url(#arr-f23-2)"/>
-  <text x="408" y="216" class="lbl" font-size="10">1k – 10M rows</text>
+  <text x="400" y="214" text-anchor="middle" class="lbl" font-size="10">1k – 10M rows</text>
   <line x1="500" y1="180" x2="538" y2="180" class="arrow"/><line x1="538" y1="180" x2="538" y2="224" class="arrow" marker-end="url(#arr-f23-2)"/>
-  <text x="544" y="205" class="lbl" font-size="10">&gt; 1M rows and</text><text x="544" y="217" class="lbl" font-size="10">raw signals / sequences</text>
+  <text x="532" y="209" text-anchor="end" class="lbl" font-size="10">&gt; 1M rows, raw</text><text x="532" y="220" text-anchor="end" class="lbl" font-size="10">signals / sequences</text>
   <rect x="236" y="226" width="150" height="80" rx="6" fill="var(--s1)" fill-opacity=".14" stroke="var(--s1)" stroke-width="1.5"/>
   <text x="311" y="244" text-anchor="middle" class="lbl-strong" font-size="11">1st: regularized linear /</text>
   <text x="311" y="258" text-anchor="middle" class="lbl-strong" font-size="11">logistic (Ch 5–6)</text>
@@ -218,10 +218,10 @@
   <rect x="400" y="226" width="150" height="80" rx="6" fill="var(--s2)" fill-opacity=".14" stroke="var(--s2)" stroke-width="1.5"/>
   <text x="475" y="244" text-anchor="middle" class="lbl-strong" font-size="11">1st: logistic / linear</text>
   <text x="475" y="258" text-anchor="middle" class="lbl-strong" font-size="11">2nd: gradient boosting</text>
-  <text x="475" y="274" text-anchor="middle" class="lbl" font-size="11">(HistGB / LightGBM / XGBoost)</text>
+  <text x="475" y="274" text-anchor="middle" class="lbl" font-size="11">(HistGB / LightGBM)</text>
   <text x="475" y="290" text-anchor="middle" class="lbl" font-size="11">RF if no time to tune (Ch 10)</text>
   <rect x="564" y="226" width="150" height="80" rx="6" fill="var(--s7)" fill-opacity=".14" stroke="var(--s7)" stroke-width="1.5"/>
-  <text x="639" y="244" text-anchor="middle" class="lbl-strong" font-size="11">1st: still gradient boosting</text>
+  <text x="639" y="244" text-anchor="middle" class="lbl-strong" font-size="11">1st: still a GBM</text>
   <text x="639" y="258" text-anchor="middle" class="lbl" font-size="11">2nd: neural net (Ch 15–16)</text>
   <text x="639" y="274" text-anchor="middle" class="lbl" font-size="11">only if it beats GBM on CV</text>
   <text x="639" y="290" text-anchor="middle" class="lbl" font-size="11">and latency allows</text>
@@ -230,20 +230,21 @@
   <line x1="682" y1="138" x2="682" y2="158" class="arrow" marker-end="url(#arr-f23-2)"/>
   <rect x="584" y="160" width="196" height="50" rx="6" fill="var(--s3)" fill-opacity=".14" stroke="var(--s3)" stroke-width="1.5"/>
   <text x="682" y="178" text-anchor="middle" class="lbl-strong" font-size="11">1st: seasonal naive / ETS</text>
-  <text x="682" y="194" text-anchor="middle" class="lbl" font-size="11">2nd: GBM on lag + calendar features</text>
+  <text x="682" y="194" text-anchor="middle" class="lbl" font-size="11">2nd: GBM on lags + calendar</text>
   <!-- special problem shapes row -->
   <text x="20" y="410" class="lbl-strong" font-size="13">Not a plain "predict y from X"? Route by question (Chapter 22):</text>
   <rect x="20" y="422" width="180" height="58" class="box"/><text x="110" y="442" text-anchor="middle" class="lbl-strong" font-size="11">"What to show each user?"</text><text x="110" y="458" text-anchor="middle" class="lbl" font-size="11">item-item CF → MF / two-tower</text><text x="110" y="472" text-anchor="middle" class="lbl" font-size="11">judge by online A/B lift</text>
-  <rect x="212" y="422" width="180" height="58" class="box"/><text x="302" y="442" text-anchor="middle" class="lbl-strong" font-size="11">"Which rows are weird?" no labels</text><text x="302" y="458" text-anchor="middle" class="lbl" font-size="11">robust z → Isolation Forest</text><text x="302" y="472" text-anchor="middle" class="lbl" font-size="11">judge by reviewed top-k</text>
+  <rect x="212" y="422" width="180" height="58" class="box"/><text x="302" y="442" text-anchor="middle" class="lbl-strong" font-size="11">"Which rows are weird?"</text><text x="302" y="458" text-anchor="middle" class="lbl" font-size="11">robust z → Isolation Forest</text><text x="302" y="472" text-anchor="middle" class="lbl" font-size="11">judge by reviewed top-k</text>
   <rect x="404" y="422" width="180" height="58" class="box"/><text x="494" y="442" text-anchor="middle" class="lbl-strong" font-size="11">"Did / will X cause Y?"</text><text x="494" y="458" text-anchor="middle" class="lbl" font-size="11">A/B test → adjustment → uplift</text><text x="494" y="472" text-anchor="middle" class="lbl" font-size="11">judge by effect + CI, Qini</text>
   <rect x="596" y="422" width="184" height="58" class="box"/><text x="688" y="442" text-anchor="middle" class="lbl-strong" font-size="11">"Group these" / "compress"</text><text x="688" y="458" text-anchor="middle" class="lbl" font-size="11">k-means / HDBSCAN, PCA/UMAP</text><text x="688" y="472" text-anchor="middle" class="lbl" font-size="11">judge by usefulness (Ch 12)</text>
   <!-- universal rules -->
-  <rect x="20" y="500" width="760" height="122" rx="8" fill="var(--accent-soft)" stroke="var(--accent)" stroke-width="1.5"/>
+  <rect x="20" y="500" width="760" height="144" rx="8" fill="var(--accent-soft)" stroke="var(--accent)" stroke-width="1.5"/>
   <text x="36" y="522" class="lbl-strong" font-size="13">Rules that override the chart</text>
   <text x="36" y="544" class="lbl" font-size="12">• Always run the dummy baseline and the linear model first; report every later model as "lift over baseline".</text>
   <text x="36" y="564" class="lbl" font-size="12">• Under ~500 labeled rows: linear models, strong regularization, cross-validation with many repeats; consider TabPFN; do not tune a GBM.</text>
   <text x="36" y="584" class="lbl" font-size="12">• If the top feature is suspicious (AUC &gt; 0.95 alone), it is leakage until proven otherwise (Section 4, Block 2).</text>
-  <text x="36" y="604" class="lbl" font-size="12">• Deep learning earns its cost only on images, text, audio, or very large raw-signal tables; on ordinary tables gradient boosting wins ~90% of the time.</text>
+  <text x="36" y="604" class="lbl" font-size="12">• Deep learning earns its cost only on images, text, audio, or very large raw-signal tables;</text>
+  <text x="36" y="624" class="lbl" font-size="12">   on ordinary tables gradient boosting wins ~90% of the time.</text>
 </svg>
 <figcaption><strong>Figure 23.2 — The master "which model when" chart.</strong> Route by data type, then by size and interpretability. The first model is the one you can build and explain in a day; the second is the one that usually wins. On tabular data the answer is gradient boosting so often that any other choice needs a stated reason.</figcaption>
 </figure>
@@ -258,11 +259,11 @@
   <!-- regression -->
   <rect x="50" y="74" width="180" height="36" class="box"/><text x="140" y="97" text-anchor="middle" class="lbl-strong">A number (regression)</text>
   <g class="lbl" font-size="11">
-    <rect x="30" y="128" width="220" height="150" rx="6" fill="var(--s1)" fill-opacity=".12" stroke="var(--s1)"/>
-    <text x="40" y="146" class="lbl-strong" font-size="11">big errors hurt disproportionately →</text><text x="40" y="160">RMSE (also the default for tuning)</text>
-    <text x="40" y="180" class="lbl-strong" font-size="11">outliers in y, want typical error →</text><text x="40" y="194">MAE (median-like, robust)</text>
-    <text x="40" y="214" class="lbl-strong" font-size="11">stakeholders think in % →</text><text x="40" y="228">WAPE (not MAPE: divides by zero, biased)</text>
-    <text x="40" y="248" class="lbl-strong" font-size="11">need a range, not a point →</text><text x="40" y="262">pinball loss on quantiles; coverage of PI</text>
+    <rect x="20" y="128" width="195" height="150" rx="6" fill="var(--s1)" fill-opacity=".12" stroke="var(--s1)"/>
+    <text x="28" y="146" class="lbl-strong" font-size="11">big errors hurt most →</text><text x="28" y="160">RMSE (default for tuning)</text>
+    <text x="28" y="180" class="lbl-strong" font-size="11">outliers in y →</text><text x="28" y="194">MAE (median-like, robust)</text>
+    <text x="28" y="214" class="lbl-strong" font-size="11">stakeholders think in % →</text><text x="28" y="228">WAPE (MAPE breaks near 0)</text>
+    <text x="28" y="248" class="lbl-strong" font-size="11">need a range, not a point →</text><text x="28" y="262">pinball loss; interval coverage</text>
   </g>
   <!-- classification -->
   <rect x="310" y="74" width="180" height="36" class="box"/><text x="400" y="97" text-anchor="middle" class="lbl-strong">A class (classification)</text>
@@ -272,17 +273,17 @@
   <text x="266" y="170" text-anchor="end" class="lbl" font-size="10">no</text>
   <line x1="510" y1="146" x2="530" y2="146" class="arrow"/><line x1="530" y1="146" x2="530" y2="184" class="arrow" marker-end="url(#arr-f23-3)"/>
   <text x="536" y="170" class="lbl" font-size="10">yes</text>
-  <rect x="210" y="186" width="150" height="56" rx="6" fill="var(--s2)" fill-opacity=".12" stroke="var(--s2)"/>
-  <text x="285" y="204" text-anchor="middle" class="lbl-strong" font-size="11">balanced</text>
-  <text x="285" y="219" text-anchor="middle" class="lbl" font-size="11">ROC-AUC to compare models;</text>
-  <text x="285" y="233" text-anchor="middle" class="lbl" font-size="11">accuracy only with a baseline</text>
-  <rect x="440" y="186" width="150" height="56" rx="6" fill="var(--s2)" fill-opacity=".12" stroke="var(--s2)"/>
-  <text x="515" y="204" text-anchor="middle" class="lbl-strong" font-size="11">imbalanced</text>
-  <text x="515" y="219" text-anchor="middle" class="lbl" font-size="11">PR-AUC to compare models;</text>
-  <text x="515" y="233" text-anchor="middle" class="lbl" font-size="11">never accuracy (Ch 6, 13)</text>
-  <line x1="285" y1="242" x2="285" y2="262" class="arrow" marker-end="url(#arr-f23-3)"/><line x1="515" y1="242" x2="515" y2="262" class="arrow" marker-end="url(#arr-f23-3)"/>
+  <rect x="225" y="186" width="145" height="56" rx="6" fill="var(--s2)" fill-opacity=".12" stroke="var(--s2)"/>
+  <text x="297" y="204" text-anchor="middle" class="lbl-strong" font-size="11">balanced</text>
+  <text x="297" y="219" text-anchor="middle" class="lbl" font-size="11">ROC-AUC to compare models;</text>
+  <text x="297" y="233" text-anchor="middle" class="lbl" font-size="11">accuracy only vs a baseline</text>
+  <rect x="430" y="186" width="145" height="56" rx="6" fill="var(--s2)" fill-opacity=".12" stroke="var(--s2)"/>
+  <text x="502" y="204" text-anchor="middle" class="lbl-strong" font-size="11">imbalanced</text>
+  <text x="502" y="219" text-anchor="middle" class="lbl" font-size="11">PR-AUC to compare models;</text>
+  <text x="502" y="233" text-anchor="middle" class="lbl" font-size="11">never accuracy (Ch 6, 13)</text>
+  <line x1="297" y1="242" x2="297" y2="262" class="arrow" marker-end="url(#arr-f23-3)"/><line x1="502" y1="242" x2="502" y2="262" class="arrow" marker-end="url(#arr-f23-3)"/>
   <rect x="290" y="264" width="220" height="36" class="box-accent"/><text x="400" y="287" text-anchor="middle" class="lbl-strong" font-size="12">Then: what will the decision use?</text>
-  <line x1="285" y1="262" x2="285" y2="264"/><line x1="515" y1="262" x2="515" y2="264"/>
+  
   <g class="lbl" font-size="11">
     <rect x="200" y="316" width="130" height="66" rx="6" fill="var(--s3)" fill-opacity=".12" stroke="var(--s3)"/>
     <text x="265" y="334" text-anchor="middle" class="lbl-strong" font-size="11">a yes/no action</text>
@@ -304,10 +305,10 @@
   <!-- ranking / other -->
   <rect x="580" y="74" width="180" height="36" class="box"/><text x="670" y="97" text-anchor="middle" class="lbl-strong">An ordering / a set</text>
   <g class="lbl" font-size="11">
-    <rect x="620" y="128" width="170" height="150" rx="6" fill="var(--s7)" fill-opacity=".12" stroke="var(--s7)"/>
-    <text x="630" y="146" class="lbl-strong" font-size="11">ranking / recommendation →</text><text x="630" y="160">NDCG@k, MAP, hit rate; then</text><text x="630" y="174">online CTR / conversion</text>
-    <text x="630" y="196" class="lbl-strong" font-size="11">clusters →</text><text x="630" y="210">silhouette as a hint; the real</text><text x="630" y="224">test is "do the segments act</text><text x="630" y="238">differently?"</text>
-    <text x="630" y="258" class="lbl-strong" font-size="11">forecast →</text><text x="630" y="272">WAPE / MASE vs seasonal naive</text>
+    <rect x="595" y="128" width="195" height="150" rx="6" fill="var(--s7)" fill-opacity=".12" stroke="var(--s7)"/>
+    <text x="603" y="146" class="lbl-strong" font-size="11">ranking / recommendation →</text><text x="603" y="160">NDCG@k, MAP, hit rate; then</text><text x="603" y="174">online CTR / conversion</text>
+    <text x="603" y="196" class="lbl-strong" font-size="11">clusters →</text><text x="603" y="210">silhouette as a hint; the real</text><text x="603" y="224">test is "do the segments act</text><text x="603" y="238">differently?"</text>
+    <text x="603" y="258" class="lbl-strong" font-size="11">forecast →</text><text x="603" y="272">WAPE / MASE vs seasonal naive</text>
   </g>
 </svg>
 <figcaption><strong>Figure 23.3 — The "which metric when" chart.</strong> The comparison metric (to choose between models) and the decision metric (to set a threshold and report to the business) are different things; you need both. For rare positives, PR-AUC compares and expected profit decides.</figcaption>
@@ -322,10 +323,48 @@
 
 <p>Everything above becomes concrete here. We build the churn project from the canvas in Section 1 on a synthetic dataset with named features, a couple of categorical and date columns, realistic missing values, and one deliberately leaky column. Every block is self-contained (re-reads the data, re-does the split with the same seed) so you can run any one of them alone; together they run in about a minute. The pattern (<code>ColumnTransformer</code> + <code>Pipeline</code> + cross-validation + one test-set look) is the pattern you will reuse for every tabular project.</p>
 
+
+<figure class="fig">
+<svg viewBox="0 0 800 300" role="img" aria-label="The eight blocks as a data flow: raw data goes through EDA and a leakage check, is split once into training data and a sealed test set; the training data feeds a pipeline of preprocessing and model that is compared by cross-validation, tuned, and used for out-of-fold threshold selection; only the frozen pipeline touches the sealed test set once, and the result is a saved artifact with metadata">
+  <defs><marker id="arr-f23-4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+  <rect x="20" y="40" width="110" height="50" class="box"/><text x="75" y="61" text-anchor="middle" class="lbl-strong" font-size="11">1 Raw data</text><text x="75" y="77" text-anchor="middle" class="lbl" font-size="10">EDA, missingness</text>
+  <line x1="130" y1="65" x2="158" y2="65" class="arrow" marker-end="url(#arr-f23-4)"/>
+  <rect x="160" y="40" width="110" height="50" class="box"/><text x="215" y="61" text-anchor="middle" class="lbl-strong" font-size="11">2 Leak check</text><text x="215" y="77" text-anchor="middle" class="lbl" font-size="10">drop AUC ≈ 1 columns</text>
+  <line x1="270" y1="65" x2="298" y2="65" class="arrow" marker-end="url(#arr-f23-4)"/>
+  <rect x="300" y="40" width="110" height="50" class="box-accent"/><text x="355" y="61" text-anchor="middle" class="lbl-strong" font-size="11">3 Split once</text><text x="355" y="77" text-anchor="middle" class="lbl" font-size="10">stratified, seeded</text>
+  <!-- train branch -->
+  <line x1="410" y1="55" x2="468" y2="55" class="arrow" marker-end="url(#arr-f23-4)"/>
+  <text x="438" y="48" text-anchor="middle" class="lbl" font-size="10">80% train</text>
+  <rect x="470" y="30" width="310" height="140" rx="8" fill="var(--s1)" fill-opacity=".08" stroke="var(--s1)" stroke-dasharray="5 3"/>
+  <text x="625" y="48" text-anchor="middle" class="lbl-strong" font-size="11">training data only: everything below is cross-validated</text>
+  <rect x="482" y="60" width="90" height="44" class="box"/><text x="527" y="78" text-anchor="middle" class="lbl-strong" font-size="10">3 Baselines</text><text x="527" y="92" text-anchor="middle" class="lbl" font-size="10">dummy, linear</text>
+  <line x1="572" y1="82" x2="584" y2="82" class="arrow" marker-end="url(#arr-f23-4)"/>
+  <rect x="586" y="60" width="90" height="44" class="box"/><text x="631" y="78" text-anchor="middle" class="lbl-strong" font-size="10">4 Pipeline + CV</text><text x="631" y="92" text-anchor="middle" class="lbl" font-size="10">prep → model</text>
+  <line x1="676" y1="82" x2="688" y2="82" class="arrow" marker-end="url(#arr-f23-4)"/>
+  <rect x="690" y="60" width="80" height="44" class="box"/><text x="730" y="78" text-anchor="middle" class="lbl-strong" font-size="10">5 Tune</text><text x="730" y="92" text-anchor="middle" class="lbl" font-size="10">small search</text>
+  <path d="M730,104 L730,120 L580,120 L580,128" class="arrow" fill="none" marker-end="url(#arr-f23-4)"/>
+  <rect x="500" y="130" width="160" height="32" rx="6" fill="var(--s2)" fill-opacity=".18" stroke="var(--s2)"/><text x="580" y="150" text-anchor="middle" class="lbl-strong" font-size="10">6 Threshold on out-of-fold probs × cost matrix</text>
+  <!-- test branch -->
+  <line x1="355" y1="90" x2="355" y2="208" class="arrow" marker-end="url(#arr-f23-4)"/>
+  <text x="362" y="150" class="lbl" font-size="10">20% test</text>
+  <rect x="290" y="210" width="130" height="50" rx="6" fill="var(--critical)" fill-opacity=".12" stroke="var(--critical)" stroke-width="1.5"/>
+  <text x="355" y="231" text-anchor="middle" class="lbl-strong" font-size="11">Sealed test set</text><text x="355" y="247" text-anchor="middle" class="lbl" font-size="10">opened exactly once</text>
+  <!-- frozen model to test -->
+  <path d="M580,162 L580,235 L422,235" class="arrow" fill="none" marker-end="url(#arr-f23-4)"/>
+  <text x="590" y="200" class="lbl" font-size="10">frozen pipeline + threshold</text>
+  <rect x="470" y="210" width="130" height="50" class="box"/><text x="535" y="231" text-anchor="middle" class="lbl-strong" font-size="11">7 Evaluate once</text><text x="535" y="247" text-anchor="middle" class="lbl" font-size="10">bootstrap CIs, SHAP</text>
+  <line x1="600" y1="235" x2="648" y2="235" class="arrow" marker-end="url(#arr-f23-4)"/>
+  <rect x="650" y="210" width="130" height="50" rx="6" fill="var(--s3)" fill-opacity=".18" stroke="var(--s3)" stroke-width="1.5"/><text x="715" y="231" text-anchor="middle" class="lbl-strong" font-size="11">8 Artifact</text><text x="715" y="247" text-anchor="middle" class="lbl" font-size="10">joblib + metadata JSON</text>
+  <line x1="420" y1="235" x2="468" y2="235" class="arrow" marker-end="url(#arr-f23-4)"/>
+  <text x="20" y="285" class="lbl" font-size="11">Rule: nothing that touches the test set feeds back into a modeling decision. Thresholds, features and hyperparameters are chosen inside the dashed box.</text>
+</svg>
+<figcaption><strong>Figure 23.4 — The eight blocks as a data flow.</strong> The split in Block 3 creates two worlds: the training world, where every decision (baselines, pipeline, tuning, threshold) is made by cross-validation, and the sealed test set, which the frozen pipeline meets exactly once in Block 7. Block 8 turns the result into a file.</figcaption>
+</figure>
+
 <h3>Block 1 — Build the dataset and look at it</h3>
 <p>In real life this block is a SQL query and a week of profiling (Chapter 2). Here we generate 5,000 customers whose churn depends on six informative signals, then add a plan derived from charges, a region, two dates, some missing NPS scores, and the trap: <code>cancellation_reason</code>, which is only ever filled in <em>after</em> a customer has churned.</p>
 
-<pre class="code" data-lang="python"><code><span class="cm"># Block 1 — build the synthetic churn dataset once, save it, and do a first EDA pass</span>
+<pre class="code" data-lang="python"><code><span class="cm"># Block 1 — build the synthetic churn dataset, save it, first EDA pass</span>
 <span class="kw">import</span> numpy <span class="kw">as</span> np, pandas <span class="kw">as</span> pd
 <span class="kw">from</span> sklearn.datasets <span class="kw">import</span> make_classification
 
@@ -360,7 +399,7 @@ df.<span class="fn">to_csv</span>(<span class="st">&quot;churn.csv&quot;</span>,
 <h3>Block 2 — Hunt for leakage</h3>
 <p>The cheapest leakage detector: fit a tiny model on <em>each column alone</em> and rank by cross-validated AUC. Anything that predicts the target almost perfectly by itself either is the target in disguise or is recorded after the fact.</p>
 
-<pre class="code" data-lang="python"><code><span class="cm"># Block 2 — leakage check: any single column that predicts the target &quot;too well&quot; is suspicious</span>
+<pre class="code" data-lang="python"><code><span class="cm"># Block 2 — leakage check: a column that predicts the target too well is suspect</span>
 <span class="kw">import</span> pandas <span class="kw">as</span> pd
 <span class="kw">from</span> sklearn.model_selection <span class="kw">import</span> cross_val_score
 <span class="kw">from</span> sklearn.tree <span class="kw">import</span> DecisionTreeClassifier
@@ -398,7 +437,7 @@ ranked = pd.Series(scores).<span class="fn">sort_values</span>(ascending=<span c
 <h3>Block 3 — Split once, and beat the dummies</h3>
 <p>Stratified 80/20 split with a fixed seed; the test set is now sealed until Block 7. Two baselines: the prior (predict the base rate for everyone) and a logistic regression on the numeric columns with median imputation and scaling in a pipeline.</p>
 
-<pre class="code" data-lang="python"><code><span class="cm"># Block 3 — drop the leak, split once (stratified), and fit two baselines</span>
+<pre class="code" data-lang="python"><code><span class="cm"># Block 3 — drop the leak, split once (stratified), fit two baselines</span>
 <span class="kw">import</span> pandas <span class="kw">as</span> pd
 <span class="kw">from</span> sklearn.model_selection <span class="kw">import</span> train_test_split
 <span class="kw">from</span> sklearn.dummy <span class="kw">import</span> DummyClassifier
@@ -429,7 +468,7 @@ logreg = <span class="fn">make_pipeline</span>(SimpleImputer(strategy=<span clas
 <h3>Block 4 — Feature engineering in a ColumnTransformer, then compare three models</h3>
 <p>Numeric columns: impute and scale. Categoricals: one-hot with <code>handle_unknown="ignore"</code> so a new region does not crash production. Dates: a <code>FunctionTransformer</code> that turns two timestamps into account age and signup month. All of it lives inside the pipeline, so cross-validation fits the imputer and the encoder on each training fold only. Then the three candidates from Figure 23.2 by 5-fold stratified CV on the training set.</p>
 
-<pre class="code" data-lang="python"><code><span class="cm"># Block 4 — feature engineering inside a ColumnTransformer, then compare three models by cross-validation</span>
+<pre class="code" data-lang="python"><code><span class="cm"># Block 4 — feature engineering in a ColumnTransformer; compare 3 models by CV</span>
 <span class="kw">import</span> numpy <span class="kw">as</span> np, pandas <span class="kw">as</span> pd
 <span class="kw">from</span> sklearn.model_selection <span class="kw">import</span> train_test_split, StratifiedKFold, cross_validate
 <span class="kw">from</span> sklearn.compose <span class="kw">import</span> ColumnTransformer
@@ -485,7 +524,7 @@ cv = StratifiedKFold(<span class="nu">5</span>, shuffle=<span class="kw">True</s
 <h3>Block 5 — Tune the winner with a small random search</h3>
 <p>Random search, 6 configurations, 3 folds, scored on PR-AUC: 18 fits, about 20 seconds. This is deliberately modest. Tuning usually buys a few points; feature work usually buys more; and a huge search on a small dataset finds noise (Chapter 13). Note that the search space includes <code>subsample</code>, which regularizes, and that <code>n_jobs</code> is explicit so the run is reproducible on a shared machine.</p>
 
-<pre class="code" data-lang="python"><code><span class="cm"># Block 5 — tune the winner with RandomizedSearchCV (small budget, 3 folds, PR-AUC as the objective)</span>
+<pre class="code" data-lang="python"><code><span class="cm"># Block 5 — tune the winner with RandomizedSearchCV (6 configs, 3 folds, PR-AUC)</span>
 <span class="kw">import</span> numpy <span class="kw">as</span> np, pandas <span class="kw">as</span> pd
 <span class="kw">from</span> scipy.stats <span class="kw">import</span> randint, uniform
 <span class="kw">from</span> sklearn.model_selection <span class="kw">import</span> train_test_split, StratifiedKFold, RandomizedSearchCV
@@ -528,7 +567,7 @@ search = RandomizedSearchCV(pipe, space, n_iter=<span class="nu">6</span>, cv=St
 <h3>Block 6 — Choose the threshold with the cost matrix, on out-of-fold predictions</h3>
 <p>A probability is not a decision. The retention team needs a list, and the length of the list is set by economics: an offer costs $20; a saved churner is worth $150; historically, an offer saves about 40% of the churners it reaches. That gives a profit for every threshold. We compute it on <strong>out-of-fold</strong> predictions from the training set (<code>cross_val_predict</code>) so the test set stays sealed and the probabilities are honest.</p>
 
-<pre class="code" data-lang="python"><code><span class="cm"># Block 6 — pick the decision threshold with a cost matrix, using out-of-fold probabilities (never the test set)</span>
+<pre class="code" data-lang="python"><code><span class="cm"># Block 6 — choose the threshold with a cost matrix on OUT-OF-FOLD probabilities</span>
 <span class="kw">import</span> numpy <span class="kw">as</span> np, pandas <span class="kw">as</span> pd
 <span class="kw">from</span> sklearn.model_selection <span class="kw">import</span> train_test_split, StratifiedKFold, cross_val_predict
 <span class="kw">from</span> sklearn.compose <span class="kw">import</span> ColumnTransformer
@@ -584,12 +623,55 @@ best_t = grid[prof.<span class="fn">argmax</span>()]
 <span class="out"># best threshold = 0.30  (profit $20900 per 4000 customers)</span>
 <span class="out"># contact everyone: $-29780   contact no one: $0</span></code></pre>
 
+
+<div class="callout math"><div class="title">The math (optional)</div>
+<p>For a threshold θ, flag every customer whose out-of-fold probability p̂ ≥ θ. With TP(θ) true churners and FP(θ) non-churners among the flagged, the expected profit is</p>
+<div class="formula">Profit(θ) = s · TP(θ) · V − ( TP(θ) + FP(θ) ) · C</div>
+<p>s is the save rate (fraction of contacted churners the offer retains), V the value of a saved customer, C the cost of one contact. The threshold that maximizes it is θ* = argmax<sub>θ</sub> Profit(θ). Equivalently, a contact is worth making when the customer's probability satisfies p̂ · s · V &gt; C, i.e. p̂ &gt; C / (s·V) = 20 / (0.4 × 150) = 0.33 for a perfectly calibrated model; the empirical optimum (0.30) is close, which is a small calibration check in itself.</p>
+</div>
+
+<figure class="fig">
+<svg viewBox="0 0 800 280" role="img" aria-label="Profit versus decision threshold on out-of-fold predictions: the curve rises steeply from 0.05, plateaus between 0.25 and 0.45 at about 20,800 dollars, then declines; horizontal reference lines show contact-nobody at zero and contact-everyone far below at minus 29,780">
+  <defs><marker id="arr-f23-5" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+  <line x1="60" y1="230" x2="560" y2="230" class="axis" marker-end="url(#arr-f23-5)"/>
+  <line x1="60" y1="230" x2="60" y2="30" class="axis" marker-end="url(#arr-f23-5)"/>
+  <text x="310" y="262" text-anchor="middle" class="lbl">decision threshold θ on p̂(churn)</text>
+  <text x="26" y="130" text-anchor="middle" class="lbl" transform="rotate(-90 26 130)">profit per 4,000 customers</text>
+  <g class="lbl" font-size="10" text-anchor="middle">
+    <text x="108" y="246">0.1</text><text x="204" y="246">0.3</text><text x="300" y="246">0.5</text><text x="396" y="246">0.7</text><text x="492" y="246">0.9</text>
+  </g>
+  <g class="lbl" font-size="10" text-anchor="end">
+    <text x="54" y="234">$0</text><text x="54" y="152">$10k</text><text x="54" y="70">$20k</text>
+  </g>
+  <g class="grid"><line x1="60" y1="148" x2="560" y2="148"/><line x1="60" y1="66" x2="560" y2="66"/></g>
+  <!-- plateau band -->
+  <rect x="180.0" y="58.2" width="96.0" height="171.8" fill="var(--s3)" fill-opacity=".10"/>
+  <text x="228.0" y="48" text-anchor="middle" class="lbl" fill="var(--s3)" font-size="11" font-weight="700">plateau: 0.25 – 0.45</text>
+  <polyline points="84.0,146.2 108.0,94.0 132.0,75.5 156.0,64.6 180.0,61.5 204.0,59.0 228.0,59.8 252.0,59.8 276.0,61.0 300.0,66.4 324.0,70.0 348.0,72.6 372.0,78.1 396.0,85.0 420.0,95.8 444.0,107.4 468.0,119.2 492.0,140.0" fill="none" stroke="var(--s1)" stroke-width="2.5"/>
+  <g fill="var(--s1)"><circle cx="84.0" cy="146.2" r="3"/><circle cx="108.0" cy="94.0" r="3"/><circle cx="132.0" cy="75.5" r="3"/><circle cx="156.0" cy="64.6" r="3"/><circle cx="180.0" cy="61.5" r="3"/><circle cx="204.0" cy="59.0" r="3"/><circle cx="228.0" cy="59.8" r="3"/><circle cx="252.0" cy="59.8" r="3"/><circle cx="276.0" cy="61.0" r="3"/><circle cx="300.0" cy="66.4" r="3"/><circle cx="324.0" cy="70.0" r="3"/><circle cx="348.0" cy="72.6" r="3"/><circle cx="372.0" cy="78.1" r="3"/><circle cx="396.0" cy="85.0" r="3"/><circle cx="420.0" cy="95.8" r="3"/><circle cx="444.0" cy="107.4" r="3"/><circle cx="468.0" cy="119.2" r="3"/><circle cx="492.0" cy="140.0" r="3"/></g>
+  <circle cx="204.0" cy="59.0" r="6" fill="var(--s7)"/>
+  <text x="214.0" y="47.0" class="lbl-strong" fill="var(--s7)" font-size="11">θ* = 0.30, $20,900</text>
+  <text x="108.0" y="116.0" class="lbl" font-size="10">too many contacts:</text><text x="108.0" y="128.0" class="lbl" font-size="10">offer cost eats the gain</text>
+  <text x="444.0" y="133.4" text-anchor="middle" class="lbl" font-size="10">too few contacts:</text><text x="444.0" y="145.4" text-anchor="middle" class="lbl" font-size="10">churners slip through</text>
+  <!-- reference panel -->
+  <rect x="590" y="40" width="190" height="150" rx="8" class="box"/>
+  <text x="685" y="62" text-anchor="middle" class="lbl-strong" font-size="11">Reference points</text>
+  <text x="600" y="86" class="lbl" font-size="11">contact no one: $0</text>
+  <text x="600" y="106" class="lbl" font-size="11">contact everyone: −$29,780</text>
+  <text x="600" y="126" class="lbl" font-size="11">model at θ*: +$20,900</text>
+  <text x="600" y="152" class="lbl" font-size="10">Break-even probability for a</text>
+  <text x="600" y="166" class="lbl" font-size="10">calibrated model: C/(s·V) = 0.33</text>
+  <text x="600" y="180" class="lbl" font-size="10">(close to the empirical 0.30)</text>
+</svg>
+<figcaption><strong>Figure 23.5 — Profit as a function of the threshold.</strong> The curve has a wide, flat top: anything between 0.25 and 0.45 is within 2% of the optimum, so the decision is robust to the exact cut-off. The steep left side is the cost of over-contacting; the gentle right side is the cost of missed churners. Both "obvious" strategies sit far below the plateau.</figcaption>
+</figure>
+
 <p>Contacting everyone loses $29,780 per 4,000 customers; contacting nobody makes $0; the model at threshold 0.30 makes about $20,900. The profit curve is flat between 0.25 and 0.45, which is good news: the decision is robust to the exact threshold. That flatness, and the three numbers, go on slide two (Section 6). The widget in Section 6 lets you move the business assumptions and watch the threshold move.</p>
 
 <h3>Block 7 — One look at the test set, with confidence intervals, then explain</h3>
 <p>Fit the frozen pipeline on the full training set, score the test set <em>once</em>, and bootstrap the test set (resample its rows 300 times) to get 95% confidence intervals for every reported number. Then two views of what drives predictions: permutation importance on the raw columns through the full pipeline (which respects the imputation and encoding), and mean |SHAP| on the transformed features (Chapter 20).</p>
 
-<pre class="code" data-lang="python"><code><span class="cm"># Block 7 — final fit, ONE look at the test set with bootstrap confidence intervals, then explain the model</span>
+<pre class="code" data-lang="python"><code><span class="cm"># Block 7 — final fit, ONE look at the test set with bootstrap CIs, then explain</span>
 <span class="kw">import</span> numpy <span class="kw">as</span> np, pandas <span class="kw">as</span> pd
 <span class="kw">from</span> sklearn.model_selection <span class="kw">import</span> train_test_split
 <span class="kw">from</span> sklearn.compose <span class="kw">import</span> ColumnTransformer
@@ -652,12 +734,48 @@ top_shap = pd.Series(np.<span class="fn">abs</span>(sv).<span class="fn">mean</s
 <span class="out"># permutation importance (drop in PR-AUC): {&#x27;nps_score&#x27;: 0.292, &#x27;late_payments&#x27;: 0.282, &#x27;discount_pct&#x27;: 0.183, &#x27;tenure_months&#x27;: 0.159, &#x27;avg_session_min&#x27;: 0.068}</span>
 <span class="out"># mean |SHAP|: {&#x27;num__late_payments&#x27;: 1.07, &#x27;num__nps_score&#x27;: 0.581, &#x27;num__discount_pct&#x27;: 0.501, &#x27;num__avg_session_min&#x27;: 0.481, &#x27;num__monthly_charges&#x27;: 0.312}</span></code></pre>
 
+
+<div class="callout math"><div class="title">The math (optional)</div>
+<p>The <strong>bootstrap</strong> estimates how much a metric would vary if we had drawn a different test set of the same size. Resample the n test rows <em>with replacement</em> B times; for each resample b compute the metric m<sub>b</sub> on the fixed predictions; report the percentile interval:</p>
+<div class="formula">CI<sub>95%</sub> = [ percentile<sub>2.5</sub>(m<sub>1</sub>, …, m<sub>B</sub>), percentile<sub>97.5</sub>(m<sub>1</sub>, …, m<sub>B</sub>) ]</div>
+<p>n is the test-set size (1,000 here, with 209 positives), B the number of resamples (300 is enough for a rough interval; 1,000+ for a report). The model is <em>not</em> refit; only the evaluation rows are resampled, so this captures evaluation uncertainty, not training variance. For rare positives the interval is driven by the number of positives, which is why 209 positives give ± 4–5 points of PR-AUC.</p>
+</div>
+
+<figure class="fig">
+<svg viewBox="0 0 800 280" role="img" aria-label="Histogram of 300 bootstrap PR-AUC values on the test set, centred near 0.834, with the 2.5th and 97.5th percentiles marked at 0.785 and 0.877, the cross-validation estimate 0.811 inside the interval, and a colleague's 0.845 also inside it">
+  <defs><marker id="arr-f23-6" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+  <line x1="60" y1="220" x2="560" y2="220" class="axis" marker-end="url(#arr-f23-6)"/>
+  <line x1="60" y1="220" x2="60" y2="30" class="axis" marker-end="url(#arr-f23-6)"/>
+  <text x="310" y="252" text-anchor="middle" class="lbl">PR-AUC on a bootstrap resample of the test set</text>
+  <text x="26" y="125" text-anchor="middle" class="lbl" transform="rotate(-90 26 125)">resamples (of 300)</text>
+  <g class="lbl" font-size="10" text-anchor="middle"><text x="90" y="236">0.76</text><text x="210" y="236">0.80</text><text x="330" y="236">0.84</text><text x="450" y="236">0.88</text></g>
+  <rect x="91.0" y="216.8" width="28.0" height="3.2" fill="var(--s1)" fill-opacity="0.35"/><rect x="121.0" y="213.6" width="28.0" height="6.4" fill="var(--s1)" fill-opacity="0.35"/><rect x="151.0" y="204.0" width="28.0" height="16.0" fill="var(--s1)" fill-opacity="0.35"/><rect x="181.0" y="191.2" width="28.0" height="28.8" fill="var(--s1)" fill-opacity="0.85"/><rect x="211.0" y="165.6" width="28.0" height="54.4" fill="var(--s1)" fill-opacity="0.85"/><rect x="241.0" y="127.2" width="28.0" height="92.8" fill="var(--s1)" fill-opacity="0.85"/><rect x="271.0" y="85.6" width="28.0" height="134.4" fill="var(--s1)" fill-opacity="0.85"/><rect x="301.0" y="53.6" width="28.0" height="166.4" fill="var(--s1)" fill-opacity="0.85"/><rect x="331.0" y="60.0" width="28.0" height="160.0" fill="var(--s1)" fill-opacity="0.85"/><rect x="361.0" y="92.0" width="28.0" height="128.0" fill="var(--s1)" fill-opacity="0.85"/><rect x="391.0" y="133.6" width="28.0" height="86.4" fill="var(--s1)" fill-opacity="0.85"/><rect x="421.0" y="172.0" width="28.0" height="48.0" fill="var(--s1)" fill-opacity="0.85"/><rect x="451.0" y="197.6" width="28.0" height="22.4" fill="var(--s1)" fill-opacity="0.35"/><rect x="481.0" y="210.4" width="28.0" height="9.6" fill="var(--s1)" fill-opacity="0.35"/><rect x="511.0" y="216.8" width="28.0" height="3.2" fill="var(--s1)" fill-opacity="0.35"/>
+  <line x1="165.0" y1="40" x2="165.0" y2="220" stroke="var(--s7)" stroke-width="2" stroke-dasharray="5 3"/>
+  <line x1="441.0" y1="40" x2="441.0" y2="220" stroke="var(--s7)" stroke-width="2" stroke-dasharray="5 3"/>
+  <text x="165.0" y="34" text-anchor="middle" class="lbl-strong" fill="var(--s7)" font-size="10">2.5% = 0.785</text>
+  <text x="441.0" y="34" text-anchor="middle" class="lbl-strong" fill="var(--s7)" font-size="10">97.5% = 0.877</text>
+  <line x1="312.0" y1="60" x2="312.0" y2="220" stroke="var(--ink)" stroke-width="1.5"/>
+  <text x="312.0" y="54" text-anchor="middle" class="lbl-strong" font-size="10">point estimate 0.834</text>
+  <circle cx="243.0" cy="205" r="5" fill="var(--s2)"/><text x="243.0" y="196" text-anchor="middle" class="lbl" fill="var(--s2)" font-size="10" font-weight="700">CV 0.811</text>
+  <circle cx="345.0" cy="205" r="5" fill="var(--s3)"/><text x="353.0" y="209" class="lbl" fill="var(--s3)" font-size="10" font-weight="700">colleague's 0.845</text>
+  <rect x="590" y="40" width="190" height="150" rx="8" class="box"/>
+  <text x="685" y="62" text-anchor="middle" class="lbl-strong" font-size="11">How to read it</text>
+  <text x="600" y="86" class="lbl" font-size="10">Anything inside the violet lines is</text>
+  <text x="600" y="100" class="lbl" font-size="10">indistinguishable from 0.834 on</text>
+  <text x="600" y="114" class="lbl" font-size="10">this test set.</text>
+  <text x="600" y="138" class="lbl" font-size="10">CV estimate inside → no over-tuning.</text>
+  <text x="600" y="160" class="lbl" font-size="10">Colleague's 0.845 inside → not a</text>
+  <text x="600" y="174" class="lbl" font-size="10">better model; a tie.</text>
+</svg>
+<figcaption><strong>Figure 23.6 — What the confidence interval says.</strong> Three hundred resamples of the 1,000-row test set spread the PR-AUC over almost a tenth of its range. The CV estimate and a rival model both fall inside the interval: the first means the tuning was honest; the second means the rivalry is noise.</figcaption>
+</figure>
+
 <p>Test PR-AUC is 0.834 with a CI of roughly [0.79, 0.88]; the CV estimate (0.811) sits inside it, so nothing was over-tuned. At the 0.30 threshold, precision 0.72 and recall 0.81: of the customers we contact, 72% would have churned, and we reach 81% of all churners. Both views of importance agree on the drivers (late payments, NPS, discount, session time, tenure), which is what the call script needs. The widths of the intervals are the honest part: with 209 positives in the test set, ± 4–5 points is the resolution we have, and a colleague's model that scores 0.845 is not better than this one.</p>
 
 <h3>Block 8 — Save the artifact and prove the reload</h3>
 <p>The deliverable is not a notebook; it is a file that turns a raw customer row into a decision, plus a metadata record of what it is. <code>joblib</code> serializes the whole pipeline (imputer statistics, encoder categories, trees). The JSON sidecar holds the threshold, the training snapshot, the library version and the feature list, everything a reviewer or a monitoring job needs (Chapter 21).</p>
 
-<pre class="code" data-lang="python"><code><span class="cm"># Block 8 — save the whole pipeline (preprocessing + model + threshold) and prove the reload works</span>
+<pre class="code" data-lang="python"><code><span class="cm"># Block 8 — save pipeline + threshold + metadata, and prove the reload works</span>
 <span class="kw">import</span> json, numpy <span class="kw">as</span> np, pandas <span class="kw">as</span> pd, joblib, sklearn
 <span class="kw">from</span> sklearn.model_selection <span class="kw">import</span> train_test_split
 <span class="kw">from</span> sklearn.compose <span class="kw">import</span> ColumnTransformer
@@ -731,6 +849,10 @@ prob = loaded.<span class="fn">predict_proba</span>(new_customer)[<span class="n
 </table>
 </div>
 
+<div class="callout eli9"><div class="title">Explain it like I'm 9</div>
+<p>In a science-fair experiment you change one thing at a time: more water <em>or</em> more sunlight, never both, or you cannot tell which one made the plant grow. The experiment log is the notebook where you write down each change and what happened, including the ones that made the plant droop. Especially those.</p>
+</div>
+
 <p>Three conventions make this table work. Every row names its <strong>parent</strong> (the run it modifies) so the Δ column is meaningful. The <strong>data snapshot</strong> column is a version, not a filename, so a result can be reproduced after the table is refreshed. And <strong>"no" rows stay in the table</strong>: the failed ideas are the most valuable part, because they stop the next person from repeating them. Row 7 is deliberately in the log; a jump of 0.2 in one step is not a discovery, it is an alarm.</p>
 
 <div class="callout pro"><div class="title">At work</div>
@@ -744,19 +866,19 @@ prob = loaded.<span class="fn">predict_proba</span>(new_customer)[<span class="n
 
 <figure class="fig">
 <svg viewBox="0 0 800 330" role="img" aria-label="Expected-value translation: a confusion matrix at the chosen threshold on the left with counts of true positives, false positives, false negatives and true negatives; arrows carry each cell to a money value using the cost of an offer, the value of a saved customer and the save rate; on the right a bar chart compares monthly profit for contact nobody, contact everyone, the current rule and the model">
-  <defs><marker id="arr-f23-4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+  <defs><marker id="arr-f23-7" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
   <text x="20" y="24" class="lbl-strong" font-size="14">From confusion matrix to profit (per 1,000 customers scored, threshold 0.30)</text>
   <!-- confusion matrix -->
   <text x="150" y="60" text-anchor="middle" class="lbl">predicted churn → contacted</text>
   <text x="95" y="82" text-anchor="middle" class="lbl" font-size="11">yes</text><text x="205" y="82" text-anchor="middle" class="lbl" font-size="11">no</text>
-  <text x="30" y="118" text-anchor="end" class="lbl" font-size="11">churns</text><text x="30" y="178" text-anchor="end" class="lbl" font-size="11">stays</text>
+  <text x="38" y="118" text-anchor="end" class="lbl" font-size="10">churns</text><text x="38" y="178" text-anchor="end" class="lbl" font-size="10">stays</text>
   <rect x="40" y="90" width="110" height="56" rx="6" fill="var(--good)" fill-opacity=".25" stroke="var(--good)"/><text x="95" y="112" text-anchor="middle" class="lbl-strong">TP = 169</text><text x="95" y="130" text-anchor="middle" class="lbl" font-size="11">caught churners</text>
   <rect x="150" y="90" width="110" height="56" rx="6" fill="var(--critical)" fill-opacity=".18" stroke="var(--critical)"/><text x="205" y="112" text-anchor="middle" class="lbl-strong">FN = 40</text><text x="205" y="130" text-anchor="middle" class="lbl" font-size="11">missed churners</text>
   <rect x="40" y="150" width="110" height="56" rx="6" fill="var(--warn)" fill-opacity=".25" stroke="var(--warn)"/><text x="95" y="172" text-anchor="middle" class="lbl-strong">FP = 66</text><text x="95" y="190" text-anchor="middle" class="lbl" font-size="11">wasted offers</text>
   <rect x="150" y="150" width="110" height="56" rx="6" class="box"/><text x="205" y="172" text-anchor="middle" class="lbl-strong">TN = 725</text><text x="205" y="190" text-anchor="middle" class="lbl" font-size="11">left alone, stayed</text>
   <text x="150" y="228" text-anchor="middle" class="lbl" font-size="11">precision = 169 / 235 = 0.72   recall = 169 / 209 = 0.81</text>
   <!-- translation box -->
-  <line x1="262" y1="148" x2="298" y2="148" class="arrow" marker-end="url(#arr-f23-4)"/>
+  <line x1="262" y1="148" x2="298" y2="148" class="arrow" marker-end="url(#arr-f23-7)"/>
   <rect x="300" y="70" width="210" height="170" rx="8" class="box-accent"/>
   <text x="405" y="92" text-anchor="middle" class="lbl-strong">Business assumptions</text>
   <text x="312" y="114" class="lbl" font-size="11">offer cost = $20 per contact</text>
@@ -766,20 +888,26 @@ prob = loaded.<span class="fn">predict_proba</span>(new_customer)[<span class="n
   <text x="312" y="180" class="lbl" font-size="11">revenue = 0.4 × 169 × $150 = $10,140</text>
   <text x="312" y="198" class="lbl" font-size="11">cost = (169 + 66) × $20 = $4,700</text>
   <text x="312" y="222" class="lbl-strong" font-size="12" fill="var(--s1)">profit ≈ $5,400 per 1,000 scored</text>
-  <!-- bar chart -->
-  <line x1="560" y1="200" x2="780" y2="200" class="axis"/>
+  <!-- bar chart: baseline y=150, 1px = $60; "everyone" clipped -->
   <text x="670" y="60" text-anchor="middle" class="lbl-strong">Monthly profit, 1,000 customers</text>
-  <!-- scale: 1px = $50, baseline y=200 -->
-  <rect x="575" y="200" width="40" height="0" fill="var(--ink-3)"/><text x="595" y="216" text-anchor="middle" class="lbl" font-size="10">nobody</text><text x="595" y="194" text-anchor="middle" class="lbl" font-size="10">$0</text>
-  <rect x="625" y="200" width="40" height="149" fill="var(--critical)" fill-opacity=".7"/><text x="645" y="216" text-anchor="middle" class="lbl" font-size="10">everyone</text><text x="645" y="222" text-anchor="middle" class="lbl" font-size="10"> </text>
-  <text x="645" y="235" text-anchor="middle" class="lbl" font-size="10" fill="var(--critical)">−$7,460</text>
-  <rect x="675" y="156" width="40" height="44" fill="var(--s2)" fill-opacity=".8"/><text x="695" y="216" text-anchor="middle" class="lbl" font-size="10">current rule</text><text x="695" y="150" text-anchor="middle" class="lbl" font-size="10">$2,200</text>
-  <rect x="725" y="92" width="40" height="108" fill="var(--s1)"/><text x="745" y="216" text-anchor="middle" class="lbl" font-size="10">model</text><text x="745" y="86" text-anchor="middle" class="lbl-strong" font-size="11">$5,400</text>
-  <text x="670" y="262" text-anchor="middle" class="lbl" font-size="11">"everyone" clipped: bar continues to −$7,460</text>
+  <line x1="560" y1="150" x2="780" y2="150" class="axis"/>
+  <text x="586" y="145" text-anchor="middle" class="lbl" font-size="10">$0</text>
+  <text x="586" y="166" text-anchor="middle" class="lbl" font-size="10">none</text>
+  <rect x="622" y="150" width="36" height="52" fill="var(--critical)" fill-opacity=".7"/>
+  <path d="M622,202 l6,-5 l6,5 l6,-5 l6,5 l6,-5 l6,5" fill="none" stroke="var(--surface)" stroke-width="3"/>
+  <text x="640" y="166" text-anchor="middle" class="lbl" font-size="10" fill="#fff" font-weight="700">all</text>
+  <text x="640" y="220" text-anchor="middle" class="lbl" font-size="10" fill="var(--critical)">−$7,460</text>
+  <rect x="676" y="113" width="36" height="37" fill="var(--s2)" fill-opacity=".85"/>
+  <text x="694" y="108" text-anchor="middle" class="lbl" font-size="10">$2,200</text>
+  <text x="694" y="166" text-anchor="middle" class="lbl" font-size="10">rule</text>
+  <rect x="730" y="60" width="36" height="90" fill="var(--s1)"/>
+  <text x="748" y="54" text-anchor="middle" class="lbl-strong" font-size="11">$5,400</text>
+  <text x="748" y="166" text-anchor="middle" class="lbl" font-size="10">model</text>
+  <text x="670" y="244" text-anchor="middle" class="lbl" font-size="10">"all" bar clipped; "rule" = today's tenure heuristic</text>
   <text x="400" y="300" text-anchor="middle" class="lbl">The headline is "+$3,200 per 1,000 customers per month vs. today's rule", not "PR-AUC 0.83".</text>
   <text x="400" y="318" text-anchor="middle" class="lbl" font-size="11">Show the assumptions on the same slide so the audience can argue with them, not with the model.</text>
 </svg>
-<figcaption><strong>Figure 23.4 — The expected-value translation.</strong> Every cell of the confusion matrix has a price. Multiply, add, and compare with the alternatives the business already understands: do nothing, do everything, keep the current rule. The assumptions are stated on the slide because they, not the model, are what the audience will want to change.</figcaption>
+<figcaption><strong>Figure 23.7 — The expected-value translation.</strong> Every cell of the confusion matrix has a price. Multiply, add, and compare with the alternatives the business already understands: do nothing, do everything, keep the current rule. The assumptions are stated on the slide because they, not the model, are what the audience will want to change.</figcaption>
 </figure>
 
 <div class="widget" id="w-ev">
@@ -806,7 +934,7 @@ prob = loaded.<span class="fn">predict_proba</span>(new_customer)[<span class="n
 <h3>The five-slide structure</h3>
 <ol class="steps">
   <li><strong>The problem and the decision (1 slide).</strong> "21% of customers churn per year; the retention team contacts 1,000 per month by gut feel." One number, one decision, one owner.</li>
-  <li><strong>Baseline vs model, in business units (1 slide).</strong> Figure 23.4's bar chart: nobody / everyone / current rule / model, in dollars per month, with confidence intervals. Below it, in small type, the ML metrics for the technical reader.</li>
+  <li><strong>Baseline vs model, in business units (1 slide).</strong> Figure 23.7's bar chart: nobody / everyone / current rule / model, in dollars per month, with confidence intervals. Below it, in small type, the ML metrics for the technical reader.</li>
   <li><strong>What drives the predictions (1 slide).</strong> Top five drivers in plain words ("customers with two or more late payments are 3× more likely to leave"), one partial-dependence or SHAP plot, and the sentence "these are associations the model uses, not causes" (Chapter 22).</li>
   <li><strong>Risks and limitations (1 slide).</strong> Where the model is weak (new customers with &lt; 2 months of history), what it cannot see, the fairness check result, how fast it will decay, and what happens if it is wrong (a wasted $20, not a denied loan).</li>
   <li><strong>Rollout plan (1 slide).</strong> Shadow mode for a month, A/B test with a 10% holdout, the metric that decides, the owner, the retraining cadence, and the kill criterion. End with the ask: "approve the A/B test".</li>
@@ -1066,7 +1194,7 @@ prob = loaded.<span class="fn">predict_proba</span>(new_customer)[<span class="n
       { name: "Monitoring", frac: 0.16, min: 0.5, color: "var(--s6)", dod: "dashboard, ongoing →" }
     ];
     var renderPlan = function () {
-      var W = +slider.value, x0 = 130, x1 = 740, y0 = 40, rowH = 26, px = (x1 - x0) / W, s = "";
+      var W = +slider.value, x0 = 130, x1 = 560, y0 = 40, rowH = 26, px = (x1 - x0) / W, s = "";
       var durs = phases.map(function (p) { var d = Math.max(p.min, p.frac * W); if (p.max) d = Math.min(p.max, d); return d; });
       var total = durs.reduce(function (a, b) { return a + b; }, 0);
       durs = durs.map(function (d) { return d * W / total; });
@@ -1129,7 +1257,7 @@ prob = loaded.<span class="fn">predict_proba</span>(new_customer)[<span class="n
       rows.forEach(function (r, i) {
         var bx = 120 + i * 220, h = r.profit * scale, y = h >= 0 ? zeroY - h : zeroY;
         s += '<rect x="' + bx + '" y="' + y.toFixed(1) + '" width="120" height="' + Math.abs(h).toFixed(1) + '" rx="4" fill="' + (i === 0 ? "var(--s1)" : i === 1 ? "var(--s2)" : "var(--ink-3)") + '"/>';
-        s += '<text x="' + (bx + 60) + '" y="' + (h >= 0 ? (y - 6) : (y + Math.abs(h) + 14)).toFixed(1) + '" text-anchor="middle" font-size="12" font-weight="700">' + money(r.profit) + '</text>';
+        s += '<text x="' + (bx + 60) + '" y="' + (h >= 0 ? (y - 6) : (zeroY - 6)).toFixed(1) + '" text-anchor="middle" font-size="12" font-weight="700">' + money(r.profit) + '</text>';
         s += '<text x="' + (bx + 60) + '" y="190" text-anchor="middle" font-size="11">' + r.name + '</text>';
       });
       esvg.innerHTML = s;

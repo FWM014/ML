@@ -390,6 +390,45 @@ idx = rng.permutation(<span class="fn">len</span>(X))
 <span class="fn">print</span>(idx, X[idx][:<span class="nu">3</span>].tolist())
 <span class="out"># [0 1 4 2 5 3] [[0, 1], [2, 3], [8, 9]]</span></code></pre>
 
+<details class="deepdive"><summary>Deep dive: views, copies, and why reshape is free <span class="time">6 min</span></summary>
+<div class="callout eli9"><div class="title">Explain it like I'm 9</div>
+<p>A view is a window onto the same box of numbers: look through it and you see part of the box; scribble on it and the box changes. A copy is a photocopy: scribble all you like, the original is untouched. NumPy hands you windows for some operations and photocopies for others, and it does not tell you which. The bugs come when you think you have a photocopy and you actually have a window.</p>
+</div>
+<p><strong>Precisely.</strong> An <code>ndarray</code> is a block of memory plus a recipe for reading it (shape and strides). <code>reshape</code>, <code>.T</code> and basic slices (<code>a[2:5]</code>, <code>X[:, 0]</code>) only change the recipe, so they are instant and they <strong>share memory</strong> with the original: a <em>view</em>. Fancy indexing with a list of positions and boolean masks must gather scattered elements into a new block, so they return a <em>copy</em>. Writing through a view modifies the original; writing to a copy does not.</p>
+<pre class="code" data-lang="python"><code><span class="cm"># Views share memory with the original; copies do not. Knowing which you have prevents silent bugs.</span>
+<span class="kw">import</span> numpy <span class="kw">as</span> np
+
+a = np.arange(<span class="nu">12</span>)
+v = a.reshape(<span class="nu">3</span>, <span class="nu">4</span>)            <span class="cm"># reshape: a VIEW, same 12 numbers seen as 3x4</span>
+s = a[<span class="nu">2</span>:<span class="nu">5</span>]                     <span class="cm"># basic slice: a VIEW</span>
+f = a[[<span class="nu">2</span>, <span class="nu">3</span>, <span class="nu">4</span>]]               <span class="cm"># fancy (list) index: a COPY</span>
+m = a[a &gt; <span class="nu">8</span>]                   <span class="cm"># boolean mask: a COPY</span>
+<span class="fn">print</span>(<span class="st">"shares memory? reshape:"</span>, np.shares_memory(a, v), <span class="st">" slice:"</span>, np.shares_memory(a, s),
+      <span class="st">" fancy:"</span>, np.shares_memory(a, f), <span class="st">" mask:"</span>, np.shares_memory(a, m))
+
+s[<span class="nu">0</span>] = <span class="nu">100</span>                     <span class="cm"># writing through the view changes a</span>
+f[<span class="nu">0</span>] = -<span class="nu">1</span>                      <span class="cm"># writing to the copy does not</span>
+<span class="fn">print</span>(<span class="st">"a after s[0]=100 and f[0]=-1:"</span>, a)
+
+X = np.arange(<span class="nu">6.0</span>).reshape(<span class="nu">3</span>, <span class="nu">2</span>)
+col = X[:, <span class="nu">0</span>]                  <span class="cm"># a view of column 0</span>
+col *= <span class="nu">10</span>                      <span class="cm"># in-place op on the view -&gt; X is modified</span>
+<span class="fn">print</span>(<span class="st">"X after col *= 10:\n"</span>, X)
+safe = X[:, <span class="nu">0</span>].copy()          <span class="cm"># explicit copy when you intend to modify independently</span>
+safe[:] = <span class="nu">0</span>
+<span class="fn">print</span>(<span class="st">"X untouched by the copy:"</span>, X[:, <span class="nu">0</span>])
+<span class="out"># shares memory? reshape: True  slice: True  fancy: False  mask: False</span>
+<span class="out"># a after s[0]=100 and f[0]=-1: [  0   1 100   3   4   5   6   7   8   9  10  11]</span>
+<span class="out"># X after col *= 10:</span>
+<span class="out">#  [[ 0.  1.]</span>
+<span class="out">#  [20.  3.]</span>
+<span class="out">#  [40.  5.]]</span>
+<span class="out"># X untouched by the copy: [ 0. 20. 40.]</span></code></pre><p>Three habits follow. (1) When you take a column to modify it independently, say so: <code>X[:, 0].copy()</code>. (2) When you standardise a feature in place with <code>X[:, j] -= mu</code>, know that any other view of <code>X</code> (and any pandas Series that wraps that memory) changes with it. (3) When you filter rows with a mask you always get a copy, which is why <code>df[mask]["col"] = 0</code> in Section 4 edits a throwaway. The cheap way to check is <code>np.shares_memory(a, b)</code>; the cheap way to be safe is to never rely on the distinction and copy explicitly whenever you intend to mutate.</p>
+<div class="callout pro"><div class="title">At work</div>
+<p>The classic production bug: a function receives a NumPy array, "scales" it in place for its own use, and silently corrupts the caller's data (which was going to be logged, or fed to a second model). Treat function arguments as read-only, or copy on entry. pandas 3 makes DataFrame operations copy-on-write for exactly this reason; NumPy does not, and will not.</p>
+</div>
+</details>
+
 <!-- ============================================================ -->
 <h2 id="s3">3. pandas: thinking in tables</h2>
 
@@ -736,6 +775,46 @@ t_vec = time.perf_counter() - t0
 <span class="fn">print</span>(np.allclose(a, b))
 <span class="out"># True</span></code></pre>
 
+<details class="deepdive"><summary>Deep dive: merge cardinality and the silent row explosion <span class="time">6 min</span></summary>
+<div class="callout eli9"><div class="title">Explain it like I'm 9</div>
+<p>You have a list of pupils and a list of "which class is this pupil in?". If one pupil appears twice on the second list (they moved class in March), joining the lists gives that pupil <em>two</em> lines, and every homework mark they got is now counted twice. Nothing crashed. The totals are simply wrong.</p>
+</div>
+<p><strong>Precisely.</strong> A merge pairs every row on the left with every matching row on the right. If the key is unique on the right (one tier per customer) each order gets exactly one match: a <em>many-to-one</em> merge, which is what feature engineering wants. If the key repeats on the right, orders are duplicated; the training set gains phantom rows, revenue totals inflate, and the duplicates end up on both sides of your train/test split (Chapter 2's contamination leak). pandas can check the cardinality for you and refuse:</p>
+<pre class="code" data-lang="python"><code><span class="cm"># A merge multiplies rows when the key is not unique on the lookup side. validate= catches it.</span>
+<span class="kw">import</span> pandas <span class="kw">as</span> pd
+
+orders = pd.DataFrame({<span class="st">"order_id"</span>: [<span class="nu">101</span>, <span class="nu">102</span>, <span class="nu">103</span>], <span class="st">"customer"</span>: [<span class="st">"ana"</span>, <span class="st">"ben"</span>, <span class="st">"ana"</span>], <span class="st">"amount"</span>: [<span class="nu">120.0</span>, <span class="nu">80.0</span>, <span class="nu">40.0</span>]})
+tiers  = pd.DataFrame({<span class="st">"customer"</span>: [<span class="st">"ana"</span>, <span class="st">"ben"</span>, <span class="st">"ben"</span>], <span class="st">"tier"</span>: [<span class="st">"gold"</span>, <span class="st">"silver"</span>, <span class="st">"gold"</span>]})   <span class="cm"># ben appears twice!</span>
+
+joined = pd.merge(orders, tiers, on=<span class="st">"customer"</span>, how=<span class="st">"left"</span>)
+<span class="fn">print</span>(<span class="fn">len</span>(orders), <span class="st">"orders -&gt;"</span>, <span class="fn">len</span>(joined), <span class="st">"rows after the merge;  revenue before/after:"</span>,
+      orders.amount.sum(), <span class="st">"/"</span>, joined.amount.sum())
+<span class="fn">print</span>(joined.to_string(index=<span class="kw">False</span>))
+
+<span class="kw">try</span>:
+    pd.merge(orders, tiers, on=<span class="st">"customer"</span>, how=<span class="st">"left"</span>, validate=<span class="st">"many_to_one"</span>)
+<span class="kw">except</span> pd.errors.MergeError <span class="kw">as</span> e:
+    <span class="fn">print</span>(<span class="st">"MergeError:"</span>, <span class="fn">str</span>(e).splitlines()[<span class="nu">0</span>])
+
+<span class="cm"># the fix: make the lookup side unique first (business rule: keep the latest / highest tier)</span>
+tiers_unique = tiers.drop_duplicates(<span class="st">"customer"</span>, keep=<span class="st">"last"</span>)
+ok = pd.merge(orders, tiers_unique, on=<span class="st">"customer"</span>, how=<span class="st">"left"</span>, validate=<span class="st">"many_to_one"</span>)
+<span class="fn">print</span>(<span class="fn">len</span>(ok), <span class="st">"rows, revenue"</span>, ok.amount.sum(), <span class="st">"| unmatched customers:"</span>, ok.tier.isna().sum())
+<span class="out"># 3 orders -&gt; 4 rows after the merge;  revenue before/after: 240.0 / 320.0</span>
+<span class="out">#  order_id customer  amount   tier</span>
+<span class="out">#       101      ana   120.0   gold</span>
+<span class="out">#       102      ben    80.0 silver</span>
+<span class="out">#       102      ben    80.0   gold</span>
+<span class="out">#       103      ana    40.0   gold</span>
+<span class="out"># MergeError: Merge keys are not unique in right dataset; not a many-to-one merge</span>
+<span class="out"># 3 rows, revenue 240.0 | unmatched customers: 0</span></code></pre><ol class="steps">
+  <li><strong>Always pass <code>validate=</code>.</strong> <code>"one_to_one"</code>, <code>"many_to_one"</code> or <code>"one_to_many"</code> turn a silent explosion into a loud error. It costs nothing.</li>
+  <li><strong>Assert the row count.</strong> After a left merge meant to add features, <code>assert len(joined) == len(orders)</code>. If it fails, the lookup table has duplicate keys and you must decide the business rule (latest record? highest tier?) before deduplicating.</li>
+  <li><strong>Count the NaNs in the new column.</strong> Unmatched keys after a left merge are not an error to pandas, but they are a data-quality finding for you (Figure 4.7).</li>
+  <li><strong>Watch the dtypes of the key.</strong> An <code>int64</code> customer id on one side and a <code>str</code> on the other matches nothing and produces a column of NaN without complaint. Compare <code>df.dtypes</code> before merging.</li>
+</ol>
+</details>
+
 <!-- ============================================================ -->
 <h2 id="s4">4. pandas gotchas that bite everyone</h2>
 
@@ -1014,6 +1093,53 @@ scaler = StandardScaler().fit(X_tr)
 <h3>Configuring and persisting</h3>
 <p><code>get_params()</code> returns every hyperparameter as a dictionary; <code>set_params(clf__C=0.1)</code> changes one. Inside a Pipeline, parameters are addressed as <code>stepname__param</code> with a double underscore. This naming is what <code>GridSearchCV</code> uses in Chapter 13, so pipelines are tunable as a unit. To save a fitted estimator use <code>joblib.dump(obj, path)</code> and <code>joblib.load(path)</code>; joblib handles the large NumPy arrays inside models efficiently. Always save the <em>whole pipeline</em>, and load it with the same library versions you saved it with.</p>
 
+<details class="deepdive"><summary>Deep dive: what Pipeline.fit actually does, step by step <span class="time">7 min</span></summary>
+<div class="callout eli9"><div class="title">Explain it like I'm 9</div>
+<p>A pipeline is a row of workers. During training, each worker studies the material, writes down what they learned, and passes the material on to the next worker. Later, when new material arrives, each worker only <em>applies</em> what they wrote down and passes it on; nobody studies again. That is why the new material never changes anyone's notes.</p>
+</div>
+<p><strong>Precisely.</strong> <code>Pipeline.fit(X, y)</code> walks the steps in order. For every step except the last it calls <code>fit_transform(X, y)</code> and feeds the result to the next step; on the last step it calls <code>fit</code>. <code>Pipeline.predict(X)</code> calls <code>transform</code> (never <code>fit</code>) on every step except the last, then <code>predict</code> on the last. A transformer that prints its calls makes this visible:</p>
+<pre class="code" data-lang="python"><code><span class="cm"># A transformer that logs its calls shows exactly what Pipeline.fit / predict do with each step</span>
+<span class="kw">import</span> numpy <span class="kw">as</span> np
+<span class="kw">from</span> sklearn.base <span class="kw">import</span> BaseEstimator, TransformerMixin
+<span class="kw">from</span> sklearn.pipeline <span class="kw">import</span> Pipeline
+<span class="kw">from</span> sklearn.linear_model <span class="kw">import</span> LogisticRegression
+<span class="kw">from</span> sklearn.datasets <span class="kw">import</span> load_breast_cancer
+<span class="kw">from</span> sklearn.model_selection <span class="kw">import</span> train_test_split
+
+<span class="kw">class</span> LoggingScaler(BaseEstimator, TransformerMixin):
+    <span class="kw">def</span> <span class="fn">fit</span>(self, X, y=<span class="kw">None</span>):
+        self.mean_, self.scale_ = X.mean(axis=<span class="nu">0</span>), X.std(axis=<span class="nu">0</span>)     <span class="cm"># learned -&gt; trailing underscore</span>
+        <span class="fn">print</span>(<span class="st">f"  scaler.fit       on {len(X)} rows  (mean of feature 0 = {self.mean_[0]:.2f})"</span>)
+        <span class="kw">return</span> self
+    <span class="kw">def</span> <span class="fn">transform</span>(self, X):
+        <span class="fn">print</span>(<span class="st">f"  scaler.transform on {len(X)} rows  (uses the stored mean {self.mean_[0]:.2f})"</span>)
+        <span class="kw">return</span> (X - self.mean_) / self.scale_
+
+X, y = load_breast_cancer(return_X_y=<span class="kw">True</span>)
+X_tr, X_te, y_tr, y_te = train_test_split(X, y, test_size=<span class="nu">0.25</span>, random_state=<span class="nu">0</span>, stratify=y)
+pipe = Pipeline([(<span class="st">"scale"</span>, LoggingScaler()), (<span class="st">"clf"</span>, LogisticRegression(max_iter=<span class="nu">1000</span>))])
+
+<span class="fn">print</span>(<span class="st">"pipe.fit(X_train):"</span>)
+pipe.fit(X_tr, y_tr)
+<span class="fn">print</span>(<span class="st">"pipe.predict(X_test):"</span>)
+pred = pipe.predict(X_te)
+<span class="fn">print</span>(<span class="st">"pipe.score(X_test):"</span>)
+<span class="fn">print</span>(<span class="st">f"  accuracy = {pipe.score(X_te, y_te):.3f}"</span>)
+<span class="fn">print</span>(<span class="st">"stored on the fitted step:"</span>, pipe.named_steps[<span class="st">"scale"</span>].mean_[:<span class="nu">2</span>].round(<span class="nu">2</span>), <span class="st">"... test rows never touched fit"</span>)
+<span class="out"># pipe.fit(X_train):</span>
+<span class="out">#   scaler.fit       on 426 rows  (mean of feature 0 = 14.12)</span>
+<span class="out">#   scaler.transform on 426 rows  (uses the stored mean 14.12)</span>
+<span class="out"># pipe.predict(X_test):</span>
+<span class="out">#   scaler.transform on 143 rows  (uses the stored mean 14.12)</span>
+<span class="out"># pipe.score(X_test):</span>
+<span class="out">#   scaler.transform on 143 rows  (uses the stored mean 14.12)</span>
+<span class="out">#   accuracy = 0.958</span>
+<span class="out"># stored on the fitted step: [14.12 19.27] ... test rows never touched fit</span></code></pre><p>Two things to notice. First, <code>fit</code> ran once, on the 426 training rows; every later call on the 143 test rows used the stored mean, so the test rows never influenced any learned number. That is the leak-proofing of Figure 4.10, enforced by the object rather than by your discipline. Second, writing your own transformer is twenty lines: inherit from <code>BaseEstimator</code> and <code>TransformerMixin</code>, learn in <code>fit</code> (store results with a trailing underscore), apply in <code>transform</code>, and you get <code>fit_transform</code>, <code>get_params</code> and compatibility with <code>GridSearchCV</code> and joblib for free. Any feature-engineering rule from Chapter 8 that computes something from the training data belongs in such a class, not in a notebook cell.</p>
+<div class="callout warn"><div class="title">Common mistake</div>
+<p>Putting a step that needs the label <em>and</em> must not see it at prediction time (target encoding, oversampling) into a plain Pipeline without checking that it behaves correctly in <code>transform</code>. Transformers receive <code>y</code> only in <code>fit</code>; anything that needs out-of-fold behaviour (Chapter 2's deep dive on leakage) needs sklearn's <code>TargetEncoder</code> or imbalanced-learn's pipeline, which are built for it.</p>
+</div>
+</details>
+
 <!-- ============================================================ -->
 <h2 id="s7">7. Your first complete project</h2>
 
@@ -1147,6 +1273,8 @@ names = {<span class="st">"sklearn"</span>: <span class="st">"scikit-learn"</spa
 </tbody>
 </table>
 </div>
+
+<div class="callout lab"><div class="title">Lab</div><p>Open <code>labs/ch04_pandas_sklearn.py</code> in VS Code and make the tests in <code>labs/tests/test_ch04.py</code> pass. You will vectorise a slow loop, build a groupby/merge feature table with a validated merge, and ship a fitted Pipeline that survives a joblib save-and-reload with identical predictions.</p></div>
 
 <!-- ============================================================ -->
 <h2 id="quiz">Quiz</h2>

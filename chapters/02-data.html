@@ -242,6 +242,7 @@ df[<span class="st">"churned"</span>] = (rng.random(n) &lt; <span class="nu">1</
 <span class="out"># days_since_login             int64</span>
 <span class="out"># autopay                       bool</span>
 <span class="out"># churned                      int64</span>
+<span class="out"># dtype: object</span>
 <span class="out"># churn rate = 26.2%</span></code></pre>
 
 <p>Walk the columns with Figure 2.2 in hand: <code>customer_id</code> is an identifier (drop). <code>signup_date</code> is a datetime (derive <code>tenure</code>; keep for time splits). <code>plan</code> is nominal categorical, or ordinal if you believe basic &lt; plus &lt; premium is a meaningful order. <code>age</code>, <code>tenure_months</code>, <code>monthly_spend</code> are numeric. <code>support_calls</code> is a count. <code>days_since_login</code> is numeric but really a <em>recency</em> signal. <code>autopay</code> is boolean. <code>churned</code> is the label: binary, so this is classification, and at 26% positive it is <strong>moderately imbalanced</strong> (a model that always says "stays" is already 74% accurate; remember that when you read accuracy numbers later).</p>
@@ -465,6 +466,39 @@ overlap = <span class="fn">set</span>(df.company_id.iloc[tr_idx]) &amp; <span cl
 <p>Decide the split strategy <em>in the problem-definition meeting</em>, not in the notebook. Ask: "Will this model score customers we have never seen (→ group split)? Will it score next month's data (→ time split)? Both (→ group-aware time split)?" Then write the split code once, save the row IDs of each set to a file, and make every experiment load the same file. Re-splitting with a different seed for each experiment is how teams end up comparing models on different data without noticing.</p>
 </div>
 
+<details class="deepdive"><summary>Deep dive: why stratify — the arithmetic of a rare class <span class="time">7 min</span></summary>
+<div class="callout eli9"><div class="title">Explain it like I'm 9</div>
+<p>A jar has 400 marbles and only 6 are red. Scoop out 80 without looking. Sometimes you get 3 reds, sometimes 1, and about one scoop in three gets <em>no red marble at all</em>. If the reds are the thing you are trying to learn to spot, a scoop with no reds cannot tell you anything about how good you are. Stratifying is scooping with your eyes open: you make sure every scoop gets its fair share of reds.</p>
+</div>
+<p><strong>Precisely.</strong> A random split draws the test rows without replacement from the whole table, so the number of positives that land in the test set is a random variable. Its expected value is what you would hope for; its spread is what hurts you.</p>
+<div class="callout math"><div class="title">The math (optional)</div>
+<div class="formula">E[K] = n<sub>test</sub> · p      SD[K] ≈ √( n<sub>test</sub> · p (1−p) · (1 − n<sub>test</sub>/N) )      P(K = 0) ≈ (1−p)<sup>n<sub>test</sub></sup></div>
+<p><em>K</em> is the number of positives in the test set, <em>n<sub>test</sub></em> the number of test rows, <em>N</em> the number of rows in the whole table, and <em>p</em> the positive rate. The first two are the mean and standard deviation of a binomial count; the factor (1 − <em>n<sub>test</sub></em>/<em>N</em>) is the finite-population correction, because rows drawn into the test set are not put back. The last line is the probability that the test set contains no positive at all, which makes recall undefined and precision meaningless. With <em>p</em> = 0.015 and <em>n<sub>test</sub></em> = 80: E[<em>K</em>] ≈ 1.2, SD ≈ 1.0 and P(<em>K</em> = 0) ≈ 0.30. Stratifying fixes <em>K</em> at its expected value (rounded), so SD = 0.</p>
+</div>
+<pre class="code" data-lang="python"><code><span class="cm"># How much does the positive count of a random 20% test fold wobble, and when does it hit zero?</span>
+<span class="kw">import</span> numpy <span class="kw">as</span> np
+<span class="kw">from</span> sklearn.model_selection <span class="kw">import</span> train_test_split
+
+rng = np.random.default_rng(<span class="nu">0</span>)
+<span class="kw">for</span> p, n <span class="kw">in</span> ((<span class="nu">0.26</span>, <span class="nu">2000</span>), (<span class="nu">0.02</span>, <span class="nu">2000</span>), (<span class="nu">0.02</span>, <span class="nu">400</span>)):
+    y = (rng.random(n) &lt; p).astype(<span class="fn">int</span>); X = np.zeros((n, <span class="nu">1</span>)); p_true = y.mean()
+    n_te = <span class="fn">int</span>(<span class="nu">0.2</span> * n); rand, strat, empty = [], [], <span class="nu">0</span>
+    <span class="kw">for</span> seed <span class="kw">in</span> <span class="fn">range</span>(<span class="nu">400</span>):
+        _, _, _, yt = train_test_split(X, y, test_size=<span class="nu">0.2</span>, random_state=seed)
+        rand.append(yt.sum()); empty += <span class="fn">int</span>(yt.sum() == <span class="nu">0</span>)
+        _, _, _, ys = train_test_split(X, y, test_size=<span class="nu">0.2</span>, random_state=seed, stratify=y)
+        strat.append(ys.sum())
+    theory = np.sqrt(n_te * p_true * (<span class="nu">1</span> - p_true) * (<span class="nu">1</span> - n_te / n))   <span class="cm"># binomial SD, finite-population corrected</span>
+    <span class="fn">print</span>(<span class="st">f"p={p_true:.3f} n={n:4d} test rows={n_te:3d} | random: {np.mean(rand):5.1f} ± {np.std(rand):4.1f} positives "</span>
+          <span class="st">f"(theory ± {theory:4.1f}), zero-positive folds {empty:3d}/400 | stratified: ± {np.std(strat):.1f}"</span>)
+<span class="out"># p=0.261 n=2000 test rows=400 | random: 103.5 ±  8.1 positives (theory ±  7.9), zero-positive folds   0/400 | stratified: ± 0.0</span>
+<span class="out"># p=0.018 n=2000 test rows=400 | random:   6.9 ±  2.3 positives (theory ±  2.3), zero-positive folds   0/400 | stratified: ± 0.0</span>
+<span class="out"># p=0.015 n= 400 test rows= 80 | random:   1.1 ±  0.9 positives (theory ±  1.0), zero-positive folds 117/400 | stratified: ± 0.0</span></code></pre><p>Read the three rows. With our 26% churn rate and 400 test rows the wobble is ±8 positives on 104 (about ±2 percentage points of churn rate), which is the "22% in val, 30% in test" effect from Figure 2.4: annoying, but survivable. At 2% positives the count itself is small (7 ± 2), so any metric computed on the positives, recall above all, moves by a third between splits for no real reason. At 2% on 400 rows, 117 of the 400 random splits produced a test set with <em>no positive at all</em>. Stratification removes the wobble entirely (± 0.0) at zero cost, which is why <code>stratify=y</code> and <code>StratifiedKFold</code> are the default for classification in this book and should be in your code.</p>
+<div class="callout key"><div class="title">Key idea</div>
+<p>Stratification removes the <em>split-to-split</em> noise in the class mix; it does not add positives. The last row still has only about 1 positive in the test set, so no metric on it can be trusted. When positives are rare, the number that limits you is the count of positives, not the count of rows (Chapter 7 returns to this), and the remedy is cross-validation over every positive you have, plus honest confidence intervals (Chapter 3).</p>
+</div>
+</details>
+
 <!-- ============================================================ -->
 <h2 id="s5">5. Data leakage: the #1 silent killer</h2>
 
@@ -629,6 +663,92 @@ right = cross_val_score(pipe, X, y, cv=cv).mean()
 <p><strong>Oversampling the minority class before splitting.</strong> Techniques such as SMOTE create synthetic churners that are interpolations of real churners. If you oversample and then split, copies of test-set churners end up in training. Accuracy on the "test" set becomes meaningless. Always split first; resample only the training fold, inside a pipeline (Chapter 13).</p>
 </div>
 
+<details class="deepdive"><summary>Deep dive: how leakage sneaks through preprocessing <span class="time">8 min</span></summary>
+<div class="callout eli9"><div class="title">Explain it like I'm 9</div>
+<p>Your teacher lets you "study" a summary sheet before the exam. The summary was written by reading everyone's exam answers, including yours. Even if the summary only says "students in row 3 usually get question 5 right", it quietly contains <em>your</em> answer. You will look smarter than you are, and it was the summary's fault, not yours.</p>
+</div>
+<p><strong>Precisely.</strong> Any preprocessing step that is <em>fitted</em>, meaning it computes something from the data and then applies it, carries information from the rows it saw into the rows it transforms. Scalers carry a mean; imputers a median; feature selectors a ranking; target encoders (replace a category by the average label of that category) carry the label itself. The last one is the worst, because each row's own label is inside the average that becomes its feature. Here it is on pure noise, where the honest answer is AUC = 0.50:</p>
+<pre class="code" data-lang="python"><code><span class="cm"># Target encoding fitted on ALL rows leaks each row's own label; fitted out-of-fold it does not</span>
+<span class="kw">import</span> numpy <span class="kw">as</span> np, pandas <span class="kw">as</span> pd
+<span class="kw">from</span> sklearn.model_selection <span class="kw">import</span> StratifiedKFold, cross_val_score
+<span class="kw">from</span> sklearn.linear_model <span class="kw">import</span> LogisticRegression
+
+rng = np.random.default_rng(<span class="nu">0</span>)
+n, levels = <span class="nu">2000</span>, <span class="nu">200</span>
+cat = rng.integers(<span class="nu">0</span>, levels, n)                 <span class="cm"># a 200-level categorical (zip code, product id, ...)</span>
+y = rng.integers(<span class="nu">0</span>, <span class="nu">2</span>, n)                        <span class="cm"># coin-flip labels: there is NOTHING to learn</span>
+
+<span class="cm"># WRONG: mean label per level over every row -&gt; each row's own label is inside its level's mean</span>
+enc_all = pd.Series(y).groupby(cat).transform(<span class="st">"mean"</span>).to_numpy()
+
+<span class="cm"># RIGHT: out-of-fold -&gt; a row's encoding is computed from the OTHER folds' labels only</span>
+enc_oof = np.zeros(n)
+<span class="kw">for</span> tr, va <span class="kw">in</span> StratifiedKFold(<span class="nu">5</span>, shuffle=<span class="kw">True</span>, random_state=<span class="nu">0</span>).split(cat, y):
+    level_means = pd.Series(y[tr]).groupby(cat[tr]).mean()
+    enc_oof[va] = pd.Series(cat[va]).map(level_means).fillna(y[tr].mean()).to_numpy()
+
+cv = StratifiedKFold(<span class="nu">5</span>, shuffle=<span class="kw">True</span>, random_state=<span class="nu">1</span>)
+<span class="kw">for</span> name, enc <span class="kw">in</span> ((<span class="st">"fitted on all rows"</span>, enc_all), (<span class="st">"out-of-fold      "</span>, enc_oof)):
+    auc = cross_val_score(LogisticRegression(), enc[:, <span class="kw">None</span>], y, cv=cv, scoring=<span class="st">"roc_auc"</span>).mean()
+    <span class="fn">print</span>(<span class="st">f"target encoding {name}: CV AUC = {auc:.3f}   (truth: 0.50)"</span>)
+<span class="out"># target encoding fitted on all rows: CV AUC = 0.683   (truth: 0.50)</span>
+<span class="out"># target encoding out-of-fold      : CV AUC = 0.512   (truth: 0.50)</span></code></pre><p>Why 0.68 and not 0.50? Each level holds about 10 rows, so a row's own label contributes one tenth of its encoded value: a positive row gets an encoding about 0.1 higher than an otherwise identical negative row. The classifier then "discovers" that high encodings mean positive, which is true on these rows and false on any new row. The out-of-fold version computes every row's encoding from the other folds, exactly as a deployed model would compute it from the training set for a new customer, and the illusion disappears (0.512 is sampling noise around 0.50). The same mechanism, with smaller numbers, is at work whenever a scaler or imputer is fitted on all rows: the test rows have shaped the statistics the model was trained with.</p>
+<div class="tbl-wrap">
+<table class="tbl">
+<thead><tr><th>Fitted step</th><th>What crosses the split</th><th>Typical damage</th><th>Leak-proof form</th></tr></thead>
+<tbody>
+<tr><td>StandardScaler / MinMaxScaler</td><td>test-set mean, variance, min, max</td><td>tiny, but non-zero</td><td>inside a Pipeline</td></tr>
+<tr><td>SimpleImputer</td><td>test-set median / mean</td><td>small; larger when missingness relates to the label</td><td>inside a Pipeline</td></tr>
+<tr><td>SelectKBest, correlation filters, RFE</td><td>which features "look" predictive, judged with test labels</td><td>large (the 0.75-on-noise example in §5)</td><td>inside a Pipeline</td></tr>
+<tr><td>Target / mean encoding</td><td>each row's own label</td><td>large</td><td>out-of-fold, or sklearn's <code>TargetEncoder</code>, which cross-fits internally</td></tr>
+<tr><td>Oversampling (SMOTE)</td><td>synthetic copies of test positives</td><td>large</td><td>fit on the training fold only (Chapter 13)</td></tr>
+<tr><td>PCA, clustering used as features</td><td>test-set structure</td><td>moderate</td><td>inside a Pipeline</td></tr>
+</tbody>
+</table>
+</div>
+<div class="callout pro"><div class="title">At work</div>
+<p>The test is mechanical: search the notebook for every <code>.fit(</code> and <code>.fit_transform(</code>, and for every pandas <code>groupby(...).transform(</code>, <code>mean()</code>, <code>quantile()</code> that feeds a feature. Each one must be computed from training rows only, and re-computed inside every cross-validation fold. If you cannot say which rows a statistic came from, assume it leaked. Chapter 8 makes this structural with <code>Pipeline</code> and <code>ColumnTransformer</code>, so that the question does not depend on anyone's discipline.</p>
+</div>
+</details>
+
+<details class="deepdive"><summary>Deep dive: point-in-time features, done right in pandas <span class="time">6 min</span></summary>
+<div class="callout eli9"><div class="title">Explain it like I'm 9</div>
+<p>If you want to guess how much a friend will spend at the shop today, you may use what they spent last week and the week before. You may not use what they will spend next week, even though it is written in the diary you happen to be holding. A "point-in-time" feature is a rule for reading the diary: only pages dated before today.</p>
+</div>
+<p><strong>Precisely.</strong> Example 3 in §5 (the average that includes tomorrow) is the most common temporal leak in tabular work, and it is created by an innocent-looking <code>groupby("customer").mean()</code>. The fix is to sort by time within each entity and aggregate only the rows that come <em>strictly before</em> the current one. In pandas the idiom is <code>shift(1)</code> followed by an expanding or rolling aggregate:</p>
+<pre class="code" data-lang="python"><code><span class="cm"># Point-in-time features: an aggregate for a row must use only what was known BEFORE that row's date</span>
+<span class="kw">import</span> numpy <span class="kw">as</span> np, pandas <span class="kw">as</span> pd
+
+rng = np.random.default_rng(<span class="nu">0</span>)
+orders = (pd.DataFrame({<span class="st">"customer"</span>: rng.integers(<span class="nu">0</span>, <span class="nu">3</span>, <span class="nu">12</span>),
+                        <span class="st">"date"</span>: pd.date_range(<span class="st">"2024-01-01"</span>, periods=<span class="nu">12</span>, freq=<span class="st">"7D"</span>),
+                        <span class="st">"amount"</span>: rng.integers(<span class="nu">10</span>, <span class="nu">100</span>, <span class="nu">12</span>)})
+          .sort_values([<span class="st">"customer"</span>, <span class="st">"date"</span>]).reset_index(drop=<span class="kw">True</span>))
+g = orders.groupby(<span class="st">"customer"</span>)[<span class="st">"amount"</span>]
+orders[<span class="st">"naive_mean"</span>] = g.transform(<span class="st">"mean"</span>).round(<span class="nu">1</span>)                         <span class="cm"># LEAK: includes this order AND later ones</span>
+orders[<span class="st">"prior_mean"</span>] = g.transform(<span class="kw">lambda</span> s: s.shift(<span class="nu">1</span>).expanding().mean()).round(<span class="nu">1</span>)   <span class="cm"># strictly earlier orders only</span>
+orders[<span class="st">"prior_n"</span>]    = g.cumcount()                                          <span class="cm"># how many earlier orders (0 = first)</span>
+<span class="fn">print</span>(orders.head(<span class="nu">8</span>).to_string(index=<span class="kw">False</span>))
+<span class="out">#  customer       date  amount  naive_mean  prior_mean  prior_n</span>
+<span class="out">#         0 2024-01-22      75        64.5         NaN        0</span>
+<span class="out">#         0 2024-01-29      66        64.5        75.0        1</span>
+<span class="out">#         0 2024-02-05      58        64.5        70.5        2</span>
+<span class="out">#         0 2024-02-12      60        64.5        66.3        3</span>
+<span class="out">#         0 2024-02-19      94        64.5        64.8        4</span>
+<span class="out">#         0 2024-02-26      34        64.5        70.6        5</span>
+<span class="out">#         1 2024-01-08      64        77.0         NaN        0</span>
+<span class="out">#         1 2024-01-15      97        77.0        64.0        1</span></code></pre><p>Compare the two feature columns row by row. <code>naive_mean</code> is the same number for every order of customer 0, and it already "knows" about the 94 and the 34 that have not happened yet. <code>prior_mean</code> is NaN for a customer's first order (nothing was known) and then updates one order at a time, exactly as it would in production where each day's score can only see yesterday's history. The <code>prior_n</code> column is the matching count, and it is a feature in its own right ("how established is this customer?").</p>
+<ol class="steps">
+  <li><strong>Sort first, by entity then by time.</strong> Every shift-based feature is wrong on unsorted data, silently.</li>
+  <li><strong>Decide the lag.</strong> <code>shift(1)</code> excludes the current row. If the label for a row is only known a week later (a delivery outcome, a chargeback), the features must stop a week earlier too: shift by the label delay, not by one row.</li>
+  <li><strong>Prefer time windows to row windows when rows are irregular.</strong> With a <code>DatetimeIndex</code>, <code>rolling("30D", closed="left")</code> takes the last 30 days excluding the current timestamp.</li>
+  <li><strong>Recompute, never store.</strong> A feature table computed once and joined back by customer id will be stale or leaky the next time the model is trained; make the point-in-time computation a function that runs in the training pipeline (Chapter 8) and in the scoring job (Chapter 21).</li>
+</ol>
+<div class="callout key"><div class="title">Key idea</div>
+<p>For every aggregate feature ask: "if I were computing this on the morning of the prediction date, which rows would I have?" If the answer is not "exactly the ones this code uses", the feature is a leak, and no amount of splitting will catch it, because the test rows have the same leak baked in.</p>
+</div>
+</details>
+
 <!-- ============================================================ -->
 <h2 id="s6">6. Exploratory data analysis (EDA)</h2>
 
@@ -694,7 +814,7 @@ right = cross_val_score(pipe, X, y, cv=cv).mean()
   <text x="529" y="66" text-anchor="middle" class="lbl" font-size="10">Q3 = 62</text>
   <text x="501" y="140" text-anchor="middle" class="lbl-strong" font-size="10" fill="var(--s1)">median</text>
   <text x="604" y="80" class="lbl" font-size="10">upper fence: Q3 + 1.5·IQR = 107</text>
-  <text x="680" y="126" text-anchor="middle" class="lbl" font-size="10" fill="var(--s2)">31 "outliers": real big spenders,</text>
+  <text x="680" y="126" text-anchor="middle" class="lbl" font-size="10" fill="var(--s2)">41 "outliers": real big spenders,</text>
   <text x="680" y="140" text-anchor="middle" class="lbl" font-size="10" fill="var(--s2)">not errors. Keep them.</text>
   <text x="600" y="200" text-anchor="middle" class="lbl">A boxplot compresses the histogram into five numbers plus flags.</text>
   <text x="600" y="216" text-anchor="middle" class="lbl">Ask of every flagged point: impossible (error) or just rare (signal)?</text>
@@ -887,7 +1007,7 @@ eda_report(dirty, target=<span class="st">"churned"</span>)
 <span class="out"># support_calls       0.19</span>
 <span class="out"># days_since_login    0.30</span></code></pre>
 
-<p>Four findings in fifteen lines of output, each with a consequence: 25 duplicates (remove before splitting), an impossible minimum age (a sentinel, §7), a fourth plan level that is a spelling variant (normalise), and 41 missing spends (impute, and add an indicator). Note also that the correlation of <code>age</code> with churn is 0.00 <em>because the −999s are still in there</em>; the sentinel has wrecked the statistic. Clean first, then look again.</p>
+<p>Four findings in fifteen lines of output, each with a consequence: 25 duplicates (remove before splitting), an impossible minimum age (a sentinel, §7), a fourth plan level that is a spelling variant (normalise), and 41 missing spends (impute, and add an indicator). Note also that every statistic on <code>age</code> was computed <em>with the −999s still in there</em>: the mean age of this table is about 15 instead of about 46, and a correlation can be dragged in either direction by such values (here <code>age</code> genuinely carries no signal, so the cleaned number is also ≈ 0, but you cannot know that until you clean). Clean first, then look again.</p>
 
 <div class="callout pro"><div class="title">At work</div>
 <p>Write EDA findings as a numbered list in a shared document, each one with a decision ("41 spends missing, concentrated in basic plan → add <code>spend_missing</code> flag, impute median within plan"). Two reasons: it forces you to decide instead of just observe, and six months later, when someone asks why the model has that odd feature, the answer exists.</p>
@@ -1091,6 +1211,8 @@ sizes, tr, va = learning_curve(model, X, y, train_sizes=np.linspace(<span class=
 <p>Before a pilot takes off, they walk around the plane with a checklist, even on their thousandth flight, because the one time they skip it is the time a cover is still on the sensor. This is your walk-around. It feels slow. It is the fastest thing you will do all project.</p>
 </div>
 
+<div class="callout lab"><div class="title">Lab</div><p>Open <code>labs/ch02_data_audit.py</code> in VS Code and make the tests in <code>labs/tests/test_ch02.py</code> pass. You will type every column of a messy customer table, clean its sentinels and categories without deleting information, build a stratified train/validation/test split, and catch a leaky feature by measuring how much a too-good score collapses without it.</p></div>
+
 <!-- ============================================================ -->
 <h2 id="quiz">Quiz</h2>
 <div class="quiz">
@@ -1141,7 +1263,7 @@ sizes, tr, va = learning_curve(model, X, y, train_sizes=np.linspace(<span class=
   </div>
 
   <div class="q">
-    <p class="question">5. In your EDA, <code>monthly_spend</code> has 31 values far above the boxplot's upper fence, all for premium customers. What do you do?</p>
+    <p class="question">5. In your EDA, <code>monthly_spend</code> has 41 values far above the boxplot's upper fence, all for premium customers. What do you do?</p>
     <ul class="opts">
       <li><button>Delete those 31 rows as outliers</button></li>
       <li><button>Replace them with the median</button></li>

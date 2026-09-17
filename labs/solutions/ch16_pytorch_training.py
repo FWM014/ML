@@ -45,6 +45,9 @@ from sklearn.datasets import make_classification, make_moons
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 
+# Tiny models: one thread beats thread-sync overhead and keeps timings reproducible.
+torch.set_num_threads(1)
+
 DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
 
 
