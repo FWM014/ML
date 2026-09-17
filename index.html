@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Machine Learning: Zero to Expert — An Interactive HTML Textbook</title>
+<link rel="stylesheet" href="assets/style.css">
+<style>
+  .hero { padding: 36px 0 24px; }
+  .hero h1 { font-size: 2.8rem; letter-spacing: -.03em; margin-bottom: 10px; }
+  .hero .sub { font-size: 1.25rem; color: var(--ink-2); max-width: 64ch; }
+  .hero .cta { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 20px; }
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin: 26px 0; }
+  .stat { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px; }
+  .stat .n { font-size: 1.8rem; font-weight: 800; letter-spacing: -.02em; }
+  .stat .l { font-size: .8rem; color: var(--ink-2); text-transform: uppercase; letter-spacing: .06em; }
+  .part-block { margin: 28px 0; }
+  .part-block h2 { border-top: 0; padding-top: 0; margin-top: 0; display: flex; align-items: center; gap: 10px; }
+  .part-block .desc { color: var(--ink-2); margin-bottom: 12px; }
+  .ch-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 12px; }
+  .ch-card { display: block; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px; color: var(--ink); transition: border-color .15s, transform .15s; }
+  .ch-card:hover { border-color: var(--accent); text-decoration: none; transform: translateY(-2px); }
+  .ch-card .n { font-size: .75rem; font-weight: 800; color: var(--accent); letter-spacing: .08em; }
+  .ch-card .t { font-weight: 700; margin: 2px 0 4px; }
+  .ch-card .d { font-size: .85rem; color: var(--ink-2); }
+  .ch-card .done { float: right; color: var(--good); font-weight: 800; }
+  .plan { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin: 16px 0; }
+  .plan .wk { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px; border-top: 4px solid var(--s1); }
+  .plan .wk:nth-child(2) { border-top-color: var(--s4); } .plan .wk:nth-child(3) { border-top-color: var(--s2); } .plan .wk:nth-child(4) { border-top-color: var(--s8); }
+  .plan .wk h4 { margin: 0 0 6px; text-transform: none; letter-spacing: 0; color: var(--ink); }
+  .plan .wk ul { margin: 0; padding-left: 1.1em; font-size: .9rem; }
+</style>
+</head>
+<body>
+<header class="topbar"></header>
+<div class="progress-track"><div></div></div>
+<div class="shell">
+<nav class="sidebar"></nav>
+<main class="content"><div class="container">
+
+<section class="hero">
+  <div class="kicker" style="color:var(--accent);font-weight:700;letter-spacing:.1em;text-transform:uppercase;font-size:.8rem">An interactive textbook · 24 chapters · 4 levels</div>
+  <h1>Machine Learning:<br>Zero to Expert</h1>
+  <p class="sub">A complete, visual, hands-on course that takes you from "I've heard of it" to confidently building, evaluating, explaining, and shipping machine-learning models at work. Every hard idea is explained like you're nine first, then precisely, then in code.</p>
+  <div class="cta">
+    <a class="btn primary" href="chapters/01-what-is-ml.html">Start Chapter 1 →</a>
+    <a class="btn" href="#map">See the curriculum map</a>
+    <a class="btn" href="#plan">4-week fast track</a>
+  </div>
+  <div id="home-progress" style="margin-top:22px;max-width:520px"></div>
+</section>
+
+<div class="stats">
+  <div class="stat"><div class="n">24</div><div class="l">chapters</div></div>
+  <div class="stat"><div class="n">180+</div><div class="l">hand-drawn figures</div></div>
+  <div class="stat"><div class="n">40+</div><div class="l">interactive widgets</div></div>
+  <div class="stat"><div class="n">120+</div><div class="l">runnable code examples</div></div>
+  <div class="stat"><div class="n">140+</div><div class="l">quiz questions</div></div>
+</div>
+
+<h2 id="how">How this book works</h2>
+<div class="grid3">
+  <div class="card"><h4>🧒 Explain it like I'm 9</h4><p>Every new concept opens with a concrete analogy in a yellow box. Then the precise definition. Then the math (optional, purple boxes). Then code.</p></div>
+  <div class="card"><h4>🎛️ Touch the ideas</h4><p>Sliders and steppers let you move a threshold, walk gradient descent, grow a tree, or watch k-means converge. Intuition comes from playing.</p></div>
+  <div class="card"><h4>💼 Built for work</h4><p>Green "At work" boxes say what actually matters on the job: baselines, leakage, metrics that match decisions, and shipping models that survive contact with production.</p></div>
+  <div class="card"><h4>⚠️ Common mistakes</h4><p>Red boxes catalogue the errors practitioners make constantly. Learn them before you make them on a real project.</p></div>
+  <div class="card"><h4>✅ Check yourself</h4><p>Each chapter ends with a self-grading quiz, exercises with answers, and a summary checklist. Mark chapters done; progress is saved in your browser.</p></div>
+  <div class="card"><h4>🐍 Real code</h4><p>All examples use the tools you'll use at work: NumPy, pandas, scikit-learn, XGBoost/LightGBM, PyTorch, SHAP. Copy, run, adapt.</p></div>
+</div>
+
+<h2 id="map">The curriculum map</h2>
+<p>Four parts, each a level. Part I gives you the vocabulary and the two fundamental models. Part II is the practical toolkit you will use for 80% of business problems. Part III is deep learning. Part IV is what separates practitioners from experts: explaining, shipping, monitoring, and running a project end-to-end.</p>
+
+<figure class="fig">
+<svg viewBox="0 0 900 505" role="img" aria-label="Curriculum roadmap: four parts drawn as a staircase rising from Foundations to Core Toolkit to Deep Learning to Expert and Production, with the chapters in each and the capability you gain at each step">
+  <!-- staircase -->
+  <path d="M10,470 H240 V370 H460 V270 H680 V170 H890" fill="none" stroke="var(--border)" stroke-width="10" stroke-linejoin="round"/>
+  <path d="M10,470 H240 V370 H460 V270 H680 V170 H890" fill="none" stroke="var(--accent)" stroke-width="3" stroke-dasharray="8 6" stroke-linejoin="round"/>
+  <!-- Part I -->
+  <rect x="20" y="318" width="205" height="147" rx="12" fill="var(--surface-2)" stroke="var(--s3)" stroke-width="2"/>
+  <text x="122" y="343" text-anchor="middle" class="lbl-strong" font-size="15">Part I · Foundations</text>
+  <text x="122" y="361" text-anchor="middle" class="lbl" fill="var(--s3)" font-weight="700">Beginner</text>
+  <text x="34" y="383" class="lbl">01 What ML is · 02 Data</text>
+  <text x="34" y="401" class="lbl">03 Math · 04 Python toolkit</text>
+  <text x="34" y="419" class="lbl">05 Linear regression</text>
+  <text x="34" y="437" class="lbl">06 Classification &amp; metrics</text>
+  <text x="34" y="455" class="lbl">07 Overfitting &amp; validation</text>
+  <!-- Part II -->
+  <rect x="245" y="218" width="205" height="147" rx="12" fill="var(--surface-2)" stroke="var(--s4)" stroke-width="2"/>
+  <text x="347" y="243" text-anchor="middle" class="lbl-strong" font-size="15">Part II · Core Toolkit</text>
+  <text x="347" y="261" text-anchor="middle" class="lbl" fill="var(--s4)" font-weight="700">Intermediate</text>
+  <text x="259" y="283" class="lbl">08 Features &amp; pipelines</text>
+  <text x="259" y="301" class="lbl">09 Trees · 10 Ensembles</text>
+  <text x="259" y="319" class="lbl">11 kNN, SVM, Naive Bayes</text>
+  <text x="259" y="337" class="lbl">12 Clustering · 13 Tuning</text>
+  <text x="259" y="355" class="lbl">14 Time series</text>
+  <!-- Part III -->
+  <rect x="465" y="118" width="205" height="147" rx="12" fill="var(--surface-2)" stroke="var(--s2)" stroke-width="2"/>
+  <text x="567" y="143" text-anchor="middle" class="lbl-strong" font-size="15">Part III · Deep Learning</text>
+  <text x="567" y="161" text-anchor="middle" class="lbl" fill="var(--s2)" font-weight="700">Advanced</text>
+  <text x="479" y="183" class="lbl">15 Neural nets from scratch</text>
+  <text x="479" y="201" class="lbl">16 Training with PyTorch</text>
+  <text x="479" y="219" class="lbl">17 CNNs &amp; vision</text>
+  <text x="479" y="237" class="lbl">18 Attention &amp; Transformers</text>
+  <text x="479" y="255" class="lbl">19 NLP, embeddings &amp; LLMs</text>
+  <!-- Part IV -->
+  <rect x="685" y="18" width="205" height="147" rx="12" fill="var(--surface-2)" stroke="var(--s8)" stroke-width="2"/>
+  <text x="787" y="43" text-anchor="middle" class="lbl-strong" font-size="15">Part IV · Expert</text>
+  <text x="787" y="61" text-anchor="middle" class="lbl" fill="var(--s8)" font-weight="700">Production &amp; mastery</text>
+  <text x="699" y="83" class="lbl">20 SHAP &amp; interpretability</text>
+  <text x="699" y="101" class="lbl">21 MLOps &amp; monitoring</text>
+  <text x="699" y="119" class="lbl">22 Recsys · anomalies · RL</text>
+  <text x="699" y="137" class="lbl">23 End-to-end playbook</text>
+  <text x="699" y="155" class="lbl">24 Cheat sheets &amp; interviews</text>
+  <!-- milestones at the step corners -->
+  <circle cx="240" cy="470" r="8" fill="var(--s3)" stroke="var(--surface)" stroke-width="2"/>
+  <circle cx="460" cy="370" r="8" fill="var(--s4)" stroke="var(--surface)" stroke-width="2"/>
+  <circle cx="680" cy="270" r="8" fill="var(--s2)" stroke="var(--surface)" stroke-width="2"/>
+  <circle cx="890" cy="170" r="8" fill="var(--s8)" stroke="var(--surface)" stroke-width="2"/>
+  <text x="122" y="493" text-anchor="middle" class="lbl" font-size="11">↑ "I can frame a problem"</text>
+  <text x="350" y="393" text-anchor="middle" class="lbl" font-size="11">↑ "I can build &amp; evaluate models"</text>
+  <text x="570" y="293" text-anchor="middle" class="lbl" font-size="11">↑ "I can train deep nets"</text>
+  <text x="785" y="193" text-anchor="middle" class="lbl" font-size="11">↑ "I can ship &amp; own ML"</text>
+</svg>
+<figcaption><strong>The road through the book.</strong> Each part ends with a capability you can state out loud. If you already know Part I, take its quizzes first: if you score 5/6 or better on each, skip ahead.</figcaption>
+</figure>
+
+<div id="parts"></div>
+
+<h2 id="plan">Study plans</h2>
+<p>You said you need this fast. Here is the intensive track, roughly 2 hours a day. A relaxed track is the same order at half the pace.</p>
+<div class="plan">
+  <div class="wk"><h4>Week 1 — Foundations</h4><ul><li>Days 1–2: Ch 1–3 (map, data, math)</li><li>Day 3: Ch 4 (toolkit) — set up your environment</li><li>Days 4–5: Ch 5–6 (regression, classification, metrics)</li><li>Days 6–7: Ch 7 + redo all quizzes</li></ul></div>
+  <div class="wk"><h4>Week 2 — Core toolkit</h4><ul><li>Day 1: Ch 8 (features &amp; pipelines)</li><li>Days 2–3: Ch 9–10 (trees, forests, boosting)</li><li>Day 4: Ch 11 · Day 5: Ch 12</li><li>Days 6–7: Ch 13–14 and a mini project on your own data</li></ul></div>
+  <div class="wk"><h4>Week 3 — Deep learning</h4><ul><li>Days 1–2: Ch 15–16 (nets from scratch, PyTorch)</li><li>Day 3: Ch 17 (vision)</li><li>Days 4–5: Ch 18–19 (transformers, LLMs)</li><li>Days 6–7: fine-tune or prompt something real</li></ul></div>
+  <div class="wk"><h4>Week 4 — Expert &amp; production</h4><ul><li>Day 1: Ch 20 (SHAP) · Day 2: Ch 21 (MLOps)</li><li>Day 3: Ch 22 (advanced topics)</li><li>Days 4–6: Ch 23 — run the full capstone on a work dataset</li><li>Day 7: Ch 24 — interview self-test</li></ul></div>
+</div>
+
+<div class="callout pro"><div class="title">At work: the fastest route to being useful</div>
+<p>If you must ship something next week, read Chapters 1, 2, 6, 7, 8, 10, 13 and 23 in that order. That path gives you problem framing, leakage-proof data handling, the right metric, a gradient-boosting pipeline, honest validation, and a project playbook. Come back for the rest.</p>
+</div>
+
+<h2 id="prereq">Prerequisites &amp; setup</h2>
+<ul>
+  <li><strong>Python basics</strong> (variables, loops, functions, lists/dicts). Chapter 4 covers the data libraries from zero.</li>
+  <li><strong>High-school math.</strong> Chapter 3 rebuilds everything else you need, gently.</li>
+  <li><strong>Environment:</strong> Python 3.10+, then <code>pip install numpy pandas scikit-learn matplotlib xgboost lightgbm shap statsmodels torch</code>. Every code block in the book runs offline on these.</li>
+</ul>
+
+<div class="callout key"><div class="title">How to read a chapter</div>
+<ol style="margin:0;padding-left:1.2em">
+  <li>Read the objectives. Skim the figures first; they carry the argument.</li>
+  <li>Read the prose; play with every widget until you can predict what a slider will do.</li>
+  <li>Run the code yourself. Change a number. Break it. Fix it.</li>
+  <li>Take the quiz without looking back. Do at least the "at work" exercise.</li>
+  <li>Tick "Mark as completed" and read the summary once more tomorrow.</li>
+</ol>
+</div>
+
+</div></main>
+</div>
+
+<script src="assets/chapters.js"></script>
+<script src="assets/app.js"></script>
+<script>
+(function () {
+  var blurbs = {
+    "01": "Programs vs. learners, the three families, the 7-step workflow, when not to use ML.",
+    "02": "Data types, splits, leakage, EDA, labels, and a reusable data-audit checklist.",
+    "03": "Vectors, matrices, gradients, probability, Bayes, statistics — only what you'll use.",
+    "04": "NumPy, pandas, matplotlib, and the scikit-learn API, with a full first project.",
+    "05": "The first model: loss, gradient descent, coefficients, metrics, from scratch and in sklearn.",
+    "06": "Logistic regression, confusion matrix, precision/recall, ROC & PR curves, thresholds.",
+    "07": "Overfitting, bias–variance, regularization, cross-validation done right.",
+    "08": "Scaling, encoding, imputation, dates, text, selection, ColumnTransformer + Pipeline.",
+    "09": "How trees split, Gini/entropy, pruning, importance, and when a tree is enough.",
+    "10": "Random forests, gradient boosting, XGBoost/LightGBM/CatBoost, stacking.",
+    "11": "kNN, SVMs and kernels, Naive Bayes, and a master comparison table.",
+    "12": "k-means, DBSCAN, hierarchical, GMM, PCA, t-SNE/UMAP, and evaluating clusters.",
+    "13": "Grid/random/Bayesian search, imbalanced data, calibration, fair model comparison.",
+    "14": "Decomposition, stationarity, ARIMA, Holt-Winters, lag features + GBMs, backtesting.",
+    "15": "Neurons, layers, activations, backprop derived and implemented in NumPy.",
+    "16": "PyTorch loops, optimizers, schedules, normalization, regularization, debugging.",
+    "17": "Convolutions, pooling, ResNets, augmentation, transfer learning, vision tasks.",
+    "18": "RNNs, LSTMs, attention worked by hand, the Transformer block, masks.",
+    "19": "Tokenization, embeddings, BERT/GPT, prompting vs fine-tuning vs RAG, LLM evaluation.",
+    "20": "Permutation importance, PDP/ICE, SHAP from first principles, LIME, fairness.",
+    "21": "Reproducibility, tracking, serving, CI/CD, drift monitoring, safe rollouts.",
+    "22": "Recommenders, anomaly detection, causal inference & uplift, bandits & Q-learning.",
+    "23": "The operating manual: canvas, phases, decision flowcharts, a full worked project.",
+    "24": "Master tables, formula sheet, API cheat sheets, 120-term glossary, 40 interview questions."
+  };
+  var descs = {
+    "Part I · Foundations": "The vocabulary, the data discipline, the math, the tools, and the two fundamental models. Nothing here is optional.",
+    "Part II · The Core Toolkit": "The models and practices behind most business ML: pipelines, trees, boosting, tuning, time series.",
+    "Part III · Deep Learning": "Neural networks from the neuron up to Transformers and LLMs, with PyTorch.",
+    "Part IV · Expert & Production": "Explaining, shipping, monitoring, advanced topics, and the end-to-end playbook."
+  };
+  var root = document.getElementById("parts"), html = "";
+  window.BOOK.parts.forEach(function (p) {
+    html += '<div class="part-block"><h2>' + p.title + ' <span class="level ' + p.level + '">' + p.level.charAt(0).toUpperCase() + p.level.slice(1) + '</span></h2><p class="desc">' + (descs[p.title] || "") + '</p><div class="ch-grid">';
+    p.chapters.forEach(function (c) {
+      var done = false; try { done = localStorage.getItem("ml-done-" + c.num) === "1"; } catch (e) {}
+      html += '<a class="ch-card" href="chapters/' + c.file + '">' + (done ? '<span class="done">✓</span>' : '') + '<div class="n">CHAPTER ' + c.num + '</div><div class="t">' + c.title + '</div><div class="d">' + (blurbs[c.num] || "") + '</div></a>';
+    });
+    html += '</div></div>';
+  });
+  root.innerHTML = html;
+})();
+</script>
+</body>
+</html>
