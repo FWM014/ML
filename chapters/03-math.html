@@ -295,11 +295,11 @@ H = X @ W                              <span class="cm"># (n×d)(d×k) = (n×k):
   <line x1="420" y1="250" x2="520" y2="50" stroke="var(--s1)" stroke-width="1.5" stroke-dasharray="5 3"/>
   <line x1="420" y1="250" x2="440" y2="210" stroke="var(--s1)" stroke-width="3"/>
   <circle cx="440" cy="210" r="5" fill="var(--s1)"/><text x="412" y="200" text-anchor="end" class="lbl-strong" fill="var(--s1)">A = (1, 2)</text>
-  <circle cx="520" cy="50" r="5" fill="var(--s1)"/><text x="530" y="56" class="lbl-strong" fill="var(--s1)">C = (10, 20) = 10·A</text>
-  <line x1="420" y1="250" x2="580" y2="130" stroke="var(--s2)" stroke-width="3"/>
-  <circle cx="580" cy="130" r="5" fill="var(--s2)"/><text x="590" y="134" class="lbl-strong" fill="var(--s2)">B = (4, 6)</text>
-  <path d="M420,225 A25,25 0 0 1 438,232" fill="none" stroke="var(--s7)" stroke-width="2"/>
-  <text x="446" y="240" class="lbl" fill="var(--s7)" font-size="11">θ ≈ 7°</text>
+  <circle cx="520" cy="50" r="5" fill="var(--s1)"/><text x="530" y="56" class="lbl-strong" fill="var(--s1)">C = (10, 20) = 10·A</text><text x="530" y="72" class="lbl" font-size="10">(off the chart; drawn at half length)</text>
+  <line x1="420" y1="250" x2="500" y2="130" stroke="var(--s2)" stroke-width="3"/>
+  <circle cx="500" cy="130" r="5" fill="var(--s2)"/><text x="510" y="134" class="lbl-strong" fill="var(--s2)">B = (4, 6)</text>
+  <path d="M446.8,196.3 A60,60 0 0 1 453.3,200.1" fill="none" stroke="var(--s7)" stroke-width="3"/>
+  <text x="462" y="204" class="lbl" fill="var(--s7)" font-size="11">θ ≈ 7°</text>
   <text x="600" y="185" class="lbl" font-size="11">cos(A, B) = 0.992   (nearly aligned)</text>
   <text x="600" y="202" class="lbl" font-size="11">cos(A, C) = 1.000   (identical direction)</text>
   <text x="600" y="219" class="lbl" font-size="11">euclid(A, C) = 20.1 (far apart!)</text>
@@ -361,7 +361,7 @@ A = np.array([[<span class="nu">1.0</span>, <span class="nu">2.0</span>]]); B = 
     <span>gradient step goes: <span class="readout" id="tan-dir">–</span></span>
   </div>
   <svg viewBox="0 0 700 260" id="tan-svg" role="img" aria-label="A cubic curve with a movable point and its tangent line; the slope of the tangent is the derivative"></svg>
-  <div class="note">Slide x across the curve. The violet line is the tangent; its slope is the derivative. Where the slope is zero (x = −1 and x = +1) the curve is momentarily flat: one is a local maximum, the other a local minimum. A gradient step always moves <em>against</em> the slope: right when the slope is negative, left when it is positive. Notice that from the far left, walking downhill never reaches the minimum at x = +1: it falls off toward −∞. That is what "local vs global" means in §4.</div>
+  <div class="note">Slide x across the curve. The violet line is the tangent; its slope is the derivative. Where the slope is zero (x = −1 and x = +1) the curve is momentarily flat: one is a local maximum, the other a local minimum. A gradient step always moves <em>against</em> the slope: right when the slope is negative, left when it is positive. Notice that from the far left, walking downhill never reaches the minimum at x = +1: it falls off toward −∞. That is what "local vs global" means in the subsection on minima below.</div>
 </div>
 
 <h3>The gradient: the slope in every direction at once</h3>
@@ -459,6 +459,88 @@ lr = <span class="nu">0.1</span>
 <div class="callout math"><div class="title">The math (optional)</div>
 <p>A concrete two-step example. Let the prediction be <em>u</em> = <em>w</em>·<em>x</em> with <em>x</em> = 3, and the loss be the squared error <em>L</em> = (<em>u</em> − <em>y</em>)² with target <em>y</em> = 4. Then d<em>L</em>/d<em>u</em> = 2(<em>u</em> − <em>y</em>) and d<em>u</em>/d<em>w</em> = <em>x</em> = 3. At <em>w</em> = 1: <em>u</em> = 3, d<em>L</em>/d<em>u</em> = 2(3 − 4) = −2, so d<em>L</em>/d<em>w</em> = (−2)(3) = −6. Meaning: increasing <em>w</em> a little will <em>decrease</em> the loss (the derivative is negative), by about 6 units per unit of <em>w</em>. So gradient descent increases <em>w</em>. Check: <em>w</em> = 1.1 gives <em>u</em> = 3.3 and <em>L</em> = 0.49, down from 1.0. <strong>Backpropagation (Chapter 15) is nothing but this multiplication, repeated backwards through every layer of a network.</strong> Each layer contributes one factor; the gradient for an early weight is a product of many local derivatives.</p>
 </div>
+
+<details class="deepdive"><summary>Deep dive: the chain rule end-to-end on a two-layer function <span class="time">9 min</span></summary>
+<div class="callout eli9"><div class="title">Explain it like I'm 9</div>
+<p>A message passes through four people before it reaches you, and each person changes it a little: one doubles it, one shrinks it to a fifth, one multiplies by one and a half. If you want to know how much the <em>first</em> person's change affects what you hear, you multiply all the changes along the way. Backpropagation is exactly that: walk back along the chain, multiplying local "how much does this step stretch things" numbers.</p>
+</div>
+<p><strong>Precisely.</strong> Here is the smallest thing that deserves the name "network": one input <em>x</em>, a first layer <em>u</em> = w<sub>1</sub>x followed by a sigmoid <em>h</em> = σ(<em>u</em>), a second layer <em>z</em> = w<sub>2</sub><em>h</em>, and squared loss <em>L</em> = (<em>z</em> − <em>y</em>)². Two weights, two questions: ∂L/∂w<sub>2</sub> and ∂L/∂w<sub>1</sub>. Take <em>x</em> = 2, <em>y</em> = 2, w<sub>1</sub> = 0.5, w<sub>2</sub> = 1.5.</p>
+<figure class="fig">
+<svg viewBox="0 0 780 250" role="img" aria-label="A chain of four operations from input x to loss L: multiply by w1, sigmoid, multiply by w2, squared error. Forward values are written above each node and local derivatives below each edge; the backward pass multiplies the local derivatives from the loss back to each weight">
+  <defs><marker id="arr-m10" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker>
+  <marker id="arr-m10b" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--s2)"/></marker></defs>
+  <text x="390" y="24" text-anchor="middle" class="lbl-strong" font-size="13">Forward pass (top, blue): compute values left to right. Backward pass (bottom, orange): multiply local derivatives right to left.</text>
+  <!-- nodes -->
+  <g>
+    <rect x="30" y="80" width="70" height="44" rx="8" class="box"/><text x="65" y="99" text-anchor="middle" class="lbl-strong">x</text><text x="65" y="115" text-anchor="middle" class="lbl" fill="var(--s1)">2.0</text>
+    <rect x="170" y="80" width="90" height="44" rx="8" class="box-accent"/><text x="215" y="99" text-anchor="middle" class="lbl-strong">u = w₁·x</text><text x="215" y="115" text-anchor="middle" class="lbl" fill="var(--s1)">1.0</text>
+    <rect x="330" y="80" width="90" height="44" rx="8" class="box-accent"/><text x="375" y="99" text-anchor="middle" class="lbl-strong">h = σ(u)</text><text x="375" y="115" text-anchor="middle" class="lbl" fill="var(--s1)">0.7311</text>
+    <rect x="490" y="80" width="90" height="44" rx="8" class="box-accent"/><text x="535" y="99" text-anchor="middle" class="lbl-strong">z = w₂·h</text><text x="535" y="115" text-anchor="middle" class="lbl" fill="var(--s1)">1.0966</text>
+    <rect x="650" y="80" width="100" height="44" rx="8" class="box"/><text x="700" y="99" text-anchor="middle" class="lbl-strong">L = (z − y)²</text><text x="700" y="115" text-anchor="middle" class="lbl" fill="var(--s1)">0.8162</text>
+  </g>
+  <!-- forward arrows -->
+  <g class="arrow" marker-end="url(#arr-m10)">
+    <line x1="100" y1="96" x2="168" y2="96"/><line x1="260" y1="96" x2="328" y2="96"/><line x1="420" y1="96" x2="488" y2="96"/><line x1="580" y1="96" x2="648" y2="96"/>
+  </g>
+  <!-- weights hanging above -->
+  <text x="215" y="62" text-anchor="middle" class="lbl-strong" fill="var(--s7)">w₁ = 0.5</text>
+  <text x="535" y="62" text-anchor="middle" class="lbl-strong" fill="var(--s7)">w₂ = 1.5</text>
+  <!-- local derivatives under each edge -->
+  <g class="lbl" font-size="11" text-anchor="middle" fill="var(--s2)">
+    <text x="134" y="142">∂u/∂w₁ = x = 2</text>
+    <text x="294" y="142">∂h/∂u = h(1−h) = 0.1966</text>
+    <text x="454" y="142">∂z/∂h = w₂ = 1.5</text>
+    <text x="614" y="142">∂L/∂z = 2(z−y) = −1.8068</text>
+    <text x="535" y="158">∂z/∂w₂ = h = 0.7311</text>
+  </g>
+  <!-- backward arrows -->
+  <g stroke="var(--s2)" stroke-width="2" fill="none" marker-end="url(#arr-m10b)">
+    <path d="M700,124 L700,190 L560,190"/>
+    <path d="M540,190 L240,190"/>
+  </g>
+  <text x="640" y="212" text-anchor="middle" class="lbl-strong" fill="var(--s2)">∂L/∂w₂ = (−1.8068)(0.7311) = −1.321</text>
+  <text x="300" y="212" text-anchor="middle" class="lbl-strong" fill="var(--s2)">∂L/∂w₁ = (−1.8068)(1.5)(0.1966)(2) = −1.066</text>
+  <text x="390" y="238" text-anchor="middle" class="lbl">Each edge contributes one factor. The early weight's gradient is a product of four; in a deep network it is a product of hundreds, which is why gradients can vanish or explode (Chapter 16).</text>
+</svg>
+<figcaption><strong>Figure 3.10 — Backpropagation is the chain rule read right to left.</strong> The forward pass stores every intermediate value; the backward pass starts at the loss with ∂L/∂z and multiplies by one local derivative per edge on the way back to each weight. Nothing is recomputed, and every local derivative is a one-line formula.</figcaption>
+</figure>
+<div class="callout math"><div class="title">The math (optional)</div>
+<p><strong>Forward:</strong> u = 0.5 × 2 = 1; h = σ(1) = 0.7311; z = 1.5 × 0.7311 = 1.0966; L = (1.0966 − 2)² = 0.8162.</p>
+<p><strong>Backward, the last weight:</strong> ∂L/∂w<sub>2</sub> = (∂L/∂z)(∂z/∂w<sub>2</sub>) = 2(z − y) · h = (−1.8068)(0.7311) = −1.321.</p>
+<p><strong>Backward, the first weight:</strong> ∂L/∂w<sub>1</sub> = (∂L/∂z)(∂z/∂h)(∂h/∂u)(∂u/∂w<sub>1</sub>) = (−1.8068)(1.5)(0.1966)(2) = −1.066. Note that the first factor, ∂L/∂z, was already computed for w<sub>2</sub>; backpropagation reuses it, which is why the cost of all the gradients is about the same as one forward pass. The sigmoid's derivative h(1 − h) is at most 0.25, so each sigmoid layer shrinks the gradient flowing through it by at least a factor of 4: a small cause of the vanishing-gradient problem, and the reason ReLU replaced sigmoid inside deep networks (Chapter 15).</p>
+</div>
+<pre class="code" data-lang="python"><code><span class="cm"># The chain rule on a two-layer function, with numbers, then checked by finite differences</span>
+<span class="kw">import</span> numpy <span class="kw">as</span> np
+sigmoid = <span class="kw">lambda</span> u: <span class="nu">1</span> / (<span class="nu">1</span> + np.exp(-u))
+x, y = <span class="nu">2.0</span>, <span class="nu">2.0</span>                              <span class="cm"># one input, one target</span>
+w1, w2 = <span class="nu">0.5</span>, <span class="nu">1.5</span>                            <span class="cm"># two weights, one per layer</span>
+
+<span class="kw">def</span> <span class="fn">forward</span>(w1, w2):
+    u = w1 * x                               <span class="cm"># layer 1: linear</span>
+    h = sigmoid(u)                           <span class="cm"># layer 1: squash</span>
+    z = w2 * h                               <span class="cm"># layer 2: linear</span>
+    L = (z - y) ** <span class="nu">2</span>                         <span class="cm"># loss</span>
+    <span class="kw">return</span> u, h, z, L
+
+u, h, z, L = forward(w1, w2)
+<span class="fn">print</span>(<span class="st">f"forward:  u = {u:.4f}  h = {h:.4f}  z = {z:.4f}  L = {L:.4f}"</span>)
+
+dL_dz = <span class="nu">2</span> * (z - y)                          <span class="cm"># local derivative of the loss</span>
+dz_dw2, dz_dh = h, w2                        <span class="cm"># local derivatives of layer 2</span>
+dh_du = h * (<span class="nu">1</span> - h)                          <span class="cm"># local derivative of the sigmoid</span>
+du_dw1 = x                                   <span class="cm"># local derivative of layer 1</span>
+dL_dw2 = dL_dz * dz_dw2                      <span class="cm"># one factor</span>
+dL_dw1 = dL_dz * dz_dh * dh_du * du_dw1      <span class="cm"># a product of four local factors</span>
+<span class="fn">print</span>(<span class="st">f"backward: dL/dz = {dL_dz:.4f}  dh/du = {dh_du:.4f}  -&gt;  dL/dw2 = {dL_dw2:.4f}  dL/dw1 = {dL_dw1:.4f}"</span>)
+
+eps = <span class="nu">1e-6</span>
+num_w1 = (forward(w1 + eps, w2)[<span class="nu">3</span>] - forward(w1 - eps, w2)[<span class="nu">3</span>]) / (<span class="nu">2</span> * eps)
+num_w2 = (forward(w1, w2 + eps)[<span class="nu">3</span>] - forward(w1, w2 - eps)[<span class="nu">3</span>]) / (<span class="nu">2</span> * eps)
+<span class="fn">print</span>(<span class="st">f"numerical check:                                 dL/dw2 = {num_w2:.4f}  dL/dw1 = {num_w1:.4f}"</span>)
+<span class="out"># forward:  u = 1.0000  h = 0.7311  z = 1.0966  L = 0.8162</span>
+<span class="out"># backward: dL/dz = -1.8068  dh/du = 0.1966  -&gt;  dL/dw2 = -1.3209  dL/dw1 = -1.0657</span>
+<span class="out"># numerical check:                                 dL/dw2 = -1.3209  dL/dw1 = -1.0657</span></code></pre><p>The finite-difference check is the habit to keep: perturb one weight by ±10<sup>−6</sup>, recompute the loss, and compare the slope with the chain-rule number. If they agree to four decimals, your gradient code is right; if not, the hand-derived formula is the suspect, never the numerical one. PyTorch's autograd (Chapter 16) does precisely the bookkeeping in the figure for any graph you can write in code, but it cannot tell you whether the graph you wrote is the one you meant.</p>
+</details>
 
 <h3>Minima: local, global, and why convexity is a gift</h3>
 
@@ -720,6 +802,37 @@ p = softmax(scores)
 <p>Bayes is the reason a fraud model with "99% accuracy" can be useless. If 0.1% of transactions are fraud and your model flags 1% of legitimate transactions, then for every real fraud you catch you will flag about ten innocent customers. Before promising precision numbers, compute the base rate and run this calculation. Chapter 6 turns this into precision, recall and the precision–recall curve; the arithmetic is identical.</p>
 </div>
 
+<details class="deepdive"><summary>Deep dive: why Bayes flips intuition on rare diseases — the odds form <span class="time">7 min</span></summary>
+<div class="callout eli9"><div class="title">Explain it like I'm 9</div>
+<p>A test is a megaphone that makes your suspicion twenty times louder. If you started with a whisper (one in a thousand), twenty times a whisper is still quiet. If you started with a normal voice (one in three), twenty times that is a shout. The megaphone is the same; what comes out depends entirely on how loud you started. Doctors who say "95%" are hearing the megaphone and forgetting the whisper.</p>
+</div>
+<p><strong>Precisely.</strong> Rewrite Bayes' theorem in terms of <strong>odds</strong> (probability of yes divided by probability of no) and the test becomes a single multiplier that does not depend on the prevalence at all:</p>
+<div class="callout math"><div class="title">The math (optional)</div>
+<div class="formula">posterior odds = prior odds × LR<sub>+</sub>,      LR<sub>+</sub> = sensitivity / (1 − specificity)</div>
+<p><strong>Prior odds</strong> are P(H)/P(¬H): a 1% prevalence is odds of 1 : 99. <strong>LR<sub>+</sub></strong>, the positive likelihood ratio, is how many times more likely a positive result is in a sick person than in a healthy one; with sensitivity 0.99 and specificity 0.95 it is 0.99/0.05 = 19.8. <strong>Posterior odds</strong> are what you believe after the test; convert back with P = odds/(1 + odds). The derivation is two lines: divide Bayes' theorem for H by Bayes' theorem for ¬H, and P(E) cancels. For our example: (1/99) × 19.8 = 0.2, and 0.2/1.2 = 0.167, the same 17% as Figure 3.8. A negative test multiplies the odds by LR<sub>−</sub> = (1 − sensitivity)/specificity = 0.01/0.95 ≈ 0.0105.</p>
+</div>
+<pre class="code" data-lang="python"><code><span class="cm"># Bayes in odds form: posterior odds = prior odds × likelihood ratio. The prior does the damage.</span>
+sens, spec = <span class="nu">0.99</span>, <span class="nu">0.95</span>
+LR_pos = sens / (<span class="nu">1</span> - spec)                        <span class="cm"># how much a positive test multiplies the odds</span>
+<span class="fn">print</span>(<span class="st">f"likelihood ratio of a positive test = {sens} / {1 - spec:.2f} = {LR_pos:.1f}"</span>)
+<span class="fn">print</span>(<span class="st">" prevalence   prior odds   posterior odds   P(disease | positive)"</span>)
+<span class="kw">for</span> prev <span class="kw">in</span> (<span class="nu">0.001</span>, <span class="nu">0.01</span>, <span class="nu">0.05</span>, <span class="nu">0.10</span>, <span class="nu">0.30</span>):
+    prior_odds = prev / (<span class="nu">1</span> - prev)
+    post_odds = prior_odds * LR_pos
+    post = post_odds / (<span class="nu">1</span> + post_odds)
+    <span class="fn">print</span>(<span class="st">f"   {prev:5.1%}     1 : {1 / prior_odds:6.1f}     {post_odds:8.3f}          {post:6.1%}"</span>)
+<span class="out"># likelihood ratio of a positive test = 0.99 / 0.05 = 19.8</span>
+<span class="out">#  prevalence   prior odds   posterior odds   P(disease | positive)</span>
+<span class="out">#     0.1%     1 :  999.0        0.020            1.9%</span>
+<span class="out">#     1.0%     1 :   99.0        0.200           16.7%</span>
+<span class="out">#     5.0%     1 :   19.0        1.042           51.0%</span>
+<span class="out">#    10.0%     1 :    9.0        2.200           68.7%</span>
+<span class="out">#    30.0%     1 :    2.3        8.486           89.5%</span></code></pre><p>The table is the whole intuition. The test is identical in every row (LR<sub>+</sub> = 19.8), yet a positive result means 2% in a screening population and 90% in a symptomatic clinic. The "95%" that people guess is 1 − false positive rate: it is the answer to "how often does a healthy person test negative?", a question about the test alone, whereas "do I have it?" is a question about the test <em>and</em> the prior. Two rules of thumb fall out. A positive result from a test with LR<sub>+</sub> around 20 moves you from "rare" to "possible" (1% → 17%), not to "certain"; to reach 90% from 1% you need LR<sub>+</sub> ≈ 900, which is why confirmatory tests exist. And a second, independent positive test multiplies the odds again: 0.2 × 19.8 ≈ 4, i.e. 80%, which is the logic of "repeat the test before treating".</p>
+<div class="callout pro"><div class="title">At work</div>
+<p>Every classifier is a test with an LR<sub>+</sub>. Read it off the confusion matrix: recall / false-positive rate. Then ask what the prior is in the population the model will actually score, which is often far lower than in the training set (fraud is 5% in the labelled sample because investigators only labelled suspicious cases, and 0.1% in live traffic). Precision in production is the posterior in the live population, and it can be a tenth of what the validation set showed. Chapter 6 computes the same quantity as precision; this is the reasoning that lets you forecast it before deployment.</p>
+</div>
+</details>
+
 <!-- ============================================================ -->
 <h2 id="s7">7. Maximum likelihood: where loss functions come from</h2>
 
@@ -754,6 +867,41 @@ loglik = heads*np.log(ps) + (<span class="nu">50</span>-heads)*np.log(<span clas
 <div class="callout key"><div class="title">Key idea</div>
 <p><strong>A loss function is a negative log-likelihood in disguise.</strong> Squared error assumes Gaussian noise; log-loss assumes Bernoulli labels; Poisson regression assumes Poisson counts. When a model's errors look nothing like its assumed distribution (heavy tails, counts with lots of zeros), the loss is the first thing to question, not the algorithm.</p>
 </div>
+
+<details class="deepdive"><summary>Deep dive: from Gaussian noise to squared error, line by line <span class="time">8 min</span></summary>
+<div class="callout eli9"><div class="title">Explain it like I'm 9</div>
+<p>Suppose you believe every measurement is "the true value plus a wobble", and that small wobbles are common and huge wobbles are rare, in the bell-shaped way. Then the most believable line through your dots is the one that makes the wobbles it needs as small as possible, and because the bell shape punishes big wobbles by their <em>square</em>, "most believable" turns out to mean "smallest sum of squared leftovers". Squared error was never an arbitrary choice; it is the bell curve in disguise.</p>
+</div>
+<p><strong>Precisely.</strong> Assume each target is the model's prediction plus Gaussian noise: y<sub>i</sub> = w·x<sub>i</sub> + ε<sub>i</sub>, ε<sub>i</sub> ~ N(0, σ²), independently. Then the likelihood of the data given w is the product of Gaussian densities, and its negative log is a sum of squares plus constants:</p>
+<div class="callout math"><div class="title">The math (optional)</div>
+<div class="formula">p(y<sub>i</sub> | x<sub>i</sub>, w) = (1/√(2πσ²)) · exp( −(y<sub>i</sub> − w·x<sub>i</sub>)² / (2σ²) )</div>
+<div class="formula">−log P(data | w) = ∑<sub>i</sub> (y<sub>i</sub> − w·x<sub>i</sub>)² / (2σ²) + (n/2) log(2πσ²)</div>
+<p><strong>Line 1</strong> is the Gaussian density: the probability of observing y<sub>i</sub> if the truth were w·x<sub>i</sub> with noise σ. <strong>Line 2</strong> takes the log of the product (a sum of logs, §5) and flips the sign. The second term does not contain w, and 1/(2σ²) is a positive constant, so <strong>minimising the negative log-likelihood over w is the same as minimising ∑(y<sub>i</sub> − w·x<sub>i</sub>)²</strong>, which is MSE up to the factor 1/n. Every symbol matters: if the noise were <em>Laplace</em> (double-exponential) instead of Gaussian, the exponent would contain |y − w·x| and the MLE would minimise absolute error (MAE); if the noise variance differed per row, each square would be weighted by 1/σ<sub>i</sub>² (weighted least squares).</p>
+<p><strong>The same move for classification.</strong> Assume y<sub>i</sub> ~ Bernoulli(p<sub>i</sub>) with p<sub>i</sub> = σ(w·x<sub>i</sub>). Then P(y<sub>i</sub> | p<sub>i</sub>) = p<sub>i</sub><sup>y<sub>i</sub></sup>(1 − p<sub>i</sub>)<sup>1−y<sub>i</sub></sup>, and −log P(data | w) = −∑<sub>i</sub> [ y<sub>i</sub> log p<sub>i</sub> + (1 − y<sub>i</sub>) log(1 − p<sub>i</sub>) ], which is exactly the log-loss of Chapter 6. Nothing was chosen; it was derived from "labels are coin flips whose bias depends on x".</p>
+</div>
+<pre class="code" data-lang="python"><code><span class="cm"># Maximum likelihood by grid search: the Gaussian NLL and the MSE pick the same slope; the Bernoulli NLL is log-loss</span>
+<span class="kw">import</span> numpy <span class="kw">as</span> np
+<span class="kw">from</span> sklearn.metrics <span class="kw">import</span> log_loss
+rng = np.random.default_rng(<span class="nu">0</span>)
+
+<span class="cm"># --- regression: y = 2x + Gaussian noise. Which slope w makes the data most likely?</span>
+x = rng.uniform(<span class="nu">0</span>, <span class="nu">5</span>, <span class="nu">40</span>); y = <span class="nu">2</span> * x + rng.normal(<span class="nu">0</span>, <span class="nu">1.0</span>, <span class="nu">40</span>)
+ws = np.linspace(<span class="nu">1.5</span>, <span class="nu">2.5</span>, <span class="nu">1001</span>)
+mse = np.array([np.mean((y - w * x) ** <span class="nu">2</span>) <span class="kw">for</span> w <span class="kw">in</span> ws])
+nll = np.array([np.sum(<span class="nu">0.5</span> * np.log(<span class="nu">2</span> * np.pi) + <span class="nu">0.5</span> * (y - w * x) ** <span class="nu">2</span>) <span class="kw">for</span> w <span class="kw">in</span> ws])   <span class="cm"># σ = 1</span>
+<span class="fn">print</span>(<span class="st">f"slope minimising MSE = {ws[mse.argmin()]:.3f}   slope minimising Gaussian NLL = {ws[nll.argmin()]:.3f}   "</span>
+      <span class="st">f"least squares: {np.sum(x * y) / np.sum(x * x):.3f}"</span>)
+
+<span class="cm"># --- classification: the Bernoulli negative log-likelihood IS sklearn's log_loss</span>
+p = np.array([<span class="nu">0.9</span>, <span class="nu">0.2</span>, <span class="nu">0.7</span>, <span class="nu">0.4</span>]); yb = np.array([<span class="nu">1</span>, <span class="nu">0</span>, <span class="nu">0</span>, <span class="nu">1</span>])
+nll_bern = -np.mean(yb * np.log(p) + (<span class="nu">1</span> - yb) * np.log(<span class="nu">1</span> - p))
+<span class="fn">print</span>(<span class="st">f"Bernoulli NLL (mean) = {nll_bern:.4f}   sklearn log_loss = {log_loss(yb, p):.4f}"</span>)
+<span class="out"># slope minimising MSE = 2.108   slope minimising Gaussian NLL = 2.108   least squares: 2.108</span>
+<span class="out"># Bernoulli NLL (mean) = 0.6122   sklearn log_loss = 0.6122</span></code></pre><p>The grid search makes the identity concrete: the slope that minimises MSE, the slope that minimises the Gaussian negative log-likelihood, and the least-squares formula all land on 2.108, because they are three spellings of the same objective. The Bernoulli line shows that scikit-learn's <code>log_loss</code> is literally the mean negative log-likelihood of the labels under the model's probabilities.</p>
+<div class="callout key"><div class="title">Key idea</div>
+<p>When a stakeholder asks "why squared error?", the honest answer is "because we are assuming the errors are roughly bell-shaped and equally spread". If the residual plot (Chapter 5) says otherwise, with heavy tails or a funnel, the assumption is wrong and the loss should change with it: MAE or Huber loss for heavy tails, a log-transformed target or a Poisson/Gamma likelihood for skewed positive quantities. The loss is a modelling decision, and the likelihood is how you make it deliberately.</p>
+</div>
+</details>
 
 <!-- ============================================================ -->
 <h2 id="s8">8. Statistics you will use every week</h2>
@@ -894,6 +1042,8 @@ after = <span class="nu">0.55</span>*entropy(left) + <span class="nu">0.45</span
 </tbody>
 </table>
 </div>
+
+<div class="callout lab"><div class="title">Lab</div><p>Open <code>labs/ch03_math_toolkit.py</code> in VS Code and make the tests in <code>labs/tests/test_ch03.py</code> pass. You will implement dot products, norms and cosine similarity, a numerical gradient checker, sigmoid and a stable softmax, Bayes' theorem as a function of prevalence, a bootstrap confidence interval, and entropy with information gain.</p></div>
 
 <!-- ============================================================ -->
 <h2 id="quiz">Quiz</h2>

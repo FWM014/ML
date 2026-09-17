@@ -79,7 +79,8 @@ def conv_out(n: int, k: int, s: int = 1, p: int = 0, d: int = 1) -> int:
     Examples: conv_out(28, 3) == 26; conv_out(28, 3, p=1) == 28; conv_out(28, 2, s=2) == 14;
     conv_out(224, 7, s=2, p=3) == 112; conv_out(32, 3, d=2) == 28.
     """
-    return (n + 2 * p - d * (k - 1) - 1) // s + 1
+    # TODO: return (n + 2p - d(k-1) - 1) // s + 1
+    raise NotImplementedError("Task: conv_out")
 
 
 # ---------------------------------------------------------------- Task 2
@@ -90,7 +91,8 @@ def conv_params(c_in: int, c_out: int, k: int, bias: bool = True) -> int:
     Examples: conv_params(1, 16, 3) == 160; conv_params(3, 16, 3) == 448;
     conv_params(64, 128, 3) == 73856; conv_params(8, 8, 1, bias=False) == 64.
     """
-    return c_out * c_in * k * k + (c_out if bias else 0)
+    # TODO: c_out * c_in * k * k, plus c_out biases when bias is True
+    raise NotImplementedError("Task: conv_params")
 
 
 # ---------------------------------------------------------------- Task 3
@@ -104,19 +106,8 @@ def cross_correlate2d(img: np.ndarray, kernel: np.ndarray, padding: int = 0, str
 
     Example: make_edge_example() -> a 4x4 output whose every row is [0, 3, 3, 0].
     """
-    img = np.asarray(img, dtype=np.float64)
-    kernel = np.asarray(kernel, dtype=np.float64)
-    if padding:
-        img = np.pad(img, padding)
-    H, W = img.shape
-    kH, kW = kernel.shape
-    oh, ow = conv_out(H, kH, stride), conv_out(W, kW, stride)
-    out = np.zeros((oh, ow))
-    for i in range(oh):
-        for j in range(ow):
-            r, c = i * stride, j * stride
-            out[i, j] = (img[r:r + kH, c:c + kW] * kernel).sum()
-    return out
+    # TODO: np.pad if padding > 0; loop over output cells; each cell = (patch * kernel).sum() with the patch starting at (i*stride, j*stride)
+    raise NotImplementedError("Task: cross_correlate2d")
 
 
 # ---------------------------------------------------------------- Task 4
@@ -128,16 +119,8 @@ def max_pool2d(x: np.ndarray, k: int = 2, stride: int | None = None) -> np.ndarr
     Example: a 4x4 map [[1,2,3,4],[5,6,7,8],[9,10,11,12],[13,14,15,16]] with k=2 pools to
     [[6, 8], [14, 16]].
     """
-    stride = k if stride is None else stride
-    x = np.asarray(x, dtype=np.float64)
-    B, C, H, W = x.shape
-    oh, ow = conv_out(H, k, stride), conv_out(W, k, stride)
-    out = np.empty((B, C, oh, ow))
-    for i in range(oh):
-        for j in range(ow):
-            r, c = i * stride, j * stride
-            out[:, :, i, j] = x[:, :, r:r + k, c:c + k].max(axis=(2, 3))
-    return out
+    # TODO: default stride = k; loop over output cells; out[:, :, i, j] = window.max(axis=(2, 3))
+    raise NotImplementedError("Task: max_pool2d")
 
 
 # ---------------------------------------------------------------- Task 5
@@ -155,25 +138,17 @@ class SmallCNN(nn.Module):
     """
 
     def __init__(self, n_classes: int = 10):
-        super().__init__()
-        self.block1 = nn.Sequential(nn.Conv2d(1, 16, 3, padding=1), nn.BatchNorm2d(16), nn.ReLU(), nn.MaxPool2d(2))
-        self.block2 = nn.Sequential(nn.Conv2d(16, 32, 3, padding=1), nn.BatchNorm2d(32), nn.ReLU(), nn.MaxPool2d(2))
-        self.block3 = nn.Sequential(nn.Conv2d(32, 64, 3, padding=1), nn.BatchNorm2d(64), nn.ReLU())
-        self.gap = nn.AdaptiveAvgPool2d(1)
-        self.head = nn.Linear(64, n_classes)
+        # TODO: super().__init__(); define self.block1, self.block2, self.block3 (nn.Sequential), self.gap = nn.AdaptiveAvgPool2d(1), self.head = nn.Linear(64, n_classes)
+        raise NotImplementedError("Task: SmallCNN.__init__")
 
     def feature_shapes(self, x: torch.Tensor) -> dict:
         """{"block1": (B,16,14,14), "block2": ..., "block3": ..., "gap": ..., "logits": ...}"""
-        shapes = {}
-        for name in ["block1", "block2", "block3", "gap"]:
-            x = getattr(self, name)(x)
-            shapes[name] = tuple(x.shape)
-        shapes["logits"] = tuple(self.head(x.flatten(1)).shape)
-        return shapes
+        # TODO: run x through block1, block2, block3, gap recording tuple(x.shape) under each name; then "logits" = shape of self.head(x.flatten(1))
+        raise NotImplementedError("Task: SmallCNN.feature_shapes")
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        x = self.gap(self.block3(self.block2(self.block1(x))))
-        return self.head(x.flatten(1))
+        # TODO: block1 -> block2 -> block3 -> gap -> flatten(1) -> head
+        raise NotImplementedError("Task: SmallCNN.forward")
 
 
 # ---------------------------------------------------------------- Task 6
@@ -191,34 +166,8 @@ def train_stripes_cnn(n_train: int = 400, n_test: int = 200, epochs: int = 8, ba
     Returns {"test_acc": float (last epoch), "train_loss": [per-epoch mean loss],
              "test_acc_curve": [per-epoch acc], "n_params": int}.
     """
-    torch.manual_seed(seed)
-    X_tr, y_tr = make_stripe_images(n_train, seed=seed)
-    X_te, y_te = make_stripe_images(n_test, seed=seed + 1)
-    model = nn.Sequential(
-        nn.Conv2d(1, 8, 3, padding=1), nn.ReLU(), nn.MaxPool2d(2),
-        nn.Conv2d(8, 16, 3, padding=1), nn.ReLU(), nn.MaxPool2d(2),
-        nn.AdaptiveAvgPool2d(1), nn.Flatten(), nn.Linear(16, 2))
-    opt = torch.optim.Adam(model.parameters(), lr=lr)
-    loss_fn = nn.CrossEntropyLoss()
-    train_loss, acc_curve = [], []
-    for _ in range(epochs):
-        model.train()
-        perm = torch.randperm(n_train)
-        losses = []
-        for i in range(0, n_train, batch_size):
-            idx = perm[i:i + batch_size]
-            loss = loss_fn(model(X_tr[idx]), y_tr[idx])
-            opt.zero_grad()
-            loss.backward()
-            opt.step()
-            losses.append(loss.item())
-        model.eval()
-        with torch.no_grad():
-            acc = (model(X_te).argmax(1) == y_te).float().mean().item()
-        train_loss.append(float(np.mean(losses)))
-        acc_curve.append(acc)
-    return {"test_acc": acc_curve[-1], "train_loss": train_loss, "test_acc_curve": acc_curve,
-            "n_params": sum(p.numel() for p in model.parameters())}
+    # TODO: seed; make train/test images (different seeds); build the nn.Sequential from the docstring; Adam + CrossEntropyLoss; per epoch: shuffled mini-batches, then eval()/no_grad() test accuracy; return the dict
+    raise NotImplementedError("Task: train_stripes_cnn")
 
 
 if __name__ == "__main__":

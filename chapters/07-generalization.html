@@ -893,7 +893,7 @@ rs = cross_val_score(model, X, y, cv=rcv, scoring=<span class="st">&quot;accurac
   <text x="680" y="104" class="lbl" fill="var(--s7)">3 of 4 folds</text>
   <text x="20" y="160" class="lbl">Each pair of rounds shares 75% of its training rows (k−2 of k−1 folds in general). If the shared rows happen to be</text>
   <text x="20" y="178" class="lbl">"easy" or "hard", every score moves together, so the spread of the k scores understates the wobble of their mean.</text>
-  <text x="20" y="208" class="lbl-strong">Only fresh data tells you the true wobble; std/√k is a lower bound on it, not an estimate of it.</text>
+  <text x="20" y="208" class="lbl-strong">Only fresh data reveals the true wobble; std/√k is typically too small, not an unbiased estimate of it.</text>
 </svg>
 <figcaption><strong>Figure 7.11 — K-fold scores share most of their training data.</strong> With k = 5, two rounds train on the same 60% of all rows (three folds), so their scores are positively correlated. The mean of the five scores is fine as an estimate; std/√k as its error bar is too optimistic, by an amount the simulation below measures.</figcaption>
 </figure>

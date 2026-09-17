@@ -432,6 +432,36 @@ out, w, s = attention(Q, K, V)
 <p>Attention replaces "carry information through a chain of steps" with "fetch information directly from wherever it is". Token 800 can read token 5 in one hop, with a weight the model learns. That single change removes the bottleneck of Figure 18.3, the fading memory of Figure 18.1, and — because every query is computed independently — the sequential dependency that made RNNs slow.</p>
 </div>
 
+<details class="deepdive"><summary>Deep dive: why divide by √d<sub>k</sub> <span class="time">6 min</span></summary>
+<div class="callout eli9"><div class="title">Explain it like I'm 9</div>
+<p>Flip 2 coins and count heads minus tails: you get a number between −2 and +2. Flip 512 coins and the total swings between roughly −45 and +45, even though every coin is exactly the same. A dot product is a sum of d<sub>k</sub> little products, so its swing grows with d<sub>k</sub> — and the softmax is a machine that turns "a bit bigger" into "almost all the weight" once the swings get large. Dividing by √d<sub>k</sub> shrinks the sum back to the size it had for 2 coins, whatever the width.</p>
+</div>
+<p><strong>The two-line derivation.</strong> Take a query q and a key k with d<sub>k</sub> components each, all independent with mean 0 and variance 1 — roughly what a LayerNorm followed by a freshly initialised projection produces. Then:</p>
+<div class="formula">q·k = ∑<sub>i</sub> q<sub>i</sub>k<sub>i</sub>,   E[q<sub>i</sub>k<sub>i</sub>] = E[q<sub>i</sub>]·E[k<sub>i</sub>] = 0,   Var(q<sub>i</sub>k<sub>i</sub>) = E[q<sub>i</sub>²]·E[k<sub>i</sub>²] = 1<br>
+Var(q·k) = ∑<sub>i</sub> Var(q<sub>i</sub>k<sub>i</sub>) = d<sub>k</sub>   ⇒   std(q·k) = √d<sub>k</sub>   ⇒   std(q·k / √d<sub>k</sub>) = 1</div>
+<div class="callout math"><div class="title">The math (optional)</div>
+<p><strong>q<sub>i</sub>, k<sub>i</sub></strong> are the i-th components of the query and key. <strong>E[·]</strong> is the expectation (average over random draws), <strong>Var(·)</strong> the variance. The product of two independent zero-mean variables has mean 0 and variance equal to the product of the variances (here 1·1). Variances of independent terms <em>add</em>, which is the whole trick: d<sub>k</sub> terms of variance 1 give variance d<sub>k</sub>, so the standard deviation — the typical size of a score — is √d<sub>k</sub>. Dividing by that constant makes the scores unit-scale for every width, so one learning rate and one initialisation recipe work for d<sub>k</sub> = 8 and d<sub>k</sub> = 512 alike.</p>
+</div>
+<p><strong>Why unit scale matters.</strong> The gradient of a softmax weight with respect to its own score is w<sub>j</sub>(1 − w<sub>j</sub>). If the scores are 20 standard deviations wide, the largest one typically leads the runner-up by several units, e<sup>several</sup> is enormous, and the row becomes a one-hot: w ≈ 1 for one key and ≈ 0 for the rest. Every factor w<sub>j</sub>(1 − w<sub>j</sub>) is then ≈ 0, the scores receive no gradient, and W<sub>Q</sub> and W<sub>K</sub> stop learning before they have learned anything. The check below measures exactly this on random vectors: the standard deviation of raw and scaled scores, and how much weight the softmax puts on its favourite of 16 keys <em>before any training</em>.</p>
+<pre class="code" data-lang="python"><code><span class="cm"># Numeric check: the variance of a dot product grows with d_k; dividing by sqrt(d_k) undoes it</span>
+<span class="kw">import</span> torch
+torch.manual_seed(<span class="nu">0</span>)
+n_keys = <span class="nu">16</span>                                   <span class="cm"># one query scored against 16 keys</span>
+<span class="kw">for</span> d <span class="kw">in</span> [<span class="nu">2</span>, <span class="nu">64</span>, <span class="nu">512</span>]:
+    q = torch.randn(10_000, <span class="nu">1</span>, d)             <span class="cm"># 10,000 random queries, unit-variance components</span>
+    K = torch.randn(10_000, n_keys, d)        <span class="cm"># 16 random keys per query</span>
+    raw    = (q @ K.transpose(-<span class="nu">2</span>, -<span class="nu">1</span>)).squeeze(<span class="nu">1</span>)      <span class="cm"># (10000, 16) unscaled scores</span>
+    scaled = raw / d ** <span class="nu">0.5</span>
+    peak_raw    = torch.softmax(raw, dim=-<span class="nu">1</span>).<span class="fn">max</span>(dim=-<span class="nu">1</span>).values.mean()
+    peak_scaled = torch.softmax(scaled, dim=-<span class="nu">1</span>).<span class="fn">max</span>(dim=-<span class="nu">1</span>).values.mean()
+    <span class="fn">print</span>(<span class="st">f"d_k={d:4d}  std(q.k)={raw.std():6.2f}  std(q.k/sqrt d)={scaled.std():5.2f}  "</span>
+          <span class="st">f"mean max weight: raw {peak_raw:.2f}  scaled {peak_scaled:.2f}"</span>)
+<span class="out"># d_k=   2  std(q.k)=  1.43  std(q.k/sqrt d)= 1.01  mean max weight: raw 0.30  scaled 0.23</span>
+<span class="out"># d_k=  64  std(q.k)=  7.99  std(q.k/sqrt d)= 1.00  mean max weight: raw 0.84  scaled 0.25</span>
+<span class="out"># d_k= 512  std(q.k)= 22.60  std(q.k/sqrt d)= 1.00  mean max weight: raw 0.95  scaled 0.25</span></code></pre>
+<p>Read the last column. Unscaled, a 512-wide head starts life putting 95% of its attention on one arbitrary key; scaled, it starts near 25% — a mild preference (uniform would be 1/16 ≈ 6%) that training can push in any direction. Two practical footnotes. In a multi-head layer the d<sub>k</sub> in the formula is the <em>head</em> width (d<sub>model</sub>/h, typically 64–128), so the divisor is 8–11, not √d<sub>model</sub>. And 1/√d<sub>k</sub> is a fixed temperature chosen for initialisation; trained weights drift away from unit variance, which is why some recent large models add "QK-norm" — a normalisation of q and k themselves — to keep the scores tame throughout training.</p>
+</details>
+
 <!-- ============================================================ -->
 <h2 id="s6">6. Self-attention, multiple heads, and position</h2>
 
@@ -1251,6 +1281,92 @@ out, w = head(x)
   <div class="note">Blue = positive, orange = negative, intensity = magnitude. Slide slowly: the leftmost cells flip every step, the rightmost barely move. Similarity to position 0 falls quickly then wobbles — nearby positions look alike, far ones do not, and no two positions share a vector.</div>
 </div>
 
+<details class="deepdive"><summary>Deep dive: attention versus recurrence — path length and parallelism <span class="time">8 min</span></summary>
+<div class="callout eli9"><div class="title">Explain it like I'm 9</div>
+<p>Sixty kids sit in a row. To get a message from the first desk to the last, an RNN passes a note hand to hand: 59 handoffs, each one able to smudge it, and nobody can pass it on before receiving it. Attention is the teacher reading the note out loud: one step, every desk hears it at once, and each kid decides how much of it to write down. The second classroom is faster <em>and</em> the message arrives intact.</p>
+</div>
+<p>Section 5 called attention a soft dictionary. Here is why that particular design beat the loop, in the three numbers the original paper used to compare them.</p>
+<div class="tbl-wrap">
+<table class="tbl">
+<thead><tr><th>Layer type</th><th>Work per layer</th><th>Sequential steps</th><th>Longest path between two tokens</th></tr></thead>
+<tbody>
+<tr><td>Recurrent (RNN / LSTM)</td><td>O(n · d²)</td><td>O(n)</td><td>O(n)</td></tr>
+<tr><td>Self-attention</td><td>O(n² · d)</td><td>O(1)</td><td>O(1)</td></tr>
+<tr><td>1-D convolution, kernel k</td><td>O(k · n · d²)</td><td>O(1)</td><td>O(n/k), or O(log<sub>k</sub> n) with dilation</td></tr>
+</tbody>
+</table>
+</div>
+<figure class="fig">
+<svg viewBox="0 0 800 250" role="img" aria-label="Left: eight tokens in an RNN chain; information from token 1 reaches token 8 through seven hops, each a Jacobian product. Right: the same eight tokens under self-attention; token 8 reaches token 1 in a single hop, with one softmax weight per edge">
+  <defs><marker id="arr-f11" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--s2)"/></marker></defs>
+  <text x="200" y="24" text-anchor="middle" class="lbl-strong" font-size="13">Recurrence: a chain of hops</text>
+  <text x="596" y="24" text-anchor="middle" class="lbl-strong" font-size="13">Self-attention: one hop, any distance</text>
+  <g>
+    <rect x="30" y="90" width="34" height="30" class="box-accent"/><text x="47" y="110" text-anchor="middle" class="lbl-strong" font-size="11">t₁</text>
+    <rect x="74" y="90" width="34" height="30" class="box"/><text x="91" y="110" text-anchor="middle" class="lbl" font-size="11">t₂</text>
+    <rect x="118" y="90" width="34" height="30" class="box"/><text x="135" y="110" text-anchor="middle" class="lbl" font-size="11">t₃</text>
+    <rect x="162" y="90" width="34" height="30" class="box"/><text x="179" y="110" text-anchor="middle" class="lbl" font-size="11">t₄</text>
+    <rect x="206" y="90" width="34" height="30" class="box"/><text x="223" y="110" text-anchor="middle" class="lbl" font-size="11">t₅</text>
+    <rect x="250" y="90" width="34" height="30" class="box"/><text x="267" y="110" text-anchor="middle" class="lbl" font-size="11">t₆</text>
+    <rect x="294" y="90" width="34" height="30" class="box"/><text x="311" y="110" text-anchor="middle" class="lbl" font-size="11">t₇</text>
+    <rect x="338" y="90" width="34" height="30" class="box-accent"/><text x="355" y="110" text-anchor="middle" class="lbl-strong" font-size="11">t₈</text>
+    <g stroke="var(--s2)" stroke-width="2.5">
+      <line x1="64" y1="105" x2="72" y2="105" marker-end="url(#arr-f11)"/><line x1="108" y1="105" x2="116" y2="105" marker-end="url(#arr-f11)"/><line x1="152" y1="105" x2="160" y2="105" marker-end="url(#arr-f11)"/><line x1="196" y1="105" x2="204" y2="105" marker-end="url(#arr-f11)"/><line x1="240" y1="105" x2="248" y2="105" marker-end="url(#arr-f11)"/><line x1="284" y1="105" x2="292" y2="105" marker-end="url(#arr-f11)"/><line x1="328" y1="105" x2="336" y2="105" marker-end="url(#arr-f11)"/>
+    </g>
+    <text x="200" y="76" text-anchor="middle" class="lbl" font-size="11" fill="var(--s2)" font-weight="700">7 hops = 7 Jacobians multiplied together</text>
+    <text x="200" y="150" text-anchor="middle" class="lbl" font-size="11">each step must wait for the previous one</text>
+    <text x="200" y="168" text-anchor="middle" class="lbl" font-size="11">gradient to t₁ ∝ (factor)⁷ → vanishes or explodes</text>
+    <text x="200" y="200" text-anchor="middle" class="lbl-strong" font-size="12">depth per layer: n</text>
+  </g>
+  <g>
+    <rect x="420" y="90" width="34" height="30" class="box-accent"/><text x="437" y="110" text-anchor="middle" class="lbl-strong" font-size="11">t₁</text>
+    <rect x="464" y="90" width="34" height="30" class="box"/><text x="481" y="110" text-anchor="middle" class="lbl" font-size="11">t₂</text>
+    <rect x="508" y="90" width="34" height="30" class="box"/><text x="525" y="110" text-anchor="middle" class="lbl" font-size="11">t₃</text>
+    <rect x="552" y="90" width="34" height="30" class="box"/><text x="569" y="110" text-anchor="middle" class="lbl" font-size="11">t₄</text>
+    <rect x="596" y="90" width="34" height="30" class="box"/><text x="613" y="110" text-anchor="middle" class="lbl" font-size="11">t₅</text>
+    <rect x="640" y="90" width="34" height="30" class="box"/><text x="657" y="110" text-anchor="middle" class="lbl" font-size="11">t₆</text>
+    <rect x="684" y="90" width="34" height="30" class="box"/><text x="701" y="110" text-anchor="middle" class="lbl" font-size="11">t₇</text>
+    <rect x="728" y="90" width="34" height="30" class="box-accent"/><text x="745" y="110" text-anchor="middle" class="lbl-strong" font-size="11">t₈</text>
+    <g fill="none" stroke="var(--s1)" stroke-width="1.2" stroke-opacity=".55">
+      <path d="M745,90 Q613,44 481,90"/><path d="M745,90 Q635,52 525,90"/><path d="M745,90 Q657,58 569,90"/><path d="M745,90 Q679,64 613,90"/><path d="M745,90 Q701,70 657,90"/><path d="M745,90 Q723,76 701,90"/>
+    </g>
+    <path d="M745,90 Q591,30 437,90" fill="none" stroke="var(--s2)" stroke-width="2.5" marker-end="url(#arr-f11)"/>
+    <text x="591" y="48" text-anchor="middle" class="lbl" font-size="11" fill="var(--s2)" font-weight="700">1 hop = one softmax weight w₈₁</text>
+    <text x="596" y="150" text-anchor="middle" class="lbl" font-size="11">all queries computed at once: three matrix multiplies</text>
+    <text x="596" y="168" text-anchor="middle" class="lbl" font-size="11">gradient to t₁ ∝ w₈₁ — the distance is not in the formula</text>
+    <text x="596" y="200" text-anchor="middle" class="lbl-strong" font-size="12">depth per layer: 1</text>
+  </g>
+  <line x1="400" y1="40" x2="400" y2="210" class="grid" stroke-dasharray="4 4"/>
+  <text x="400" y="236" text-anchor="middle" class="lbl" font-size="11">Work per layer: recurrent n·d², attention n²·d — equal at n = d. Attention pays in memory for what it saves in depth.</text>
+</svg>
+<figcaption><strong>Figure 18.11 — Path length is the real difference.</strong> In a recurrent layer, a signal (forward) or a gradient (backward) between two tokens crosses every intermediate step, so its strength is a product of as many factors as the distance. In self-attention every pair is one edge with a learned weight, so distance disappears from the gradient and all positions can be computed in parallel.</figcaption>
+</figure>
+<p><strong>Why "soft" is essential.</strong> A hard dictionary — return the value of the single best-matching key, argmax<sub>j</sub> s<sub>j</sub> — has zero gradient with respect to the scores almost everywhere: nudge a score a little and the winner does not change, so the model could never learn <em>which</em> key to look at. The softmax blend has a clean derivative, ∂out/∂s<sub>j</sub> = w<sub>j</sub>(v<sub>j</sub> − out): raising score j pulls the output toward value j, in proportion to how much weight j already has. That is why attention trains with ordinary backprop and why its weights move smoothly from near-uniform to peaked instead of jumping.</p>
+<p>The table's last column is the one to remember. Measure it directly: the code takes an untrained RNN and an untrained attention layer of the same width, and asks how much gradient from the last position reaches an input 0, 9, 19, 39 and 59 steps back.</p>
+<pre class="code" data-lang="python"><code><span class="cm"># How much gradient reaches an input t steps back? RNN vs one attention layer (same width)</span>
+<span class="kw">import</span> torch, torch.nn <span class="kw">as</span> nn
+torch.manual_seed(<span class="nu">0</span>)
+n, d = <span class="nu">60</span>, <span class="nu">32</span>
+x = torch.randn(<span class="nu">1</span>, n, d, requires_grad=<span class="kw">True</span>)          <span class="cm"># one sequence of 60 tokens</span>
+
+rnn = nn.RNN(d, d, batch_first=<span class="kw">True</span>)                  <span class="cm"># plain tanh RNN</span>
+h_last = rnn(x)[<span class="nu">0</span>][<span class="nu">0</span>, -<span class="nu">1</span>]                             <span class="cm"># hidden state after the last token</span>
+g_rnn = torch.autograd.grad(h_last.<span class="fn">sum</span>(), x)[<span class="nu">0</span>][<span class="nu">0</span>]    <span class="cm"># (n, d): d h_last / d x_t for every t</span>
+
+Wq, Wk, Wv = (nn.Linear(d, d, bias=<span class="kw">False</span>) <span class="kw">for</span> _ <span class="kw">in</span> <span class="fn">range</span>(<span class="nu">3</span>))
+w = torch.softmax(Wq(x) @ Wk(x).transpose(-<span class="nu">2</span>, -<span class="nu">1</span>) / d ** <span class="nu">0.5</span>, dim=-<span class="nu">1</span>)
+a_last = (w @ Wv(x))[<span class="nu">0</span>, -<span class="nu">1</span>]                           <span class="cm"># attention output at the last position</span>
+g_att = torch.autograd.grad(a_last.<span class="fn">sum</span>(), x)[<span class="nu">0</span>][<span class="nu">0</span>]
+
+<span class="fn">print</span>(<span class="st">"steps back:      "</span>, [n - <span class="nu">1</span> - t <span class="kw">for</span> t <span class="kw">in</span> (<span class="nu">59</span>, <span class="nu">50</span>, <span class="nu">40</span>, <span class="nu">20</span>, <span class="nu">0</span>)])
+<span class="fn">print</span>(<span class="st">"RNN  |grad|:     "</span>, [<span class="fn">round</span>(g_rnn[t].norm().item(), <span class="nu">4</span>) <span class="kw">for</span> t <span class="kw">in</span> (<span class="nu">59</span>, <span class="nu">50</span>, <span class="nu">40</span>, <span class="nu">20</span>, <span class="nu">0</span>)])
+<span class="fn">print</span>(<span class="st">"attn |grad|:     "</span>, [<span class="fn">round</span>(g_att[t].norm().item(), <span class="nu">4</span>) <span class="kw">for</span> t <span class="kw">in</span> (<span class="nu">59</span>, <span class="nu">50</span>, <span class="nu">40</span>, <span class="nu">20</span>, <span class="nu">0</span>)])
+<span class="out"># steps back:       [0, 9, 19, 39, 59]</span>
+<span class="out"># RNN  |grad|:      [2.0841, 0.0005, 0.0, 0.0, 0.0]</span>
+<span class="out"># attn |grad|:      [0.3595, 0.0968, 0.0436, 0.0642, 0.0778]</span></code></pre>
+<p>The RNN's gradient is four orders of magnitude smaller after nine steps and numerically zero after twenty — before any training, with the default initialisation (a tanh RNN whose recurrent Jacobian has spectral radius below 1). The attention gradient is of the same size at every distance because the distance never enters the computation. Training can improve the RNN's numbers (gates do exactly that, Section 3), but it cannot change the architecture's shape: the RNN must learn to <em>preserve</em> a signal across every hop, whereas attention only has to learn <em>one weight</em>. And the middle column is why training became affordable: an RNN's n steps form a dependency chain of tiny matrix-vector products that leave a GPU mostly idle, while attention's three big matmuls over the whole batch and sequence keep it saturated. The price is the n² term of Section 9 — at n = d the work per layer is identical, and attention only becomes more expensive per layer beyond that.</p>
+</details>
+
 <!-- ============================================================ -->
 <h2 id="s7">7. The Transformer block</h2>
 
@@ -1324,6 +1440,54 @@ n = <span class="fn">sum</span>(p.numel() <span class="kw">for</span> p <span cl
 <div class="callout warn"><div class="title">Common mistake</div>
 <p>Forgetting the positional encoding. <code>nn.TransformerEncoderLayer</code> does <em>not</em> add one for you. A model without it still trains and even reaches a decent loss on bag-of-words-like tasks, which hides the bug — until you notice it cannot tell "not good" from "good not".</p>
 </div>
+
+<details class="deepdive"><summary>Deep dive: one block, every shape <span class="time">7 min</span></summary>
+<div class="callout eli9"><div class="title">Explain it like I'm 9</div>
+<p>Think of the input as a spreadsheet: one row per token (5 rows), one column per feature (16 columns). A Transformer block never adds or removes rows or columns — it only rewrites the cells. The attention half rewrites each row using the <em>other</em> rows; the feed-forward half rewrites each row using only <em>itself</em>. Because the spreadsheet comes out the same size it went in, you can run it through another block, and another.</p>
+</div>
+<p>Figure 18.8 shows the block as boxes. This is the same block as tensor shapes, for a concrete (batch = 2, tokens = 5, d<sub>model</sub> = 16) with h = 4 heads and a 64-wide feed-forward, written in the modern <em>pre-norm</em> order (LayerNorm before each sub-layer). Every line prints the shape it produces; the last line proves the hand-built block has exactly the parameters of <code>nn.TransformerEncoderLayer</code>.</p>
+<div class="callout math"><div class="title">The math (optional)</div>
+<p><strong>B</strong> is the batch size, <strong>n</strong> the number of tokens, <strong>d</strong> = d<sub>model</sub> the width of every token vector. Multi-head attention requires <strong>d = h · d<sub>head</sub></strong>: the h heads each get a d<sub>head</sub>-wide slice of the projected vectors. <strong>view(B, n, h, d<sub>head</sub>)</strong> cuts the last axis into h slices without copying; <strong>transpose(1, 2)</strong> moves the head axis in front of the token axis so that each head's (n × d<sub>head</sub>) matrix is a separate problem and one batched matmul handles all B·h of them at once. After attention, the reverse transpose and reshape glue the h slices back into a d-wide row: that is the "concat" of Figure 18.6.</p>
+</div>
+<pre class="code" data-lang="python"><code><span class="cm"># One pre-norm Transformer block by hand, printing the shape after every step</span>
+<span class="kw">import</span> torch, torch.nn <span class="kw">as</span> nn
+torch.manual_seed(<span class="nu">0</span>)
+B, n, d, h, d_ff = <span class="nu">2</span>, <span class="nu">5</span>, <span class="nu">16</span>, <span class="nu">4</span>, <span class="nu">64</span>          <span class="cm"># batch, tokens, d_model, heads, FFN width</span>
+d_head = d // h                              <span class="cm"># 4 dims per head</span>
+Wq, Wk, Wv, Wo = (nn.Linear(d, d) <span class="kw">for</span> _ <span class="kw">in</span> <span class="fn">range</span>(<span class="nu">4</span>))
+ln1, ln2 = nn.LayerNorm(d), nn.LayerNorm(d)
+ffn = nn.Sequential(nn.Linear(d, d_ff), nn.GELU(), nn.Linear(d_ff, d))
+
+x = torch.randn(B, n, d);                    <span class="fn">print</span>(<span class="st">"input x            "</span>, <span class="fn">tuple</span>(x.shape))
+u = ln1(x);                                  <span class="fn">print</span>(<span class="st">"LayerNorm(x)       "</span>, <span class="fn">tuple</span>(u.shape))
+Q, K, V = Wq(u), Wk(u), Wv(u);               <span class="fn">print</span>(<span class="st">"Q, K, V            "</span>, <span class="fn">tuple</span>(Q.shape), <span class="st">"each"</span>)
+split = <span class="kw">lambda</span> t: t.view(B, n, h, d_head).transpose(<span class="nu">1</span>, <span class="nu">2</span>)
+Q, K, V = split(Q), split(K), split(V);      <span class="fn">print</span>(<span class="st">"split into heads   "</span>, <span class="fn">tuple</span>(Q.shape), <span class="st">"= (B, h, n, d_head)"</span>)
+S = Q @ K.transpose(-<span class="nu">2</span>, -<span class="nu">1</span>) / d_head ** <span class="nu">0.5</span>; <span class="fn">print</span>(<span class="st">"scores Q K^T/sqrt  "</span>, <span class="fn">tuple</span>(S.shape), <span class="st">"= (B, h, n, n)"</span>)
+A = torch.softmax(S, dim=-<span class="nu">1</span>);                <span class="fn">print</span>(<span class="st">"weights            "</span>, <span class="fn">tuple</span>(A.shape), <span class="st">"rows sum to"</span>, A[<span class="nu">0</span>, <span class="nu">0</span>].<span class="fn">sum</span>(-<span class="nu">1</span>).<span class="fn">round</span>(decimals=<span class="nu">2</span>).tolist())
+Z = A @ V;                                   <span class="fn">print</span>(<span class="st">"weights @ V        "</span>, <span class="fn">tuple</span>(Z.shape))
+Z = Z.transpose(<span class="nu">1</span>, <span class="nu">2</span>).reshape(B, n, d);      <span class="fn">print</span>(<span class="st">"concat heads       "</span>, <span class="fn">tuple</span>(Z.shape))
+x = x + Wo(Z);                               <span class="fn">print</span>(<span class="st">"x + W_o(concat)    "</span>, <span class="fn">tuple</span>(x.shape), <span class="st">"&lt;- residual 1"</span>)
+f = ffn(ln2(x));                             <span class="fn">print</span>(<span class="st">"FFN(LayerNorm(x))  "</span>, <span class="fn">tuple</span>(f.shape), <span class="st">"via"</span>, <span class="fn">tuple</span>(ffn[<span class="nu">0</span>](ln2(x)).shape))
+x = x + f;                                   <span class="fn">print</span>(<span class="st">"x + FFN            "</span>, <span class="fn">tuple</span>(x.shape), <span class="st">"&lt;- residual 2, same shape as input"</span>)
+
+mine = <span class="fn">sum</span>(p.numel() <span class="kw">for</span> m <span class="kw">in</span> (Wq, Wk, Wv, Wo, ln1, ln2, ffn) <span class="kw">for</span> p <span class="kw">in</span> m.parameters())
+ref = nn.TransformerEncoderLayer(d_model=d, nhead=h, dim_feedforward=d_ff, norm_first=<span class="kw">True</span>, batch_first=<span class="kw">True</span>)
+<span class="fn">print</span>(<span class="st">"parameters: by hand"</span>, mine, <span class="st">"| torch layer"</span>, <span class="fn">sum</span>(p.numel() <span class="kw">for</span> p <span class="kw">in</span> ref.parameters()))
+<span class="out"># input x             (2, 5, 16)</span>
+<span class="out"># LayerNorm(x)        (2, 5, 16)</span>
+<span class="out"># Q, K, V             (2, 5, 16) each</span>
+<span class="out"># split into heads    (2, 4, 5, 4) = (B, h, n, d_head)</span>
+<span class="out"># scores Q K^T/sqrt   (2, 4, 5, 5) = (B, h, n, n)</span>
+<span class="out"># weights             (2, 4, 5, 5) rows sum to [1.0, 1.0, 1.0, 1.0, 1.0]</span>
+<span class="out"># weights @ V         (2, 4, 5, 4)</span>
+<span class="out"># concat heads        (2, 5, 16)</span>
+<span class="out"># x + W_o(concat)     (2, 5, 16) &lt;- residual 1</span>
+<span class="out"># FFN(LayerNorm(x))   (2, 5, 16) via (2, 5, 64)</span>
+<span class="out"># x + FFN             (2, 5, 16) &lt;- residual 2, same shape as input</span>
+<span class="out"># parameters: by hand 3280 | torch layer 3280</span></code></pre>
+<p>Three things worth staring at. <strong>The (B, h, n, n) scores tensor</strong> is the n² memory of Section 9: for n = 8,192 and h = 32 it holds 32 × 67M ≈ 2.1 billion numbers per sequence per layer — 8.6 GB in fp32 — which is why FlashAttention computes it in tiles and never writes it out. <strong>Only two lines mix rows</strong>: the scores (Q Kᵀ) and the weighted sum (A V). Everything else — the projections, the LayerNorms, the whole FFN — treats each token independently, which is what makes those parts embarrassingly parallel and lets the block handle any sequence length. <strong>The parameter count</strong> splits as 4d² + 4d = 1,088 for the four attention projections, 2·d·d<sub>ff</sub> + d<sub>ff</sub> + d = 2,128 for the FFN, and 4d = 64 for the two LayerNorms: 3,280, and the FFN is already two-thirds of it. Scale the same formula to BERT-base (d = 768, h = 12, d<sub>ff</sub> = 3,072): 2.36M + 4.72M ≈ 7.1M per block, × 12 blocks ≈ 85M, plus a 30,522 × 768 token embedding (23.4M) and positions — the 110M on every model card.</p>
+</details>
 
 <!-- ============================================================ -->
 <h2 id="s8">8. Encoder, decoder, or both?</h2>
@@ -1518,6 +1682,54 @@ w = torch.softmax(masked, dim=-<span class="nu">1</span>)
 <p>Cost and latency of an LLM call scale with prompt tokens (roughly linearly, with the attention share growing with length) and output tokens (each one a full forward pass, cached KV or not). A 40-page contract is ~30k tokens; sending it 1,000 times a day is 30M prompt tokens — check the price sheet before designing the pipeline. Chunk, retrieve, and send only what is needed (Chapter 19's RAG section) rather than stuffing the context because you can.</p>
 </div>
 
+<details class="deepdive"><summary>Deep dive: the KV cache and why generation is memory-bound <span class="time">8 min</span></summary>
+<div class="callout eli9"><div class="title">Explain it like I'm 9</div>
+<p>You are writing a story one word at a time. The slow way: every time you add a word, re-read the whole story from the beginning to decide the next one. The fast way: keep a sticky note on every earlier word saying what it offers (its key and value), and for each new word just glance at the notes. The notes are the KV cache. The catch is the pile of notes: a long story means a big pile, and the time to write each new word is set by how fast you can flip through the pile — not by how fast you can think.</p>
+</div>
+<p>An LLM call has two phases with different economics. <strong>Prefill</strong> runs the whole prompt through the model in one parallel pass: big matrix multiplies, compute-bound, and it sets the <em>time to first token</em>. <strong>Decode</strong> then produces one token per step. Under the causal mask (Section 8) the keys and values of earlier tokens never change, so each step computes K and V for the one new token, appends them to the cache, and scores its single query against everything cached. The code checks that this gives bit-for-bit the same answer as recomputing, counts how much work it saves, and sizes the cache for a 70B-class model.</p>
+<pre class="code" data-lang="python"><code><span class="cm"># KV cache: incremental decoding gives the same result as recomputing, at a fraction of the work</span>
+<span class="kw">import</span> torch, math
+torch.manual_seed(<span class="nu">0</span>)
+d, n = <span class="nu">8</span>, <span class="nu">6</span>
+Wq, Wk, Wv = torch.randn(d, d), torch.randn(d, d), torch.randn(d, d)
+X = torch.randn(n, d)                                  <span class="cm"># embeddings of 6 tokens arriving one at a time</span>
+
+<span class="kw">def</span> <span class="fn">attend</span>(Q, K, V, causal):
+    S = Q @ K.T / math.sqrt(d)
+    <span class="kw">if</span> causal:                                         <span class="cm"># full pass: query i may see keys 0..i only</span>
+        S = S.masked_fill(torch.triu(torch.ones_like(S), diagonal=<span class="nu">1</span>) == <span class="nu">1</span>, <span class="fn">float</span>(<span class="st">"-inf"</span>))
+    <span class="kw">return</span> torch.softmax(S, dim=-<span class="nu">1</span>) @ V
+
+full = attend(X @ Wq, X @ Wk, X @ Wv, causal=<span class="kw">True</span>)     <span class="cm"># the whole sequence in one pass</span>
+K_cache, V_cache, outs = [], [], []
+<span class="kw">for</span> t <span class="kw">in</span> <span class="fn">range</span>(n):                                     <span class="cm"># incremental: 1 new query vs t+1 cached keys</span>
+    K_cache.append(X[t] @ Wk); V_cache.append(X[t] @ Wv)
+    q = (X[t] @ Wq)[<span class="kw">None</span>]
+    outs.append(attend(q, torch.stack(K_cache), torch.stack(V_cache), causal=<span class="kw">False</span>)[<span class="nu">0</span>])  <span class="cm"># cache holds only the past</span>
+<span class="fn">print</span>(<span class="st">"cached == recomputed:"</span>, torch.allclose(torch.stack(outs), full, atol=<span class="nu">1e-5</span>))
+
+<span class="cm"># work to generate T tokens: score pairs computed with vs without a cache</span>
+<span class="kw">for</span> T <span class="kw">in</span> (<span class="nu">100</span>, <span class="nu">1000</span>, <span class="nu">8000</span>):
+    no_cache = <span class="fn">sum</span>(t * t <span class="kw">for</span> t <span class="kw">in</span> <span class="fn">range</span>(<span class="nu">1</span>, T + <span class="nu">1</span>))     <span class="cm"># step t rescored all t x t pairs</span>
+    cache    = <span class="fn">sum</span>(t <span class="kw">for</span> t <span class="kw">in</span> <span class="fn">range</span>(<span class="nu">1</span>, T + <span class="nu">1</span>))         <span class="cm"># step t scored 1 x t pairs</span>
+    <span class="fn">print</span>(<span class="st">f"T={T:5d}  pairs without cache {no_cache:&gt;14,}  with cache {cache:&gt;12,}  ratio {no_cache / cache:6.0f}x"</span>)
+
+<span class="cm"># bytes per token of cache for a 70B-class model: 2 (K and V) x layers x kv_heads x head_dim x 2 bytes (fp16)</span>
+layers, kv_heads, head_dim = <span class="nu">80</span>, <span class="nu">8</span>, <span class="nu">128</span>
+per_token = <span class="nu">2</span> * layers * kv_heads * head_dim * <span class="nu">2</span>
+<span class="fn">print</span>(<span class="st">f"KV cache: {per_token/1e6:.2f} MB per token -&gt; {per_token * 32_000 / 1e9:.1f} GB for a 32k-token context"</span>)
+<span class="out"># cached == recomputed: True</span>
+<span class="out"># T=  100  pairs without cache        338,350  with cache        5,050  ratio     67x</span>
+<span class="out"># T= 1000  pairs without cache    333,833,500  with cache      500,500  ratio    667x</span>
+<span class="out"># T= 8000  pairs without cache 170,698,668,000  with cache   32,004,000  ratio   5334x</span>
+<span class="out"># KV cache: 0.33 MB per token -&gt; 10.5 GB for a 32k-token context</span></code></pre>
+<div class="callout math"><div class="title">The math (optional)</div>
+<p><strong>Cache bytes per token = 2 · L · n<sub>kv</sub> · d<sub>head</sub> · b.</strong> The <strong>2</strong> is one K and one V vector; <strong>L</strong> is the number of layers (each keeps its own cache); <strong>n<sub>kv</sub></strong> is the number of key/value heads — equal to the number of attention heads h in the original design, but 4–8× smaller under grouped-query attention, where several query heads share one K/V pair; <strong>d<sub>head</sub></strong> is the head width; <strong>b</strong> is bytes per number (2 for fp16/bf16, 1 for int8 or fp8). For 80 layers × 8 KV heads × 128 dims × 2 bytes that is 0.33 MB per token, so a 32k-token conversation holds ≈ 10.5 GB of cache. With 64 KV heads instead of 8 it would be ≈ 84 GB — more than the 140 GB of fp16 weights leaves free on two 80 GB GPUs, which is why grouped-query attention is on every modern model card.</p>
+</div>
+<p><strong>Why decode is memory-bound.</strong> At batch size 1, one decode step must read <em>every</em> weight once (14 GB for a 7B model in fp16, 140 GB for 70B) and performs about 2 FLOPs per parameter — roughly one floating-point operation per byte moved. A data-centre GPU can do about 1,000 TFLOP/s but move only about 3.3 TB/s, so it needs ≈ 300 FLOPs per byte to be busy; at 1 FLOP/byte the arithmetic units sit idle 99% of the time and the step takes as long as the memory sweep: 14 GB / 3.3 TB/s ≈ 4 ms, i.e. a ceiling of ≈ 240 tokens per second for a 7B model, ≈ 24 for a 70B model if it fit on one card. The serving fix is batching: B users' decode steps share one sweep of the weights, so useful work per byte grows B-fold — but each user's KV cache is private and must be read too, so the cache, not the weights, is what caps the batch and therefore the throughput. Everything on a serving engineer's checklist follows from that sentence: grouped-query attention and int8/fp8 caches (smaller pile), paged attention (no wasted pile space), speculative decoding (more tokens per sweep), and <strong>prompt caching</strong> — keeping the prefill's K and V for a shared prefix so the next request skips it, which is why providers discount "cached input tokens" and why the shared part of your prompt (system message, few-shot examples, the document) should come <em>first</em>.</p>
+<p>What to carry into a meeting: output tokens cost more than input tokens because each one is a full memory sweep, while input tokens are processed in one compute-bound batch; time-to-first-token grows with prompt length and tokens-per-second does not; long contexts are priced up because they consume the memory that batching needs; and "how many concurrent conversations can this GPU hold" is cache bytes per token × tokens per conversation against the memory left after the weights.</p>
+</details>
+
 <!-- ============================================================ -->
 <h2 id="s10">10. Build one: a character-level language model</h2>
 
@@ -1586,6 +1798,8 @@ idx = torch.tensor([[stoi[c] <span class="kw">for</span> c <span class="kw">in</
 <div class="callout key"><div class="title">Key idea</div>
 <p>Next-token prediction on a causal Transformer is the <em>entire</em> pretraining objective of GPT-class models. There is no secret second objective. Everything they can do — translate, summarize, write code — is a side effect of getting very good at predicting the next token of human-written text. Chapter 19 takes it from here: tokenization, embeddings, fine-tuning, prompting, and how to put these models to work.</p>
 </div>
+
+<div class="callout lab"><div class="title">Lab</div><p>Open <code>labs/ch18_attention.py</code> in VS Code and make the tests in <code>labs/tests/test_ch18.py</code> pass. The lab makes you build scaled dot-product attention, the causal mask and a multi-head layer from scratch in PyTorch and check them against the worked numbers of this chapter.</p></div>
 
 <!-- ============================================================ -->
 <h2 id="quiz">Quiz</h2>
