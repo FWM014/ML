@@ -134,7 +134,8 @@ def tokenize(text: str) -> list[str]:
 
     Example: tokenize("Charged TWICE, need a refund!") -> ["charged", "twice", "need", "a", "refund"]
     """
-    return re.findall(r"[a-z0-9]+", text.lower())
+    # TODO: re.findall(r"[a-z0-9]+", text.lower())
+    raise NotImplementedError("Task: tokenize")
 
 
 def build_vocab(docs: list[str], min_count: int = 1) -> dict[str, int]:
@@ -143,9 +144,8 @@ def build_vocab(docs: list[str], min_count: int = 1) -> dict[str, int]:
 
     Example: build_vocab(["a b b", "b c"]) -> {"b": 0, "a": 1, "c": 2}
     """
-    counts = Counter(t for d in docs for t in tokenize(d))
-    kept = sorted((t for t, c in counts.items() if c >= min_count), key=lambda t: (-counts[t], t))
-    return {t: i for i, t in enumerate(kept)}
+    # TODO: Counter over tokenize(d) for every doc; keep count >= min_count; sort by (-count, token); enumerate
+    raise NotImplementedError("Task: build_vocab")
 
 
 # ---------------------------------------------------------------- Task 2
@@ -160,21 +160,8 @@ def bpe_train(corpus: list[str], n_merges: int = 8) -> tuple[list[tuple[str, str
     Returns (merges, words). On make_bpe_corpus() the first merges are
     ('l','o'), ('lo','w'), ('e','s'), ('es','t'), ('est','</w>'), ('low','</w>'), ('n','e'), ('ne','w').
     """
-    words = Counter(" ".join(list(w)) + " </w>" for w in corpus)
-    merges: list[tuple[str, str]] = []
-    for _ in range(n_merges):
-        pairs: Counter = Counter()
-        for w, n in words.items():
-            syms = w.split()
-            for a, b in zip(syms, syms[1:]):
-                pairs[(a, b)] += n
-        if not pairs:
-            break
-        best = max(pairs, key=pairs.get)
-        a, b = best
-        words = Counter({w.replace(f"{a} {b}", a + b): n for w, n in words.items()})
-        merges.append(best)
-    return merges, words
+    # TODO: words = Counter(...); for each merge: count adjacent pairs weighted by word count, best = max(pairs, key=pairs.get), replace "a b" with "ab" in every word, append best
+    raise NotImplementedError("Task: bpe_train")
 
 
 # ---------------------------------------------------------------- Task 3
@@ -186,15 +173,8 @@ def bpe_encode(word: str, merges: list[tuple[str, str]]) -> list[str]:
     Example: with the 8 merges of make_bpe_corpus(), bpe_encode("lowest") -> ["low", "est</w>"]
     and bpe_encode("newer") -> ["new", "e", "r", "</w>"].
     """
-    syms = list(word) + ["</w>"]
-    for a, b in merges:
-        i = 0
-        while i < len(syms) - 1:
-            if syms[i] == a and syms[i + 1] == b:
-                syms[i:i + 2] = [a + b]
-            else:
-                i += 1
-    return syms
+    # TODO: syms = list(word) + ["</w>"]; for (a, b) in merges: scan left to right, replacing syms[i], syms[i+1] == a, b by a + b
+    raise NotImplementedError("Task: bpe_encode")
 
 
 # ---------------------------------------------------------------- Task 4
@@ -206,16 +186,8 @@ def tfidf_ticket_classifier(texts: list[str], labels: list[str], cv: int = 4) ->
     then fit on everything and read the top-3 positive terms per class from lr.coef_.
     Returns {"cv_accuracy": float, "pipeline": fitted Pipeline, "top_terms": {label (str): [3 str terms]}}.
     """
-    pipe = Pipeline([
-        ("tfidf", TfidfVectorizer(ngram_range=(1, 2), sublinear_tf=True, stop_words="english")),
-        ("lr", LogisticRegression(C=10, max_iter=1000)),
-    ])
-    cv_acc = float(cross_val_score(pipe, texts, labels, cv=cv).mean())
-    pipe.fit(texts, labels)
-    vocab = pipe["tfidf"].get_feature_names_out()
-    top = {str(cls): [str(vocab[i]) for i in row.argsort()[-3:][::-1]]
-           for cls, row in zip(pipe["lr"].classes_, pipe["lr"].coef_)}
-    return {"cv_accuracy": cv_acc, "pipeline": pipe, "top_terms": top}
+    # TODO: build the Pipeline from the docstring; cross_val_score(...).mean(); fit; top-3 terms per class from lr.coef_ via tfidf.get_feature_names_out()
+    raise NotImplementedError("Task: tfidf_ticket_classifier")
 
 
 # ---------------------------------------------------------------- Task 5
@@ -227,11 +199,8 @@ def cosine_top_k(query: np.ndarray, matrix: np.ndarray, k: int = 3) -> tuple[np.
     would favour long vectors). Example: query [1, 0], rows [[10, 0], [1, 1], [0, 1]] ->
     indices [0, 1, 2], similarities [1.0, 0.707, 0.0].
     """
-    q = np.asarray(query, dtype=float)
-    M = np.asarray(matrix, dtype=float)
-    sims = M @ q / (np.linalg.norm(M, axis=1) * np.linalg.norm(q) + 1e-12)
-    order = np.argsort(-sims)[:k]
-    return order, sims[order]
+    # TODO: sims = M @ q / (row norms * norm(q)); order = np.argsort(-sims)[:k]; return order, sims[order]
+    raise NotImplementedError("Task: cosine_top_k")
 
 
 # ---------------------------------------------------------------- Task 6
@@ -247,30 +216,8 @@ def train_skipgram(sentences: list[str], dim: int = 16, window: int = 2, epochs:
     Returns {word: unit-length numpy vector of the CENTER embedding}. On make_word2vec_sentences()
     the nearest neighbours of "king" are the other royals, and cos(king, queen) > cos(king, banana).
     """
-    torch.manual_seed(seed)
-    tokens = [s.split() for s in sentences]
-    vocab = sorted({w for s in tokens for w in s})
-    stoi = {w: i for i, w in enumerate(vocab)}
-    pairs = []
-    for s in tokens:
-        ids = [stoi[w] for w in s]
-        for i, c in enumerate(ids):
-            for j in range(max(0, i - window), min(len(ids), i + window + 1)):
-                if j != i:
-                    pairs.append((c, ids[j]))
-    pairs = torch.tensor(pairs)
-    inp, out = nn.Embedding(len(vocab), dim), nn.Embedding(len(vocab), dim)
-    opt = torch.optim.Adam(list(inp.parameters()) + list(out.parameters()), lr=lr)
-    for _ in range(epochs):
-        perm = pairs[torch.randperm(len(pairs))]
-        for b in range(0, len(perm), batch_size):
-            c, ctx = perm[b:b + batch_size, 0], perm[b:b + batch_size, 1]
-            loss = F.cross_entropy(inp(c) @ out.weight.T, ctx)
-            opt.zero_grad()
-            loss.backward()
-            opt.step()
-    E = F.normalize(inp.weight.detach(), dim=1).numpy()
-    return {w: E[i] for w, i in stoi.items()}
+    # TODO: vocab + stoi; (center, context) pairs within the window; two nn.Embedding tables; Adam; epochs of shuffled mini-batches with F.cross_entropy(inp(c) @ out.weight.T, ctx); return {word: normalised inp row}
+    raise NotImplementedError("Task: train_skipgram")
 
 
 # ---------------------------------------------------------------- Task 7
@@ -281,16 +228,8 @@ def chunk_text(text: str, size: int = 40, overlap: int = 10) -> list[str]:
 
     Example: chunk_text("a b c d e f g", size=3, overlap=1) -> ["a b c", "c d e", "e f g"]
     """
-    if overlap >= size:
-        raise ValueError("overlap must be smaller than size")
-    words = text.split()
-    step = size - overlap
-    chunks = []
-    for i in range(0, len(words), step):
-        chunks.append(" ".join(words[i:i + size]))
-        if i + size >= len(words):
-            break
-    return chunks
+    # TODO: raise ValueError if overlap >= size; words = text.split(); step = size - overlap; windows words[i:i+size] for i in range(0, len(words), step); stop once a window reaches the end
+    raise NotImplementedError("Task: chunk_text")
 
 
 def retrieve_best_chunk(query: str, chunks: list[str]) -> tuple[int, float]:
@@ -302,12 +241,8 @@ def retrieve_best_chunk(query: str, chunks: list[str]) -> tuple[int, float]:
     "are sms codes supported for two-factor authentication" returns the chunk containing
     "SMS codes are not supported" with similarity ≈ 0.62.
     """
-    vec = TfidfVectorizer().fit(chunks)
-    C = vec.transform(chunks)
-    q = vec.transform([query])
-    sims = (C @ q.T).toarray().ravel()
-    best = int(np.argmax(sims))
-    return best, float(sims[best])
+    # TODO: vec = TfidfVectorizer().fit(chunks); sims = (vec.transform(chunks) @ vec.transform([query]).T).toarray().ravel(); return int(argmax), float(max)
+    raise NotImplementedError("Task: retrieve_best_chunk")
 
 
 if __name__ == "__main__":

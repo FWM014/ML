@@ -216,7 +216,7 @@ H = np.tanh(X @ mlp.coefs_[<span class="nu">0</span>] + mlp.intercepts_[<span cl
     <span>Correct: <span class="readout" id="wx-acc">–</span>/4</span>
   </div>
   <svg viewBox="0 0 760 300" id="wx-svg" role="img" aria-label="Decision surface of a small network on the XOR points, updated as training steps run, with a loss curve beside it"></svg>
-  <div class="note">Left: the network's output over the whole square (blue → 0, orange → 1) with the four XOR points. Right: the loss after each step. Click Train repeatedly. Sometimes it snaps into the two-diagonal solution within 200 steps; sometimes it flattens out at a loss of ≈0.35 and only 3 of 4 correct, a local minimum. Hit Reset for new random weights and try again. This is a 2-2-1 tanh network trained by plain gradient descent with learning rate 0.5, exactly the algorithm of Section 6.</div>
+  <div class="note">Left: the network's output over the whole square (blue → 0, orange → 1) with the four XOR points. Right: the loss after each step. Click Train repeatedly: the default start snaps into the two-diagonal solution in about 150 steps. Then hit Reset a few times: some starts flatten out at a loss of ≈0.35 with only 2 or 3 of 4 correct, a local minimum this tiny network cannot escape. Hit Reset for new random weights and try again. This is a 2-2-1 tanh network trained by plain gradient descent with learning rate 0.5, exactly the algorithm of Section 6.</div>
 </div>
 
 <!-- ============================================================ -->
@@ -963,7 +963,7 @@ models = {<span class="st">"MLP (64,32)"</span>: make_pipeline(StandardScaler(),
   var oSteps = document.getElementById("wx-steps"), oLoss = document.getElementById("wx-loss"), oAcc = document.getElementById("wx-acc");
   if (!svg) return;
   var X = [[0, 0], [0, 1], [1, 0], [1, 1]], Y = [0, 1, 1, 0];
-  var W1, b1, W2, b2, steps, hist, seed = 12345;
+  var W1, b1, W2, b2, steps, hist, seed = 4242;
   function rnd() { seed = (seed * 1103515245 + 12345) % 2147483648; return seed / 2147483648 * 2 - 1; }
   function reset() { W1 = [[rnd(), rnd()], [rnd(), rnd()]]; b1 = [0, 0]; W2 = [rnd(), rnd()]; b2 = 0; steps = 0; hist = []; render(); }
   function sig(z) { return 1 / (1 + Math.exp(-z)); }

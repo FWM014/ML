@@ -386,6 +386,137 @@ out_same = F.conv2d(x, w, padding=<span class="nu">1</span>)       <span class="
 <p><strong>A convolution layer is a bank of small, learned pattern detectors, each applied everywhere.</strong> Its weights are the kernels; its output is one feature map per kernel saying where in the image that pattern occurs. Everything else in a CNN is plumbing around this idea.</p>
 </div>
 
+
+<details class="deepdive"><summary>Deep dive: convolution as a sparse, weight-sharing matrix <span class="time">10 min</span></summary>
+<p>Chapter 15 taught you that a layer is a matrix multiply followed by a nonlinearity. A convolution layer is not an exception to that rule; it is a matrix multiply with two constraints on the matrix. Seeing the matrix explicitly explains equivariance, parameter counts, transposed convolutions and why GPUs compute convolutions the way they do.</p>
+<div class="callout eli9"><div class="title">Explain it like I'm 9</div>
+<p>A dense layer is a classroom where every student (output) is allowed to listen to every pixel and has their own private opinion about each one. A convolution is a classroom where each student may only listen to the four pixels in front of them, and — this is the strict part — all students must use the <em>same</em> four opinions. Fewer opinions to learn, and a student sitting one seat to the right hears exactly what their neighbour would hear if the picture slid one pixel over.</p>
+</div>
+<p>Take the smallest case that shows everything: a 3×3 image <em>x</em> with pixels <em>x</em><sub>1</sub>…<em>x</em><sub>9</sub> and a 2×2 kernel with weights <em>a, b, c, d</em>. The valid output is 2×2, four numbers. Each one is a dot product of the kernel with a patch: <em>y</em><sub>1</sub> = <em>a</em>·<em>x</em><sub>1</sub> + <em>b</em>·<em>x</em><sub>2</sub> + <em>c</em>·<em>x</em><sub>4</sub> + <em>d</em>·<em>x</em><sub>5</sub>. Written as a matrix acting on the flattened image, the layer is 4×9, and Figure 17.11 shows what it looks like.</p>
+<figure class="fig">
+<svg viewBox="0 0 820 300" role="img" aria-label="A 2 by 2 kernel with entries a b c d applied to a 3 by 3 image is the same as a 4 by 9 matrix multiplying the flattened image: each row of the matrix holds the same four kernel values, shifted right by one column per output position and skipping a column at each row boundary; 16 of the 36 entries are nonzero and only 4 distinct values appear">
+  <defs><marker id="arr17-11" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
+  <text x="20" y="24" class="lbl-strong" font-size="14">conv2d(x, K)  is  M · flatten(x)</text>
+  <!-- input 3x3 -->
+  <text x="65" y="54" text-anchor="middle" class="lbl" font-size="11">image x (3×3)</text>
+  <g stroke="var(--ink-3)" fill="var(--surface)">
+    <rect x="20" y="62" width="30" height="30"/><rect x="50" y="62" width="30" height="30"/><rect x="80" y="62" width="30" height="30"/>
+    <rect x="20" y="92" width="30" height="30"/><rect x="50" y="92" width="30" height="30"/><rect x="80" y="92" width="30" height="30"/>
+    <rect x="20" y="122" width="30" height="30"/><rect x="50" y="122" width="30" height="30"/><rect x="80" y="122" width="30" height="30"/>
+  </g>
+  <g class="lbl" font-size="11" fill="var(--ink)" text-anchor="middle">
+    <text x="35" y="81">x1</text><text x="65" y="81">x2</text><text x="95" y="81">x3</text>
+    <text x="35" y="111">x4</text><text x="65" y="111">x5</text><text x="95" y="111">x6</text>
+    <text x="35" y="141">x7</text><text x="65" y="141">x8</text><text x="95" y="141">x9</text>
+  </g>
+  <rect x="20" y="62" width="60" height="60" fill="none" stroke="var(--s7)" stroke-width="2.5"/>
+  <text x="65" y="172" text-anchor="middle" class="lbl" font-size="10">violet: patch for y1</text>
+  <!-- kernel 2x2 -->
+  <text x="185" y="54" text-anchor="middle" class="lbl" font-size="11">kernel K (2×2)</text>
+  <text x="140" y="112" text-anchor="middle" font-size="18" fill="var(--ink)">⊛</text>
+  <rect x="155" y="77" width="30" height="30" fill="var(--s1)" fill-opacity=".45" stroke="var(--ink-3)"/><text x="170" y="96" text-anchor="middle" class="lbl-strong" font-size="12">a</text>
+  <rect x="185" y="77" width="30" height="30" fill="var(--s2)" fill-opacity=".45" stroke="var(--ink-3)"/><text x="200" y="96" text-anchor="middle" class="lbl-strong" font-size="12">b</text>
+  <rect x="155" y="107" width="30" height="30" fill="var(--s3)" fill-opacity=".45" stroke="var(--ink-3)"/><text x="170" y="126" text-anchor="middle" class="lbl-strong" font-size="12">c</text>
+  <rect x="185" y="107" width="30" height="30" fill="var(--s4)" fill-opacity=".45" stroke="var(--ink-3)"/><text x="200" y="126" text-anchor="middle" class="lbl-strong" font-size="12">d</text>
+  <text x="240" y="112" text-anchor="middle" font-size="18" fill="var(--ink)">=</text>
+  <!-- matrix M: 4 rows x 9 cols, cell 24 -->
+  <text x="398" y="54" text-anchor="middle" class="lbl" font-size="11">matrix M (4 outputs × 9 inputs)</text>
+  <g class="lbl" font-size="9" text-anchor="middle">
+    <text x="302" y="70">x1</text><text x="326" y="70">x2</text><text x="350" y="70">x3</text><text x="374" y="70">x4</text><text x="398" y="70">x5</text><text x="422" y="70">x6</text><text x="446" y="70">x7</text><text x="470" y="70">x8</text><text x="494" y="70">x9</text>
+    <text x="280" y="90" text-anchor="end">y1</text><text x="280" y="114" text-anchor="end">y2</text><text x="280" y="138" text-anchor="end">y3</text><text x="280" y="162" text-anchor="end">y4</text>
+  </g>
+  <g stroke="var(--ink-3)" stroke-opacity=".6" fill="var(--surface)">
+    <rect x="290" y="74" width="216" height="96"/>
+    <line x1="290" y1="98" x2="506" y2="98"/><line x1="290" y1="122" x2="506" y2="122"/><line x1="290" y1="146" x2="506" y2="146"/>
+    <line x1="314" y1="74" x2="314" y2="170"/><line x1="338" y1="74" x2="338" y2="170"/><line x1="362" y1="74" x2="362" y2="170"/><line x1="386" y1="74" x2="386" y2="170"/><line x1="410" y1="74" x2="410" y2="170"/><line x1="434" y1="74" x2="434" y2="170"/><line x1="458" y1="74" x2="458" y2="170"/><line x1="482" y1="74" x2="482" y2="170"/>
+  </g>
+  <!-- row 1: a b . c d . . . .  (cols 0,1,3,4) -->
+  <g fill-opacity=".45" stroke="none">
+    <rect x="290" y="74" width="24" height="24" fill="var(--s1)"/><rect x="314" y="74" width="24" height="24" fill="var(--s2)"/><rect x="362" y="74" width="24" height="24" fill="var(--s3)"/><rect x="386" y="74" width="24" height="24" fill="var(--s4)"/>
+    <rect x="314" y="98" width="24" height="24" fill="var(--s1)"/><rect x="338" y="98" width="24" height="24" fill="var(--s2)"/><rect x="386" y="98" width="24" height="24" fill="var(--s3)"/><rect x="410" y="98" width="24" height="24" fill="var(--s4)"/>
+    <rect x="362" y="122" width="24" height="24" fill="var(--s1)"/><rect x="386" y="122" width="24" height="24" fill="var(--s2)"/><rect x="434" y="122" width="24" height="24" fill="var(--s3)"/><rect x="458" y="122" width="24" height="24" fill="var(--s4)"/>
+    <rect x="386" y="146" width="24" height="24" fill="var(--s1)"/><rect x="410" y="146" width="24" height="24" fill="var(--s2)"/><rect x="458" y="146" width="24" height="24" fill="var(--s3)"/><rect x="482" y="146" width="24" height="24" fill="var(--s4)"/>
+  </g>
+  <g class="lbl-strong" font-size="11" fill="var(--ink)" text-anchor="middle">
+    <text x="302" y="90">a</text><text x="326" y="90">b</text><text x="374" y="90">c</text><text x="398" y="90">d</text>
+    <text x="326" y="114">a</text><text x="350" y="114">b</text><text x="398" y="114">c</text><text x="422" y="114">d</text>
+    <text x="374" y="138">a</text><text x="398" y="138">b</text><text x="446" y="138">c</text><text x="470" y="138">d</text>
+    <text x="398" y="162">a</text><text x="422" y="162">b</text><text x="470" y="162">c</text><text x="494" y="162">d</text>
+  </g>
+  <g class="lbl" font-size="10" fill="var(--ink-3)" text-anchor="middle">
+    <text x="350" y="90">0</text><text x="422" y="90">0</text><text x="446" y="90">0</text><text x="470" y="90">0</text><text x="494" y="90">0</text>
+    <text x="302" y="114">0</text><text x="374" y="114">0</text><text x="446" y="114">0</text><text x="470" y="114">0</text><text x="494" y="114">0</text>
+    <text x="302" y="138">0</text><text x="326" y="138">0</text><text x="350" y="138">0</text><text x="422" y="138">0</text><text x="494" y="138">0</text>
+    <text x="302" y="162">0</text><text x="326" y="162">0</text><text x="350" y="162">0</text><text x="374" y="162">0</text><text x="446" y="162">0</text>
+  </g>
+  <rect x="290" y="74" width="216" height="24" fill="none" stroke="var(--s7)" stroke-width="2.5"/>
+  <!-- times x, equals y -->
+  <text x="522" y="126" text-anchor="middle" font-size="16" fill="var(--ink)">·</text>
+  <rect x="536" y="62" width="22" height="126" fill="var(--surface)" stroke="var(--ink-3)"/>
+  <g class="lbl" font-size="8" fill="var(--ink)" text-anchor="middle">
+    <text x="547" y="72">x1</text><text x="547" y="86">x2</text><text x="547" y="100">x3</text><text x="547" y="114">x4</text><text x="547" y="128">x5</text><text x="547" y="142">x6</text><text x="547" y="156">x7</text><text x="547" y="170">x8</text><text x="547" y="184">x9</text>
+  </g>
+  <text x="574" y="126" text-anchor="middle" font-size="16" fill="var(--ink)">=</text>
+  <rect x="588" y="98" width="24" height="56" fill="var(--s7)" fill-opacity=".2" stroke="var(--s7)"/>
+  <g class="lbl" font-size="9" fill="var(--ink)" text-anchor="middle"><text x="600" y="109">y1</text><text x="600" y="123">y2</text><text x="600" y="137">y3</text><text x="600" y="151">y4</text></g>
+  <!-- right notes -->
+  <text x="630" y="82" class="lbl-strong" font-size="11">16 of 36 entries nonzero</text>
+  <text x="630" y="98" class="lbl" font-size="10">(sparse: each output reads 4 pixels)</text>
+  <text x="630" y="120" class="lbl-strong" font-size="11">only 4 distinct values</text>
+  <text x="630" y="136" class="lbl" font-size="10">(shared: every row is the same kernel)</text>
+  <text x="630" y="158" class="lbl-strong" font-size="11">a dense layer: 36 free values</text>
+  <text x="630" y="174" class="lbl" font-size="10">(nothing shared, nothing local)</text>
+  <!-- bottom -->
+  <rect x="20" y="200" width="780" height="82" rx="8" class="box"/>
+  <text x="35" y="222" class="lbl-strong" font-size="12">Read off the matrix</text>
+  <text x="35" y="240" class="lbl" font-size="11">• Row y2 is row y1 shifted right by one column: shift the image one pixel and the output shifts one pixel (translation equivariance).</text>
+  <text x="35" y="257" class="lbl" font-size="11">• Rows y3, y4 skip a column at the image's row boundary: the 2-D picture is a "doubly block Toeplitz" matrix.</text>
+  <text x="35" y="274" class="lbl" font-size="11">• Backprop multiplies by Mᵀ, which is again a convolution (with the flipped kernel): that operation is nn.ConvTranspose2d.</text>
+</svg>
+<figcaption><strong>Figure 17.11 — A convolution is a matrix with two constraints.</strong> The 2×2 kernel on a 3×3 image is a 4×9 matrix whose rows all contain the same four weights, shifted. Sparsity is locality; repetition is weight sharing; the shift structure is translation equivariance. A dense layer is the same matrix with all 36 entries free.</figcaption>
+</figure>
+
+<div class="callout math"><div class="title">The math (optional): the convolution matrix</div>
+<div class="formula">y = M·vec(x),   M ∈ ℝ<sup>(H′W′)×(HW)</sup>,   M[(i, j), (i+u, j+v)] = K[u, v] for 0 ≤ u, v &lt; k, and 0 elsewhere</div>
+<p>vec(<em>x</em>) is the image flattened row by row into a vector of length <em>H·W</em>; <em>y</em> is the flattened output of length <em>H′·W′</em>; the row index (<em>i</em>, <em>j</em>) is one output position and the column index (<em>i</em>+<em>u</em>, <em>j</em>+<em>v</em>) is one of the <em>k</em>² input pixels under it; <em>K</em>[<em>u</em>, <em>v</em>] is the kernel weight. Every row has exactly <em>k</em>² nonzero entries (locality) drawn from the same <em>k</em>² numbers (weight sharing). A dense layer with the same input and output sizes would have <em>H′W′·HW</em> free entries: 36 here, 50,176 × 50,176 ≈ 2.5 billion for a single 224×224 map computed from a 224×224 one.</p>
+</div>
+<p>Three things fall out of the picture. <strong>Equivariance is visible</strong>: row <em>y</em><sub>2</sub> is row <em>y</em><sub>1</sub> shifted one column to the right, so a shifted input produces a shifted output. <strong>The backward pass is also a convolution</strong>: autograd multiplies the upstream gradient by <em>M</em><sup>T</sup>, and the transpose of this banded matrix is itself a convolution with the flipped kernel, spreading each output's gradient back over the patch it came from; that is exactly the operation <code>nn.ConvTranspose2d</code> performs, which is why decoders and U-Nets (§9) use it to <em>grow</em> images. <strong>Hardware</strong>: nobody builds <em>M</em> in memory (it is almost all zeros); instead the "im2col" trick unfolds the image into a patches-by-pixels matrix so that the whole layer becomes one dense matrix multiply of patches against kernels, which is what a GPU is fastest at. A 1×1 convolution is the degenerate case where each "patch" is a single pixel's channel vector, so the layer is literally a per-pixel dense layer across channels.</p>
+<pre class="code" data-lang="python"><code><span class="cm"># A convolution IS a matrix multiply: build the (sparse, weight-sharing) matrix explicitly</span>
+<span class="kw">import</span> torch, torch.nn.functional <span class="kw">as</span> F
+x = torch.arange(<span class="nu">1.0</span>, <span class="nu">10.0</span>).view(<span class="nu">1</span>, <span class="nu">1</span>, <span class="nu">3</span>, <span class="nu">3</span>)          <span class="cm"># 3x3 input, values 1..9</span>
+k = torch.tensor([[<span class="nu">1.0</span>, <span class="nu">2.0</span>], [<span class="nu">3.0</span>, <span class="nu">4.0</span>]]).view(<span class="nu">1</span>, <span class="nu">1</span>, <span class="nu">2</span>, <span class="nu">2</span>)   <span class="cm"># 2x2 kernel a=1 b=2 c=3 d=4</span>
+conv = F.conv2d(x, k)                                  <span class="cm"># valid conv -&gt; 2x2 output</span>
+<span class="fn">print</span>(<span class="st">"conv2d output:\n"</span>, conv[<span class="nu">0</span>, <span class="nu">0</span>])
+
+<span class="cm"># The same map as a 4x9 matrix acting on the flattened 3x3 input</span>
+M = torch.zeros(<span class="nu">4</span>, <span class="nu">9</span>)
+<span class="kw">for</span> oi <span class="kw">in</span> <span class="fn">range</span>(<span class="nu">2</span>):                                    <span class="cm"># output row</span>
+    <span class="kw">for</span> oj <span class="kw">in</span> <span class="fn">range</span>(<span class="nu">2</span>):                                <span class="cm"># output col</span>
+        <span class="kw">for</span> u <span class="kw">in</span> <span class="fn">range</span>(<span class="nu">2</span>):                             <span class="cm"># kernel row</span>
+            <span class="kw">for</span> v <span class="kw">in</span> <span class="fn">range</span>(<span class="nu">2</span>):                         <span class="cm"># kernel col</span>
+                M[oi * <span class="nu">2</span> + oj, (oi + u) * <span class="nu">3</span> + (oj + v)] = k[<span class="nu">0</span>, <span class="nu">0</span>, u, v]
+<span class="fn">print</span>(<span class="st">"matrix M (4 outputs x 9 inputs):\n"</span>, M)
+<span class="fn">print</span>(<span class="st">"M @ x.flatten() ="</span>, (M @ x.flatten()).view(<span class="nu">2</span>, <span class="nu">2</span>))
+<span class="fn">print</span>(<span class="st">"same answer:"</span>, torch.allclose(M @ x.flatten(), conv.flatten()))
+<span class="fn">print</span>(<span class="st">f"nonzero entries: {int((M != 0).sum())} of {M.numel()}, distinct values: {len(set(M[M != 0].tolist()))}"</span>)
+<span class="out"># conv2d output:</span>
+<span class="out">#  tensor([[37., 47.],</span>
+<span class="out">#         [67., 77.]])</span>
+<span class="out"># matrix M (4 outputs x 9 inputs):</span>
+<span class="out">#  tensor([[1., 2., 0., 3., 4., 0., 0., 0., 0.],</span>
+<span class="out">#         [0., 1., 2., 0., 3., 4., 0., 0., 0.],</span>
+<span class="out">#         [0., 0., 0., 1., 2., 0., 3., 4., 0.],</span>
+<span class="out">#         [0., 0., 0., 0., 1., 2., 0., 3., 4.]])</span>
+<span class="out"># M @ x.flatten() = tensor([[37., 47.],</span>
+<span class="out">#         [67., 77.]])</span>
+<span class="out"># same answer: True</span>
+<span class="out"># nonzero entries: 16 of 36, distinct values: 4</span></code></pre>
+
+<div class="callout key"><div class="title">Key idea</div>
+<p><strong>Convolution = a linear layer with locality and weight sharing imposed on the matrix.</strong> That is why it needs so few parameters, why it generalizes across positions, and why everything you know about linear layers (backprop, initialization, matrix multiply on GPUs) applies to it unchanged.</p>
+</div>
+</details>
+
 <!-- ============================================================ -->
 <h2 id="s3">3. Padding, stride, dilation, channels</h2>
 
@@ -510,13 +641,13 @@ n = <span class="nu">28</span>
 
 <p>After a convolution has said <em>where</em> a pattern occurs, the exact pixel does not matter much: an edge at column 40 or 41 is the same edge. <strong>Pooling</strong> summarizes each small window (usually 2×2) with a single number, either its maximum (<strong>max pooling</strong>, keeps the strongest response) or its average. It has no parameters, halves the height and width, cuts the compute of everything downstream by four, and buys a little translation invariance. Modern networks often replace it with stride-2 convolutions, which do the same downsampling with learned weights, but the purpose is identical: <strong>make the representation smaller and coarser as it becomes more abstract</strong>.</p>
 
-<p><strong>Global average pooling</strong> (GAP) is the extreme version used at the very end: average each final feature map over all its positions, leaving one number per channel. A 64×7×7 tensor becomes a 64-vector regardless of the input image size, and that vector feeds the classifier. It replaced the giant flatten-then-dense layers of early CNNs (which held 90% of AlexNet's parameters), and it lets the same network run on any image size.</p>
+<p><strong>Global average pooling</strong> (GAP) is the extreme version used at the very end: average each final feature map over all its positions, leaving one number per channel. A 64×7×7 tensor becomes a 64-vector regardless of the input image size, and that vector feeds the classifier. It replaced the giant flatten-then-dense layers of early CNNs (which held about 96% of AlexNet's 61 M parameters), and it lets the same network run on any image size.</p>
 
 <h3>Receptive fields grow with depth</h3>
 <p>A unit in the first 3×3 layer sees 3×3 pixels. A unit in the second layer sees a 3×3 patch of <em>first-layer units</em>, which together cover 5×5 pixels. After a 2×2 pool, every step in the next layer is worth two pixels, so the receptive field grows twice as fast. Ten layers and a few pools later, a single unit sees the entire image. That growth is why depth matters in vision: only deep units can respond to whole objects, and they can only do so by composing the smaller parts detected below them.</p>
 
 <figure class="fig">
-<svg viewBox="0 0 820 340" role="img" aria-label="Left: stacked 1-D layers showing that one unit in layer 3 sees a widening cone of input pixels, three at layer 1, five at layer 2, eleven after pooling. Right: a hierarchy of what units detect at growing receptive field: edges, then textures and corners, then object parts, then whole objects">
+<svg viewBox="0 0 820 340" role="img" aria-label="Left: stacked 1-D layers showing that one unit at the top sees a widening cone of input pixels: three at the first conv, four after the pool, eight at the second conv, twelve at the third. Right: a hierarchy of what units detect at growing receptive field: edges, then textures and corners, then object parts, then whole objects">
   <defs><marker id="arr17-5" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor"/></marker></defs>
   <text x="200" y="24" text-anchor="middle" class="lbl-strong" font-size="14">The receptive field widens with every layer</text>
   <!-- input row: 15 pixels -->
@@ -525,7 +656,7 @@ n = <span class="nu">28</span>
     <g fill="var(--surface-2)" stroke="var(--ink-3)">
       <rect x="40" y="280" width="20" height="16"/><rect x="60" y="280" width="20" height="16"/><rect x="80" y="280" width="20" height="16"/><rect x="100" y="280" width="20" height="16"/><rect x="120" y="280" width="20" height="16"/><rect x="140" y="280" width="20" height="16"/><rect x="160" y="280" width="20" height="16"/><rect x="180" y="280" width="20" height="16"/><rect x="200" y="280" width="20" height="16"/><rect x="220" y="280" width="20" height="16"/><rect x="240" y="280" width="20" height="16"/><rect x="260" y="280" width="20" height="16"/><rect x="280" y="280" width="20" height="16"/><rect x="300" y="280" width="20" height="16"/><rect x="320" y="280" width="20" height="16"/>
     </g>
-    <rect x="80" y="280" width="200" height="16" fill="var(--s7)" fill-opacity=".3"/>
+    <rect x="60" y="280" width="240" height="16" fill="var(--s7)" fill-opacity=".3"/>
     <!-- layer1 conv3: positions centered -->
     <text x="8" y="232" class="lbl" font-size="10">conv 3×3</text>
     <g fill="var(--s1)"><circle cx="90" cy="226" r="6"/><circle cx="110" cy="226" r="6"/><circle cx="130" cy="226" r="6"/><circle cx="150" cy="226" r="6"/><circle cx="170" cy="226" r="6"/><circle cx="190" cy="226" r="6"/><circle cx="210" cy="226" r="6"/><circle cx="230" cy="226" r="6"/><circle cx="250" cy="226" r="6"/><circle cx="270" cy="226" r="6"/></g>
@@ -541,7 +672,7 @@ n = <span class="nu">28</span>
     <!-- top unit -->
     <text x="8" y="82" class="lbl" font-size="10">conv 3×3</text>
     <circle cx="180" cy="76" r="8" fill="var(--s2)"/>
-    <text x="352" y="80" class="lbl" font-size="10">sees 10 px</text>
+    <text x="352" y="80" class="lbl" font-size="10">sees 12 px</text>
     <!-- cone lines -->
     <g stroke="var(--s2)" stroke-width="1.2" stroke-opacity=".8">
       <line x1="180" y1="84" x2="140" y2="120"/><line x1="180" y1="84" x2="180" y2="120"/><line x1="180" y1="84" x2="220" y2="120"/>
@@ -549,9 +680,9 @@ n = <span class="nu">28</span>
       <line x1="220" y1="132" x2="180" y2="170"/><line x1="220" y1="132" x2="220" y2="170"/><line x1="220" y1="132" x2="260" y2="170"/>
       <line x1="100" y1="182" x2="90" y2="220"/><line x1="100" y1="182" x2="110" y2="220"/>
       <line x1="260" y1="182" x2="250" y2="220"/><line x1="260" y1="182" x2="270" y2="220"/>
-      <line x1="90" y1="232" x2="80" y2="280"/><line x1="270" y1="232" x2="280" y2="280"/>
+      <line x1="90" y1="232" x2="62" y2="280"/><line x1="270" y1="232" x2="298" y2="280"/>
     </g>
-    <text x="205" y="314" text-anchor="middle" class="lbl" font-size="10">a top unit spans 10 input px (≈ ×2 per pool);</text>
+    <text x="205" y="314" text-anchor="middle" class="lbl" font-size="10">a top unit spans 12 input px (growth ×2 after the pool);</text>
     <text x="205" y="328" text-anchor="middle" class="lbl" font-size="10">a few more layers → the whole image</text>
   </g>
   <line x1="410" y1="20" x2="410" y2="332" class="grid" stroke-dasharray="4 4"/>
@@ -584,6 +715,59 @@ n = <span class="nu">28</span>
 <div class="callout eli9"><div class="title">Explain it like I'm 9</div>
 <p>Building a Lego castle: first you snap two bricks together (an edge). Then you snap a few of those into a wall piece (a texture). Then walls into a tower (a part). Then towers into the castle (the object). Nobody looks at every brick when deciding "is this a castle?"; they look at the towers. A deep CNN builds the castle level by level, and the top level only needs to look at a few big pieces.</p>
 </div>
+
+
+<details class="deepdive"><summary>Deep dive: receptive-field arithmetic <span class="time">8 min</span></summary>
+<p>Figure 17.5 shows receptive fields growing; here is how to compute them exactly for any stack of convolutions and pools, why the answer matters for choosing an architecture, and the caveat that the theoretical number overstates what the network actually uses.</p>
+<div class="callout eli9"><div class="title">Explain it like I'm 9</div>
+<p>Two numbers describe each layer. How wide a window one unit sees on the original picture (the receptive field), and how far apart two neighbouring units' windows are on the original picture (the jump). A convolution widens the window; a stride or pool makes the jump bigger, and every later widening is measured in jumps, so everything after a pool grows faster.</p>
+</div>
+<div class="callout math"><div class="title">The math (optional): the recursion</div>
+<div class="formula">r<sub>l</sub> = r<sub>l−1</sub> + (k<sub>l</sub> − 1) · d<sub>l</sub> · j<sub>l−1</sub>      j<sub>l</sub> = j<sub>l−1</sub> · s<sub>l</sub>      r<sub>0</sub> = 1, j<sub>0</sub> = 1</div>
+<p><em>r<sub>l</sub></em> is the receptive field after layer <em>l</em>, in input pixels; <em>j<sub>l</sub></em> is the jump: the distance, in input pixels, between the centres of two adjacent units of layer <em>l</em>; <em>k<sub>l</sub></em>, <em>s<sub>l</sub></em> and <em>d<sub>l</sub></em> are that layer's kernel size, stride and dilation. A layer with kernel <em>k</em> reaches (<em>k</em> − 1) units further in each direction than one unit alone, and each of those units is <em>j<sub>l−1</sub></em> input pixels from the next; stride multiplies the jump; padding changes nothing here (it only shifts where the window sits). Pooling layers use the same rule with their own <em>k</em> and <em>s</em>.</p>
+</div>
+<p>Apply it to the stack in Figure 17.5: conv 3 → <em>r</em> = 3, <em>j</em> = 1; pool 2 (stride 2) → <em>r</em> = 3 + 1·1 = 4, <em>j</em> = 2; conv 3 → <em>r</em> = 4 + 2·2 = 8; conv 3 → <em>r</em> = 8 + 2·2 = 12. The pool added only one pixel itself, but it doubled the jump, so each later 3×3 layer adds four pixels instead of two. Two more useful cases are in the code: the <code>SmallCNN</code> of §5 ends with a receptive field of 18 pixels on a 28-pixel image — no single unit in its last layer sees the whole digit, and it is the global average pool that fuses the positions — and the ResNet-18 stem (7×7 stride 2, then 3×3 max-pool stride 2) starts at 11 pixels with a jump of 4 before a single residual block has run.</p>
+<pre class="code" data-lang="python"><code><span class="cm"># Receptive-field arithmetic: r grows by (k-1)*jump each layer; jump multiplies by stride</span>
+<span class="kw">def</span> receptive_fields(layers):
+    r, j = <span class="nu">1</span>, <span class="nu">1</span>                                <span class="cm"># a pixel sees 1 pixel; step between neighbours = 1</span>
+    <span class="fn">print</span>(<span class="st">f"{'layer':16s} {'k':&gt;2} {'s':&gt;2} {'RF':&gt;4} {'jump':&gt;5}"</span>)
+    <span class="kw">for</span> name, k, s <span class="kw">in</span> layers:
+        r, j = r + (k - <span class="nu">1</span>) * j, j * s
+        <span class="fn">print</span>(<span class="st">f"{name:16s} {k:2d} {s:2d} {r:4d} {j:5d}"</span>)
+    <span class="kw">return</span> r
+
+<span class="fn">print</span>(<span class="st">"Figure 17.5 stack:"</span>)
+receptive_fields([(<span class="st">"conv3"</span>, <span class="nu">3</span>, <span class="nu">1</span>), (<span class="st">"pool2"</span>, <span class="nu">2</span>, <span class="nu">2</span>), (<span class="st">"conv3"</span>, <span class="nu">3</span>, <span class="nu">1</span>), (<span class="st">"conv3"</span>, <span class="nu">3</span>, <span class="nu">1</span>)])
+<span class="fn">print</span>(<span class="st">"\nSmallCNN (§5):"</span>)
+receptive_fields([(<span class="st">"conv3"</span>, <span class="nu">3</span>, <span class="nu">1</span>), (<span class="st">"pool2"</span>, <span class="nu">2</span>, <span class="nu">2</span>), (<span class="st">"conv3"</span>, <span class="nu">3</span>, <span class="nu">1</span>), (<span class="st">"pool2"</span>, <span class="nu">2</span>, <span class="nu">2</span>), (<span class="st">"conv3"</span>, <span class="nu">3</span>, <span class="nu">1</span>)])
+<span class="fn">print</span>(<span class="st">"\nResNet-18 stem + stage 1:"</span>)
+receptive_fields([(<span class="st">"conv7 s2"</span>, <span class="nu">7</span>, <span class="nu">2</span>), (<span class="st">"maxpool3 s2"</span>, <span class="nu">3</span>, <span class="nu">2</span>)] + [(<span class="st">"conv3"</span>, <span class="nu">3</span>, <span class="nu">1</span>)] * <span class="nu">4</span>)
+<span class="out"># Figure 17.5 stack:</span>
+<span class="out"># layer             k  s   RF  jump</span>
+<span class="out"># conv3             3  1    3     1</span>
+<span class="out"># pool2             2  2    4     2</span>
+<span class="out"># conv3             3  1    8     2</span>
+<span class="out"># conv3             3  1   12     2</span>
+<span class="out"># </span>
+<span class="out"># SmallCNN (§5):</span>
+<span class="out"># layer             k  s   RF  jump</span>
+<span class="out"># conv3             3  1    3     1</span>
+<span class="out"># pool2             2  2    4     2</span>
+<span class="out"># conv3             3  1    8     2</span>
+<span class="out"># pool2             2  2   10     4</span>
+<span class="out"># conv3             3  1   18     4</span>
+<span class="out"># </span>
+<span class="out"># ResNet-18 stem + stage 1:</span>
+<span class="out"># layer             k  s   RF  jump</span>
+<span class="out"># conv7 s2          7  2    7     2</span>
+<span class="out"># maxpool3 s2       3  2   11     4</span>
+<span class="out"># conv3             3  1   19     4</span>
+<span class="out"># conv3             3  1   27     4</span>
+<span class="out"># conv3             3  1   35     4</span>
+<span class="out"># conv3             3  1   43     4</span></code></pre>
+
+<p>Why you care. If the objects that decide the label are 20 pixels across and your network's last layer sees 18, it cannot represent them as a whole; add depth, a pool, or dilation. Conversely, a network whose receptive field vastly exceeds the image wastes the deep layers; a full ResNet-50 reaches a theoretical receptive field of 483 pixels on a 224-pixel input. That "theoretical" qualifier matters: Luo et al. (2016) showed that the influence of input pixels on a unit is roughly Gaussian, concentrated in the centre of the theoretical window, and the <em>effective</em> receptive field is often a third of it or less. So when small details matter (fine cracks, tiny lesions), do not trust the arithmetic alone — downsample less, use a larger input, or check empirically by measuring how much the output changes when you perturb pixels at various distances.</p>
+</details>
 
 <!-- ============================================================ -->
 <h2 id="s5">5. Anatomy of a CNN</h2>
@@ -671,7 +855,7 @@ n = <span class="nu">28</span>
   <!-- bottom band -->
   <rect x="20" y="215" width="780" height="26" rx="6" fill="var(--s1)" fill-opacity=".08"/>
   <text x="410" y="232" text-anchor="middle" class="lbl" font-size="11">spatial size ↓ (28 → 14 → 7 → 1)     ·     channels ↑ (1 → 16 → 32 → 64)     ·     receptive field ↑     ·     meaning ↑</text>
-  <text x="410" y="262" text-anchor="middle" class="lbl-strong" font-size="11">Parameters: 160 + 4,640 + 18,496 (convs) + 3·2·(16, 32, 64) (BN) + 650 (head) = 24,170</text>
+  <text x="410" y="262" text-anchor="middle" class="lbl-strong" font-size="11">Parameters: 160 + 4,640 + 18,496 (convs) + 2·(16+32+64) = 224 (BN γ, β) + 650 (head) = 24,170</text>
   <text x="410" y="282" text-anchor="middle" class="lbl" font-size="11">All but 650 of them are in the convolutions; GAP has none. Exactly the network in the code below.</text>
 </svg>
 <figcaption><strong>Figure 17.6 — A small CNN with the tensor shape at every stage.</strong> Three conv→BN→ReLU blocks, two max-pools, global average pooling and a linear head. The picture to keep in mind: the tensor gets spatially smaller and channel-wise deeper as it moves right.</figcaption>
@@ -823,6 +1007,49 @@ n_params = <span class="fn">sum</span>(p.numel() <span class="kw">for</span> p <
 <p>Default to <strong>ResNet-50</strong> or <strong>EfficientNet-B0/B3</strong> from torchvision or the <code>timm</code> library with ImageNet weights: well understood, fast, and easy to fine-tune on a laptop GPU. Reach for a ViT (e.g. DINOv2) when you have a strong GPU, want the best possible features with few labels, or need embeddings for similarity search. Use MobileNet or EfficientNet-Lite when the model must run on a phone or an edge camera. Benchmarks between top backbones differ by a percent or two; your data and labels will move results by ten.</p>
 </div>
 
+
+<details class="deepdive"><summary>Deep dive: why residual connections fix optimization <span class="time">10 min</span></summary>
+<p>§6 said that a residual block makes identity "the easy default" and lets gradients "pass through undiminished". Both claims have a precise form, and once you see it you will also understand why every transformer (Chapter 18) is built from residual blocks and why removing a skip connection breaks training.</p>
+<div class="callout eli9"><div class="title">Explain it like I'm 9</div>
+<p>Pass a message through 30 people, each of whom must repeat the whole thing from memory. Each person garbles it a little, and by the end nothing is left. Now pass a written note and let each person add a sticky note. The original always arrives, and so do the corrections. Gradients are a message travelling backwards; skip connections are the written note.</p>
+</div>
+<div class="callout math"><div class="title">The math (optional): the identity term in the gradient</div>
+<div class="formula">x<sub>L</sub> = x<sub>l</sub> + Σ<sub>i=l</sub><sup>L−1</sup> F<sub>i</sub>(x<sub>i</sub>)      ⇒      ∂ℒ/∂x<sub>l</sub> = ∂ℒ/∂x<sub>L</sub> · ( 1 + ∂/∂x<sub>l</sub> Σ<sub>i=l</sub><sup>L−1</sup> F<sub>i</sub>(x<sub>i</sub>) )</div>
+<div class="formula">plain network:   ∂ℒ/∂x<sub>l</sub> = ∂ℒ/∂x<sub>L</sub> · Π<sub>i=l</sub><sup>L−1</sup> J<sub>i</sub></div>
+<p><em>x<sub>l</sub></em> is the input to block <em>l</em> and <em>x<sub>L</sub></em> the output of the last block; <em>F<sub>i</sub></em> is the residual function (the two convolutions) of block <em>i</em>; ℒ is the loss; <em>J<sub>i</sub></em> = ∂<em>x</em><sub>i+1</sub>/∂<em>x<sub>i</sub></em> is the Jacobian of block <em>i</em> in a plain network. Unrolling the residual recursion <em>x</em><sub>i+1</sub> = <em>x<sub>i</sub></em> + <em>F<sub>i</sub></em>(<em>x<sub>i</sub></em>) gives the first line: any later activation is the early one <em>plus a sum</em> of residuals. Differentiating gives a gradient with two parts: the "1", a direct path from the loss to <em>x<sub>l</sub></em> that no block can shrink, and a sum of block contributions. In a plain network the gradient is a <em>product</em> of Jacobians instead; if each has typical size 0.7, thirty of them multiply to 10<sup>−5</sup>, and if each is 1.4 they multiply to 10<sup>+4</sup>. A sum of terms cannot vanish or explode that way (He et al., 2016, "Identity mappings in deep residual networks").</p>
+</div>
+<p>The code makes this concrete: the same 32 blocks, wired plain or residual, at PyTorch's default initialization. Plain: the gradient reaching the input shrinks by orders of magnitude with every few blocks and is 10<sup>−19</sup> at depth 32, so the early layers would never learn. Residual: it stays of order 10 at every depth.</p>
+<pre class="code" data-lang="python"><code><span class="cm"># Gradient flow at initialization: plain stack vs residual stack, deeper and deeper</span>
+<span class="kw">import</span> torch, torch.nn <span class="kw">as</span> nn
+torch.manual_seed(<span class="nu">0</span>)
+width = <span class="nu">64</span>
+<span class="kw">def</span> block(): <span class="kw">return</span> nn.Sequential(nn.Linear(width, width), nn.ReLU(), nn.Linear(width, width))
+blocks = [block() <span class="kw">for</span> _ <span class="kw">in</span> <span class="fn">range</span>(<span class="nu">32</span>)]              <span class="cm"># same blocks reused in both stacks</span>
+x = torch.randn(<span class="nu">16</span>, width, requires_grad=<span class="kw">True</span>)
+
+<span class="kw">def</span> grad_norm_at_input(depth, residual):
+    h = x
+    <span class="kw">for</span> b <span class="kw">in</span> blocks[:depth]:
+        h = h + b(h) <span class="kw">if</span> residual <span class="kw">else</span> b(h)          <span class="cm"># y = x + F(x)   vs   y = F(x)</span>
+    g, = torch.autograd.grad(h.<span class="fn">sum</span>(), x)            <span class="cm"># how much signal reaches the input?</span>
+    <span class="kw">return</span> g.norm().item()
+
+<span class="fn">print</span>(<span class="st">"depth   plain |grad|   residual |grad|"</span>)
+<span class="kw">for</span> depth <span class="kw">in</span> (<span class="nu">1</span>, <span class="nu">4</span>, <span class="nu">8</span>, <span class="nu">16</span>, <span class="nu">32</span>):
+    <span class="fn">print</span>(<span class="st">f"{depth:5d}   {grad_norm_at_input(depth, False):11.2e}   {grad_norm_at_input(depth, True):14.2e}"</span>)
+<span class="out"># depth   plain |grad|   residual |grad|</span>
+<span class="out">#     1      7.71e+00         3.29e+01</span>
+<span class="out">#     4      1.01e-01         3.56e+01</span>
+<span class="out">#     8      2.91e-04         3.66e+01</span>
+<span class="out">#    16      1.26e-09         4.84e+01</span>
+<span class="out">#    32      1.12e-19         7.31e+01</span></code></pre>
+
+<p>Two more things the identity view explains. First, <strong>why "deeper got worse" was an optimization problem</strong>: a plain 56-layer network could in principle imitate a 20-layer one by making 36 layers compute the identity, but a stack of conv → BN → ReLU has no easy way to represent identity (ReLU alone kills negative values), so the optimizer could not find it. With <em>y</em> = <em>x</em> + <em>F</em>(<em>x</em>), identity is <em>F</em> = 0: weights near zero, the easiest thing gradient descent with weight decay can do. Second, <strong>a residual network behaves like an ensemble of shallow paths</strong> (Veit et al., 2016): unrolling the sum produces 2<sup>n</sup> paths through <em>n</em> blocks, and the gradient is dominated by the short ones, which is why you can delete individual blocks from a trained ResNet with only a mild loss in accuracy, while deleting one layer of VGG destroys it.</p>
+<div class="callout pro"><div class="title">At work</div>
+<p>Three practical habits follow. Initialize each block so that <em>F</em>(<em>x</em>) ≈ 0 at the start — torchvision's <code>resnet50(zero_init_residual=True)</code> sets the last batch-norm γ of every block to zero, and training is a little faster and more stable for it. Never "simplify" an architecture by removing skip connections, whether a ResNet, a U-Net or a transformer. And when you add a block with a different output width, add a 1×1 convolution on the skip path (the "projection shortcut") rather than dropping the skip.</p>
+</div>
+</details>
+
 <!-- ============================================================ -->
 <h2 id="s7">7. Data augmentation</h2>
 
@@ -868,7 +1095,7 @@ n_params = <span class="fn">sum</span>(p.numel() <span class="kw">for</span> p <
   <!-- bottom notes -->
   <rect x="20" y="200" width="780" height="86" rx="8" class="box"/>
   <text x="35" y="222" class="lbl-strong" font-size="12">Rules</text>
-  <text x="35" y="240" class="lbl" font-size="11">• Only transformations the label survives. Flipping a "6" makes a "9"; flipping an X-ray moves the heart to the wrong side.</text>
+  <text x="35" y="240" class="lbl" font-size="11">• Only transformations the label survives. A "6" turned upside-down is a "9"; flipping an X-ray moves the heart to the wrong side.</text>
   <text x="35" y="257" class="lbl" font-size="11">• Applied randomly, on the fly, to training images only. Validation and test images get the deterministic resize + center-crop.</text>
   <text x="35" y="274" class="lbl" font-size="11">• Start with flip + random-resized-crop + mild color jitter. Add MixUp/CutMix or RandAugment when the data is small and the model overfits.</text>
 </svg>
@@ -1000,6 +1227,27 @@ torch.save(model.state_dict(), <span class="st">"resnet18_finetuned.pt"</span>)<
 <div class="callout key"><div class="title">Key idea</div>
 <p><strong>Pretrained backbone + new head + careful learning rates is the default vision workflow.</strong> Training from scratch is the exception, justified only by a huge dataset in a domain unlike anything the backbone has seen.</p>
 </div>
+
+
+<details class="deepdive"><summary>Deep dive: transfer-learning decision math <span class="time">9 min</span></summary>
+<p>The table in §8 gives rules of thumb by data size. This deep dive gives the reasoning behind them — how accuracy scales with labels, how many parameters you are really fitting in each strategy, and a five-minute probe that tells you which row of the table you are in before you label anything else.</p>
+<div class="callout eli9"><div class="title">Explain it like I'm 9</div>
+<p>Learning from examples is like filling a bucket with a hose whose flow keeps weakening: the first hundred examples do most of the work, the next hundred help less, and the thousandth barely moves the level. Knowing the shape of that curve tells you whether to label more pictures or to spend the money elsewhere.</p>
+</div>
+<div class="callout math"><div class="title">The math (optional): learning curves and effective parameters</div>
+<div class="formula">err(n) ≈ e<sub>∞</sub> + b · n<sup>−α</sup>,   α ≈ 0.3–0.5 for fine-tuning      params<sub>head</sub> = D·C + C      params<sub>top block</sub> ≈ 15 M (ResNet-50 layer4)</div>
+<p><em>n</em> is the number of labeled training images; err(<em>n</em>) the test error you get from them; <em>e<sub>∞</sub></em> the error floor set by label noise and the backbone; <em>b</em> a constant; <em>α</em> the learning-curve exponent: published measurements for image classification put it around 0.3–0.5 (Hestness et al., 2017), with training from scratch at the shallow end and fine-tuning a pretrained backbone typically at the steep end, and your own task will have its own value. Doubling <em>n</em> therefore multiplies the <em>excess</em> error (err − <em>e<sub>∞</sub></em>) by 2<sup>−α</sup> ≈ 0.7–0.8: each doubling removes 20–30% of what is left. <em>D</em> is the backbone's feature dimension (2,048 for ResNet-50, 512 for ResNet-18) and <em>C</em> the number of classes: a linear head on frozen features for a 10-class problem has 20,490 parameters; unfreezing ResNet-50's last stage adds about 15 million; unfreezing everything, 25 million.</p>
+</div>
+<h4>How many labels</h4>
+<p>Two consequences of the power law. First, the curve is steep early and flat late: from 50 to 100 images per class you might gain 8 points; from 5,000 to 10,000, one point. If a pilot with 100 images per class is at 85% and you need 95%, three more doublings buy you roughly half of the gap; the rest has to come from better labels, a better backbone or a narrower task. Measure your own <em>α</em> by training on 25%, 50% and 100% of what you have and plotting error against <em>n</em> on log–log axes: the slope is −<em>α</em>, and extrapolating it is the most honest estimate of "how much more data" you will ever get. Second, count per class, not in total: a 40-class problem with 400 images has 10 per class, which is few-shot territory where a frozen backbone with a nearest-neighbour or logistic-regression head usually beats any fine-tuning.</p>
+<h4>When to unfreeze</h4>
+<p>Compare the parameters you would fit with the labels you have. A 20,000-parameter head on 600 images is a well-posed problem (and with only 600 images, fit it with scikit-learn's logistic regression and cross-validated L2 rather than SGD — it is faster and better). Unfreezing 15 million parameters on 600 images is not, unless the learning rate is small enough that the weights barely move, which is exactly what the 10<sup>−4</sup>–10<sup>−5</sup> stage-2 rates in Figure 17.9 achieve. Unfreeze when both of these hold: the frozen-head model has plateaued on validation, <em>and</em> its <em>training</em> accuracy is also unimpressive. A frozen head that fits the training set well but generalizes poorly needs data and augmentation, not more trainable weights; a frozen head that cannot even fit the training set is telling you the features are wrong for your domain, and that is what unfreezing fixes.</p>
+<h4>The five-minute probe</h4>
+<p>Before deciding anything, embed a few hundred labeled images with the frozen backbone and run a <em>k</em>-nearest-neighbour classifier (Chapter 11) on the embeddings with cross-validation. If kNN already scores 80% or more, the domain is close to the pretraining data: stay in the top rows of the table, and much of your accuracy will come from the head alone. If kNN is near chance, the domain is far (microscopy, radar, spectrograms): plan on unfreezing most of the network, look for a backbone pretrained on similar data, and budget for more labels. The probe costs no training and tells you which of the table's rows you are in.</p>
+<div class="callout key"><div class="title">Key idea</div>
+<p><strong>Labels have diminishing returns with a known exponent; trainable parameters must be paid for with labels or with a small learning rate.</strong> Estimate α from your own data, count parameters against images per class, and let a kNN probe on frozen embeddings decide how much of the backbone to touch.</p>
+</div>
+</details>
 
 <!-- ============================================================ -->
 <h2 id="s9">9. Beyond classification: detection, segmentation, embeddings</h2>
@@ -1149,13 +1397,15 @@ loss_fn = nn.CrossEntropyLoss()                                   <span class="c
 <p><strong>The background shortcut.</strong> If all your "defective" photos were taken at station B under yellow light and all "good" photos at station A, the network will learn the light, get 99% on your validation split, and fail in production. Split validation by time, site or device, not randomly by image, and check the model on a deliberately hard slice (same station, both classes) before believing any number.</p>
 </div>
 
-<div class="callout lab"><div class="title">Lab</div>
+<div class="callout lab"><div class="title">Try it yourself</div>
 <p>Modify the stripes experiment: (1) add a third class, diagonal stripes, and see whether two 3×3 blocks still suffice; (2) reduce the training set to 40 images and watch test accuracy; then add augmentation by randomly flipping and rolling the images (<code>torch.roll</code>) each epoch and see how much it recovers; (3) print the learned first-layer kernels (<code>model[0].weight</code>) and compare them with Figure 17.3.</p>
 </div>
 
 <div class="callout key"><div class="title">Key idea</div>
 <p><strong>The model is rarely the problem.</strong> On real vision projects the accuracy is decided by label quality, the validation split, augmentation, input normalization and the choice of task, with the backbone a distant sixth. Spend your time accordingly.</p>
 </div>
+
+<div class="callout lab"><div class="title">Lab</div><p>Open <code>labs/ch17_cnn.py</code> in VS Code and make the tests in <code>labs/tests/test_ch17.py</code> pass. You will implement a convolution by hand and check it against <code>F.conv2d</code>, compute output sizes and parameter counts, build and train a small CNN on synthetic images, and set up a freeze-then-unfreeze fine-tuning schedule.</p></div>
 
 <!-- ============================================================ -->
 <h2 id="quiz">Quiz</h2>
@@ -1214,7 +1464,7 @@ loss_fn = nn.CrossEntropyLoss()                                   <span class="c
       <li><button data-correct>Horizontal flips</button></li>
       <li><button>Slight brightness changes</button></li>
     </ul>
-    <div class="explain">A flipped 2, 3, 5 or 7 is not a valid digit, and a flipped 6 can resemble a mirrored 9; the label does not survive the transformation. Every augmentation is a claim that the label is invariant to it.</div>
+    <div class="explain">A mirror-image 2, 3, 5, 6, 7 or 9 is not a valid digit (and a 6 rotated by 180° becomes a 9); the label does not survive the transformation. Every augmentation is a claim that the label is invariant to it.</div>
   </div>
 
   <div class="q">

@@ -167,7 +167,7 @@ params = {<span class="st">"n_estimators"</span>: <span class="nu">300</span>, <
     auc = roc_auc_score(y_te, pipe.predict_proba(X_te)[:, <span class="nu">1</span>])
     mlflow.log_metric(<span class="st">"test_auc"</span>, auc)
     mlflow.log_artifact(<span class="st">"reports/shap_summary.png"</span>)           <span class="cm"># any file: plots, model card, reference profile</span>
-    mlflow.sklearn.log_model(pipe, artifact_path=<span class="st">"model"</span>,
+    mlflow.sklearn.log_model(pipe, name=<span class="st">"model"</span>,             <span class="cm"># artifact name (MLflow 3; MLflow 2.x called it artifact_path=)</span>
                              input_example=X_tr.head(<span class="nu">3</span>),        <span class="cm"># records the input schema (signature)</span>
                              registered_model_name=<span class="st">"churn"</span>)     <span class="cm"># creates version N in the Model Registry</span>
 
@@ -414,6 +414,7 @@ PIPE, VERSION = BUNDLE[<span class="st">"pipeline"</span>], BUNDLE[<span class="
     support_calls: <span class="fn">int</span> = Field(ge=<span class="nu">0</span>, le=<span class="nu">50</span>, default=<span class="nu">0</span>)
 
     @field_validator(<span class="st">"plan"</span>)
+    @classmethod
     <span class="kw">def</span> <span class="fn">known_plan</span>(cls, v):
         <span class="kw">if</span> v <span class="kw">not</span> <span class="kw">in</span> {<span class="st">"basic"</span>, <span class="st">"plus"</span>, <span class="st">"premium"</span>}: <span class="kw">raise</span> ValueError(<span class="st">f"unknown plan {v!r}"</span>)
         <span class="kw">return</span> v
@@ -576,6 +577,53 @@ bad = good.copy(); bad.loc[<span class="nu">0</span>, <span class="st">"age"</sp
 <p><strong>Computing training features from the current state of the database.</strong> A model that predicts churn from <code>days_since_last_login</code> where the value is today's, but the label is from six months ago, is trained on the future: churned customers have not logged in since they churned, so the feature is a near-perfect leak. Offline AUC 0.98, production AUC 0.62. Point-in-time correctness is not optional.</p>
 </div>
 
+<details class="deepdive"><summary>Deep dive: training–serving skew, worked through <span class="time">8 min</span></summary>
+<div class="callout eli9"><div class="title">Explain it like I'm 9</div>
+<p>Two clocks in the same house. The kitchen calendar says "the last 30 days" means the whole days since the 30th of last month. Your wristwatch says it means exactly 30 × 24 hours ago until right now. Ask both "how much did we spend in the last 30 days?" and they give different numbers — and neither is wrong. A model trained on the calendar's number and fed the watch's number is answering a slightly different question every time.</p>
+</div>
+<p><strong>Precisely.</strong> Skew is rarely a bug in either code path; it is two correct implementations of an under-specified feature. Take <code>spend_last_30d</code>. The nightly SQL job that built the training table sums over 30 whole calendar days before the scoring date. The serving cache sums over the 720 hours before the request, including today's partial day. And when a customer has no purchases, the training pipeline imputed the median while the service — written by someone else — fills zero. Here is the whole mechanism in forty lines:</p>
+<pre class="code" data-lang="python"><code><span class="cm"># Training–serving skew, worked: one feature name, two definitions (offline SQL vs. online cache)</span>
+<span class="kw">import</span> numpy <span class="kw">as</span> np, pandas <span class="kw">as</span> pd
+<span class="kw">from</span> sklearn.linear_model <span class="kw">import</span> LogisticRegression
+
+rng = np.random.<span class="fn">default_rng</span>(<span class="nu">3</span>); n_cust, n_tx = <span class="nu">400</span>, <span class="nu">3000</span>
+tx = pd.<span class="fn">DataFrame</span>({<span class="st">"customer"</span>: rng.<span class="fn">integers</span>(<span class="nu">0</span>, n_cust, n_tx),
+                   <span class="st">"ts"</span>: pd.<span class="fn">Timestamp</span>(<span class="st">"2026-07-01"</span>) + pd.<span class="fn">to_timedelta</span>(rng.<span class="fn">uniform</span>(<span class="nu">0</span>, <span class="nu">60</span> * <span class="nu">86400</span>, n_tx), unit=<span class="st">"s"</span>),
+                   <span class="st">"amount"</span>: rng.<span class="fn">gamma</span>(<span class="nu">2</span>, <span class="nu">15</span>, n_tx).<span class="fn">round</span>(<span class="nu">2</span>)})
+now = pd.<span class="fn">Timestamp</span>(<span class="st">"2026-08-29 14:30"</span>)                              <span class="cm"># a /predict request arrives</span>
+
+<span class="cm"># OFFLINE definition (the nightly SQL job that built the training table): 30 whole CALENDAR days before the scoring date</span>
+lo, hi = now.<span class="fn">normalize</span>() - pd.<span class="fn">Timedelta</span>(days=<span class="nu">30</span>), now.<span class="fn">normalize</span>()   <span class="cm"># [Jul 30 00:00, Aug 29 00:00)</span>
+offline = tx[(tx.ts &gt;= lo) &amp; (tx.ts &lt; hi)].<span class="fn">groupby</span>(<span class="st">"customer"</span>)[<span class="st">"amount"</span>].<span class="fn">sum</span>()
+<span class="cm"># ONLINE definition (the serving cache): "last 30 days" = the 720 hours before the request, INCLUDING today so far</span>
+online = tx[(tx.ts &gt;= now - pd.<span class="fn">Timedelta</span>(days=<span class="nu">30</span>)) &amp; (tx.ts &lt; now)].<span class="fn">groupby</span>(<span class="st">"customer"</span>)[<span class="st">"amount"</span>].<span class="fn">sum</span>()
+
+feat = pd.<span class="fn">DataFrame</span>({<span class="st">"offline"</span>: offline, <span class="st">"online"</span>: online}).<span class="fn">reindex</span>(<span class="fn">range</span>(n_cust))
+feat[<span class="st">"offline"</span>] = feat[<span class="st">"offline"</span>].<span class="fn">fillna</span>(feat[<span class="st">"offline"</span>].<span class="fn">median</span>())  <span class="cm"># training imputed the median for "no purchases" ...</span>
+feat[<span class="st">"online"</span>] = feat[<span class="st">"online"</span>].<span class="fn">fillna</span>(<span class="nu">0.0</span>)                         <span class="cm"># ... the service fills 0: a second, silent skew</span>
+diff = feat.online - feat.offline
+<span class="fn">print</span>(<span class="st">f"customers whose spend_last_30d differs: {(diff.abs() &gt; 0.005).mean():.0%}  |  among them, median |diff| = {diff[diff.abs() &gt; 0.005].abs().median():.0f} €"</span>)
+
+<span class="cm"># what it does to decisions: a churn model fitted on OFFLINE values, then served ONLINE values</span>
+z = (feat.offline - feat.offline.<span class="fn">mean</span>()) / feat.offline.<span class="fn">std</span>()
+y = (rng.<span class="fn">random</span>(n_cust) &lt; <span class="nu">1</span> / (<span class="nu">1</span> + np.<span class="fn">exp</span>(<span class="nu">1.5</span> * z))).<span class="fn">astype</span>(int)   <span class="cm"># low spenders churn more</span>
+clf = <span class="fn">LogisticRegression</span>().<span class="fn">fit</span>(feat[[<span class="st">"offline"</span>]].values, y)
+p_off = clf.<span class="fn">predict_proba</span>(feat[[<span class="st">"offline"</span>]].values)[:, <span class="nu">1</span>]; p_on = clf.<span class="fn">predict_proba</span>(feat[[<span class="st">"online"</span>]].values)[:, <span class="nu">1</span>]
+<span class="fn">print</span>(<span class="st">f"decisions that flip at the 0.5 threshold: {((p_off &gt; 0.5) != (p_on &gt; 0.5)).mean():.1%}  |  largest |Δp| = {np.abs(p_off - p_on).max():.2f}"</span>)
+
+<span class="cm"># the skew test that belongs in CI: recompute the served feature offline and demand agreement on 99% of rows</span>
+skew_ok = (diff.<span class="fn">abs</span>() &lt; <span class="nu">0.01</span>).<span class="fn">mean</span>() &gt;= <span class="nu">0.99</span>
+<span class="fn">print</span>(<span class="st">"skew test passes:"</span>, skew_ok, <span class="st">"-&gt; fix: one definition, one code path, one null rule"</span>)
+<span class="out"># customers whose spend_last_30d differs: 16%  |  among them, median |diff| = 31 €</span>
+<span class="out"># decisions that flip at the 0.5 threshold: 1.8%  |  largest |Δp| = 0.53</span>
+<span class="out"># skew test passes: False -&gt; fix: one definition, one code path, one null rule</span></code></pre>
+<p>Sixteen percent of customers get a different feature value, most of them by tens of euros; the null-handling mismatch alone moves a few customers from "median spender" to "zero spender," which is the largest swing in the table. Under a logistic churn model that is enough to flip 1.8% of decisions at the threshold, and the largest single probability change is 0.53 — a customer the model thinks is safe offline and at high risk online. Multiply by ten features and a boosted model with sharp thresholds, and "offline AUC 0.87, production 0.71" stops being mysterious.</p>
+<p>The classic sources, so you can hunt them deliberately: <strong>window edges</strong> (calendar versus rolling, inclusive versus exclusive, local midnight versus UTC); <strong>late-arriving data</strong> (the warehouse receives corrections and backfills that the online cache never saw, so the training value is "cleaner" than anything serving will ever have); <strong>null and default policy</strong> (median, zero, "unknown" category, or a dropped row); <strong>type and unit coercion</strong> (cents versus euros, integer days versus float days, a string "3" versus 3); and <strong>entity resolution</strong> (the customer id in the events stream is not quite the id in billing).</p>
+<div class="callout key"><div class="title">Key idea</div>
+<p>The skew test is cheap because the structured log line of Section 4 already contains the served feature values. Each night: take a sample of yesterday's requests, recompute their features with the training code as of the request timestamp, and assert that ≥ 99% agree within tolerance. When it fails, the diff tells you <em>which</em> feature and <em>which</em> rows — usually a window edge or a null rule. The three fixes are the ones in the output line: one definition (a feature store or a shared feature module), one code path (the sklearn <code>Pipeline</code>, with the imputer <em>inside</em> it rather than in SQL), one null rule.</p>
+</div>
+</details>
+
 <!-- ============================================================ -->
 <h2 id="s6">6. CI/CD for ML: tests that matter</h2>
 
@@ -679,10 +727,10 @@ jobs:
   <text x="410" y="72" class="lbl-strong" font-size="12">② Input drift — PSI per feature vs training profile</text>
   <g class="lbl" font-size="10">
     <text x="500" y="92" text-anchor="end">monthly_spend</text><rect x="506" y="84" width="180" height="9" fill="var(--critical)"/><text x="690" y="92">0.31 ⚠</text>
-    <text x="500" y="108" text-anchor="end">plan</text><rect x="506" y="100" width="90" height="9" fill="var(--warn)"/><text x="600" y="108">0.14</text>
-    <text x="500" y="124" text-anchor="end">support_calls</text><rect x="506" y="116" width="30" height="9" fill="var(--good)"/><text x="540" y="124">0.04</text>
-    <text x="500" y="140" text-anchor="end">age</text><rect x="506" y="132" width="14" height="9" fill="var(--good)"/><text x="524" y="140">0.02</text>
-    <text x="500" y="156" text-anchor="end">tenure_months</text><rect x="506" y="148" width="10" height="9" fill="var(--good)"/><text x="520" y="156">0.01</text>
+    <text x="500" y="108" text-anchor="end">plan</text><rect x="506" y="100" width="81" height="9" fill="var(--warn)"/><text x="591" y="108">0.14</text>
+    <text x="500" y="124" text-anchor="end">support_calls</text><rect x="506" y="116" width="23" height="9" fill="var(--good)"/><text x="533" y="124">0.04</text>
+    <text x="500" y="140" text-anchor="end">age</text><rect x="506" y="132" width="12" height="9" fill="var(--good)"/><text x="522" y="140">0.02</text>
+    <text x="500" y="156" text-anchor="end">tenure_months</text><rect x="506" y="148" width="6" height="9" fill="var(--good)"/><text x="516" y="156">0.01</text>
   </g>
   <text x="410" y="176" class="lbl" font-size="9">alert &gt; 0.25 · investigate 0.10–0.25 · nulls &amp; new categories tracked</text>
   <!-- panel 3: prediction drift -->
@@ -786,8 +834,54 @@ scenarios = {<span class="st">"same distribution"</span>: rng.normal(<span class
     <span>Status: <span class="readout" id="dr-st">–</span></span>
   </div>
   <svg viewBox="0 0 700 280" id="dr-svg" role="img" aria-label="Two histograms, reference and production, with the ten reference-quantile bins and the live PSI value coloured by alert level"></svg>
-  <div class="note">Reference = the training distribution of <code>monthly_spend</code>, N(100, 15), in blue. Production in orange. The PSI is computed exactly as in the code above, on ten bins that each hold 10% of the reference. Notice that a mean shift of about 5 already reaches 0.10 ("investigate") and about 9 reaches 0.25 ("alert") — and that widening the spread with no mean change also trips the alarm. PSI has no sign: it does not tell you which way things moved, only that they did.</div>
+  <div class="note">Reference = the training distribution of <code>monthly_spend</code>, N(100, 15), in blue. Production in orange. The PSI is computed exactly as in the code above, on ten bins that each hold 10% of the reference. Notice that a mean shift of about 5 already reaches 0.10 ("investigate") and about 8 reaches 0.25 ("alert") — and that widening the spread with no mean change also trips the alarm. PSI has no sign: it does not tell you which way things moved, only that they did.</div>
 </div>
+
+<details class="deepdive"><summary>Deep dive: PSI thresholds are folklore — calibrate your own <span class="time">9 min</span></summary>
+<div class="callout eli9"><div class="title">Explain it like I'm 9</div>
+<p>A bathroom scale jiggles: step on it twice and you get 41.2 kg and then 41.6 kg with nothing changed. Before you decide that "0.4 kg heavier" means anything, you have to know how much the scale jiggles on its own. PSI is a scale. The 0.10 / 0.25 numbers were written down by people whose scale had a particular jiggle — thousands of loan applications a month, ten bins. Yours may jiggle far more, or far less.</p>
+</div>
+<p><strong>Precisely.</strong> Even when production is drawn from exactly the training distribution, PSI is not zero: each bin's production share q<sub>b</sub> is a sample proportion with its own noise, and the formula sums squared-ish noise across B bins. The size of that floor is not folklore; it has a formula.</p>
+<div class="callout math"><div class="title">The math (optional)</div>
+<div class="formula">Under "no drift", with n production rows and a much larger reference: &nbsp; n · PSI ≈ χ²<sub>B−1</sub> &nbsp;&nbsp;⇒&nbsp;&nbsp; E[PSI] ≈ (B − 1) / n, &nbsp; 99th percentile ≈ χ²<sub>B−1, 0.99</sub> / n</div>
+<p>n is the number of production rows in the window, B the number of bins, χ²<sub>B−1</sub> a chi-square variable with B − 1 degrees of freedom (the binned proportions have B − 1 free values). PSI is a symmetrised KL divergence and 2·n·KL converges to χ² for small deviations, so n·PSI does too. For B = 10 the 99th percentile of χ²<sub>9</sub> is 21.7: with n = 200 rows the noise floor alone reaches 0.108, with n = 1,000 it is 0.022, with n = 5,000 it is 0.004. If the reference is not much larger than n, multiply by (1 + n/n<sub>ref</sub>).</p>
+</div>
+<p>The formula is easy to check, and the check is also the recipe you will use at work — <em>reference versus reference</em>: split the training extract, compare one half's profile against random samples of the other half, and read off the distribution of PSI when nothing has changed:</p>
+<pre class="code" data-lang="python"><code><span class="cm"># Calibrate a PSI alert threshold from reference-vs-reference noise instead of the 0.10 / 0.25 folklore</span>
+<span class="kw">import</span> numpy <span class="kw">as</span> np
+
+<span class="kw">def</span> <span class="fn">psi</span>(reference, current, bins=<span class="nu">10</span>, eps=<span class="nu">1e-6</span>):
+    edges = np.<span class="fn">quantile</span>(reference, np.<span class="fn">linspace</span>(<span class="nu">0</span>, <span class="nu">1</span>, bins + <span class="nu">1</span>)); edges[<span class="nu">0</span>], edges[-<span class="nu">1</span>] = -np.inf, np.inf
+    r = np.<span class="fn">histogram</span>(reference, edges)[<span class="nu">0</span>] / <span class="fn">len</span>(reference) + eps
+    c = np.<span class="fn">histogram</span>(current, edges)[<span class="nu">0</span>] / <span class="fn">len</span>(current) + eps
+    <span class="kw">return</span> <span class="fn">float</span>(np.<span class="fn">sum</span>((c - r) * np.<span class="fn">log</span>(c / r)))
+
+rng = np.random.<span class="fn">default_rng</span>(<span class="nu">1</span>)
+train = rng.<span class="fn">gamma</span>(<span class="nu">2.0</span>, <span class="nu">50.0</span>, <span class="nu">60_000</span>)                 <span class="cm"># a skewed "monthly_spend" column from the training extract</span>
+ref, pool = train[:<span class="nu">30_000</span>], train[<span class="nu">30_000</span>:]           <span class="cm"># reference profile vs. the rest of the SAME data = pure noise</span>
+
+<span class="fn">print</span>(<span class="st">f"{'prod rows':&gt;9}{'bins':&gt;6}{'null PSI 50%':&gt;14}{'null PSI 99%':&gt;14}{'PSI of a real +5% shift':&gt;26}"</span>)
+<span class="kw">for</span> n, bins <span class="kw">in</span> [(<span class="nu">200</span>, <span class="nu">10</span>), (<span class="nu">1000</span>, <span class="nu">10</span>), (<span class="nu">5000</span>, <span class="nu">10</span>), (<span class="nu">30000</span>, <span class="nu">10</span>), (<span class="nu">1000</span>, <span class="nu">5</span>), (<span class="nu">1000</span>, <span class="nu">20</span>)]:
+    null = [<span class="fn">psi</span>(ref, rng.<span class="fn">choice</span>(pool, n, replace=<span class="kw">False</span>), bins) <span class="kw">for</span> _ <span class="kw">in</span> <span class="fn">range</span>(<span class="nu">400</span>)]
+    real = np.<span class="fn">median</span>([<span class="fn">psi</span>(ref, rng.<span class="fn">gamma</span>(<span class="nu">2.0</span>, <span class="nu">52.5</span>, n), bins) <span class="kw">for</span> _ <span class="kw">in</span> <span class="fn">range</span>(<span class="nu">100</span>)])   <span class="cm"># scale ×1.05 = mean +5%</span>
+    <span class="fn">print</span>(<span class="st">f"{n:&gt;9}{bins:&gt;6}{np.median(null):14.3f}{np.percentile(null, 99):14.3f}{real:26.3f}"</span>)
+<span class="out"># prod rows  bins  null PSI 50%  null PSI 99%   PSI of a real +5% shift</span>
+<span class="out">#       200    10         0.042         0.108                     0.051</span>
+<span class="out">#      1000    10         0.008         0.021                     0.014</span>
+<span class="out">#      5000    10         0.002         0.005                     0.008</span>
+<span class="out">#     30000    10         0.000         0.000                     0.007</span>
+<span class="out">#      1000     5         0.003         0.012                     0.009</span>
+<span class="out">#      1000    20         0.019         0.035                     0.025</span></code></pre>
+<p>Three things to take from the table. With 200 rows a day, the noise floor's 99th percentile is 0.108 — the "investigate" convention fires on one day in a hundred for no reason, and a genuine 5% mean shift (PSI 0.05) is invisible inside the noise. With 30,000 rows the floor is 0.000 to three decimals, so a PSI of 0.03 is not "well below 0.10, ignore" — it is a hundred times the noise and certainly real (whether it <em>matters</em> is a separate question, answered by prediction drift, not by the threshold). And the number of bins moves the floor: twenty bins roughly doubles it, five bins halves it, which is why a PSI from one tool is not comparable with a PSI from another unless both state B.</p>
+<div class="callout pro"><div class="title">At work: a calibration recipe</div>
+<ol class="steps">
+  <li><strong>Measure the floor.</strong> Reference-vs-reference for your actual daily (or weekly) sample size and bin count, or the χ² formula. If the floor's 99th percentile is above 0.05, your windows are too small: aggregate to weekly windows before computing PSI.</li>
+  <li><strong>Set the alert at the larger of two numbers:</strong> 2–3× the floor's 99th percentile, and the PSI at which the <em>model</em> visibly reacts — replay past months, compute PSI per feature and the change in the prediction distribution or backfilled metric, and find the smallest PSI that ever coincided with a real change. That second number is the only one that connects the alert to money.</li>
+  <li><strong>Alert on few features.</strong> The top five by permutation importance, plus the schema checks (null rate, new categories), which have no threshold problem at all.</li>
+  <li><strong>Write B, n and the threshold into the model card</strong> next to the reference profile. A threshold without its sample size is not a threshold.</li>
+</ol>
+</div>
+</details>
 
 <h3>Concept drift versus data drift</h3>
 <p>Everything above watches the <em>inputs</em>. There is a second, nastier kind of change: the inputs look exactly the same, but the relationship between inputs and outcome has changed. That is <strong>concept drift</strong>. A competitor launches a cheaper plan: the same customers with the same features now churn at twice the rate. No PSI will fire. Only performance, computed once labels arrive, can see it — which is why the delayed-label panel exists even though it is always late.</p>
@@ -934,6 +1028,137 @@ pr, acc = dashboard(<span class="nu">89</span>)
 <p>Before the first production deployment, do a rollback on purpose: promote v1.3, roll back to v1.2, confirm the service is serving v1.2 (the <code>/health</code> endpoint returns the version — that is why it does). Time it. If it takes more than a few minutes or needs someone who is on holiday, fix that before you need it. Every model incident I have seen become a crisis was one where rollback was theoretically possible and had never been tried.</p>
 </div>
 
+<details class="deepdive"><summary>Deep dive: the retraining decision as a cost trade-off <span class="time">9 min</span></summary>
+<div class="callout eli9"><div class="title">Explain it like I'm 9</div>
+<p>A chef's knife goes blunt a little more with every hour of chopping, and sharpening it takes ten minutes. Sharpen after every carrot and you spend the whole day sharpening; never sharpen and every cut takes twice as long. Somewhere in between is a rhythm that wastes the least time — and it depends on two numbers only: how long sharpening takes, and how fast the knife dulls.</p>
+</div>
+<p><strong>Precisely.</strong> "How often should we retrain?" has an answer once you write down two costs. A retrain costs a fixed amount C: engineering time, compute, review, the rollout ladder, and the risk that the new version needs a rollback. A model that is not retrained loses value as it ages; the simplest honest model of that loss is that it grows linearly with age, at d euros per week for every week of age. Then the cost per week of retraining every T weeks is the retrain cost spread over the cycle plus the average decay loss inside the cycle:</p>
+<div class="callout math"><div class="title">The math (optional)</div>
+<div class="formula">cost(T) = C / T + d · T / 2 &nbsp;&nbsp;⇒&nbsp;&nbsp; T* = √(2C / d), &nbsp; cost(T*) = √(2Cd)</div>
+<p>C is the fixed cost of one retrain (€), d the decay rate (€ of lost value per week, per week of model age), T the interval in weeks. The decay term is ∫<sub>0</sub><sup>T</sup> d·t dt / T = dT/2: the loss at age t is d·t, and the average over a cycle of length T is half the loss at the end of it. Setting the derivative −C/T² + d/2 to zero gives T*. Where d comes from: the backfilled-performance panel, indexed by model age rather than by calendar date, converted to money — for a churn model, (decisions per week) × (value of a correct decision) × (drop in precision at the operating point per week of age). Fit the slope across the last few model versions.</p>
+</div>
+<figure class="fig">
+<svg viewBox="0 0 780 300" role="img" aria-label="Cost per week of a retraining policy as a function of the interval between retrains: the retrain-cost curve falls with the interval, the decay-loss line rises with it, and their sum is U-shaped with a flat minimum near seven weeks">
+  <text x="390" y="22" text-anchor="middle" class="lbl-strong" font-size="14">Cost per week of retraining every T weeks (C = €3,000 per retrain, d = €120 per week of age)</text>
+  <line x1="70" y1="250" x2="520" y2="250" class="axis"/><line x1="70" y1="250" x2="70" y2="40" class="axis"/>
+  <g class="lbl" font-size="11">
+    <text x="70" y="268" text-anchor="middle">0</text><text x="182.5" y="268" text-anchor="middle">4</text><text x="295" y="268" text-anchor="middle">8</text><text x="407.5" y="268" text-anchor="middle">12</text><text x="520" y="268" text-anchor="middle">16</text>
+    <text x="62" y="254" text-anchor="end">0</text><text x="62" y="149" text-anchor="end">1,000</text><text x="62" y="44" text-anchor="end">2,000</text>
+  </g>
+  <text x="295" y="290" text-anchor="middle" class="lbl">T = weeks between retrains</text>
+  <text x="22" y="145" text-anchor="middle" class="lbl" transform="rotate(-90 22 145)">€ per week</text>
+  <path d="M115.0,53.1 L120.6,75.0 L126.2,92.5 L131.9,106.8 L137.5,118.8 L143.1,128.8 L148.8,137.5 L154.4,145.0 L160.0,151.6 L165.6,157.4 L171.2,162.5 L176.9,167.1 L182.5,171.2 L188.1,175.0 L193.8,178.4 L199.4,181.5 L205.0,184.4 L210.6,187.0 L216.2,189.4 L221.9,191.7 L227.5,193.8 L233.1,195.7 L238.8,197.5 L244.4,199.2 L250.0,200.8 L255.6,202.3 L261.2,203.7 L266.9,205.0 L272.5,206.2 L278.1,207.4 L283.8,208.6 L289.4,209.6 L295.0,210.6 L300.6,211.6 L306.2,212.5 L311.9,213.4 L317.5,214.2 L323.1,215.0 L328.8,215.8 L334.4,216.5 L340.0,217.2 L345.6,217.9 L351.2,218.5 L356.9,219.1 L362.5,219.7 L368.1,220.3 L373.8,220.8 L379.4,221.4 L385.0,221.9 L390.6,222.4 L396.2,222.8 L401.9,223.3 L407.5,223.8 L413.1,224.2 L418.8,224.6 L424.4,225.0 L430.0,225.4 L435.6,225.8 L441.3,226.1 L446.9,226.5 L452.5,226.8 L458.1,227.2 L463.8,227.5 L469.4,227.8 L475.0,228.1 L480.6,228.4 L486.2,228.7 L491.9,229.0 L497.5,229.3 L503.1,229.5 L508.8,229.8 L514.4,230.1 L520.0,230.3" fill="none" stroke="var(--s1)" stroke-width="2" stroke-dasharray="6 3"/>
+  <path d="M115.0,239.9 L120.6,238.7 L126.2,237.4 L131.9,236.1 L137.5,234.9 L143.1,233.6 L148.8,232.4 L154.4,231.1 L160.0,229.8 L165.6,228.6 L171.2,227.3 L176.9,226.1 L182.5,224.8 L188.1,223.5 L193.8,222.3 L199.4,221.0 L205.0,219.8 L210.6,218.5 L216.2,217.2 L221.9,216.0 L227.5,214.7 L233.1,213.5 L238.8,212.2 L244.4,210.9 L250.0,209.7 L255.6,208.4 L261.2,207.2 L266.9,205.9 L272.5,204.6 L278.1,203.4 L283.8,202.1 L289.4,200.9 L295.0,199.6 L300.6,198.3 L306.2,197.1 L311.9,195.8 L317.5,194.6 L323.1,193.3 L328.8,192.0 L334.4,190.8 L340.0,189.5 L345.6,188.3 L351.2,187.0 L356.9,185.7 L362.5,184.5 L368.1,183.2 L373.8,182.0 L379.4,180.7 L385.0,179.4 L390.6,178.2 L396.2,176.9 L401.9,175.7 L407.5,174.4 L413.1,173.1 L418.8,171.9 L424.4,170.6 L430.0,169.4 L435.6,168.1 L441.3,166.8 L446.9,165.6 L452.5,164.3 L458.1,163.1 L463.8,161.8 L469.4,160.5 L475.0,159.3 L480.6,158.0 L486.2,156.8 L491.9,155.5 L497.5,154.2 L503.1,153.0 L508.8,151.7 L514.4,150.5 L520.0,149.2" fill="none" stroke="var(--s2)" stroke-width="2" stroke-dasharray="6 3"/>
+  <path d="M115.0,43.0 L120.6,63.7 L126.2,79.9 L131.9,93.0 L137.5,103.6 L143.1,112.5 L148.8,119.9 L154.4,126.1 L160.0,131.4 L165.6,135.9 L171.2,139.8 L176.9,143.2 L182.5,146.1 L188.1,148.5 L193.8,150.7 L199.4,152.5 L205.0,154.1 L210.6,155.5 L216.2,156.7 L221.9,157.6 L227.5,158.5 L233.1,159.1 L238.8,159.7 L244.4,160.1 L250.0,160.5 L255.6,160.7 L261.2,160.8 L266.9,160.9 L272.5,160.9 L278.1,160.8 L283.8,160.7 L289.4,160.5 L295.0,160.2 L300.6,159.9 L306.2,159.6 L311.9,159.2 L317.5,158.8 L323.1,158.3 L328.8,157.8 L334.4,157.3 L340.0,156.7 L345.6,156.1 L351.2,155.5 L356.9,154.9 L362.5,154.2 L368.1,153.5 L373.8,152.8 L379.4,152.1 L385.0,151.3 L390.6,150.5 L396.2,149.8 L401.9,149.0 L407.5,148.2 L413.1,147.3 L418.8,146.5 L424.4,145.6 L430.0,144.8 L435.6,143.9 L441.3,143.0 L446.9,142.1 L452.5,141.2 L458.1,140.2 L463.8,139.3 L469.4,138.4 L475.0,137.4 L480.6,136.4 L486.2,135.5 L491.9,134.5 L497.5,133.5 L503.1,132.5 L508.8,131.5 L514.4,130.5 L520.0,129.5" fill="none" stroke="var(--s7)" stroke-width="3.5"/>
+  <line x1="268.9" y1="160.9" x2="268.9" y2="250" stroke="var(--s7)" stroke-dasharray="3 3"/>
+  <circle cx="268.9" cy="160.9" r="6" fill="var(--s7)" stroke="var(--surface)" stroke-width="2"/>
+  <circle cx="191.8" cy="150.0" r="4.5" fill="var(--ink-2)"/><text x="186" y="140" text-anchor="end" class="lbl" font-size="11">monthly €953</text>
+  <circle cx="435.6" cy="143.9" r="4.5" fill="var(--ink-2)"/><text x="442" y="136" class="lbl" font-size="11">quarterly €1,011</text>
+  <text x="275" y="200" class="lbl-strong" font-size="11" fill="var(--s7)">T* = √(2C/d) ≈ 7 weeks</text>
+  <text x="275" y="214" class="lbl" font-size="11" fill="var(--s7)">€849 / week at the optimum</text>
+  <g class="lbl" font-size="11">
+    <line x1="545" y1="80" x2="575" y2="80" stroke="var(--s1)" stroke-width="2" stroke-dasharray="6 3"/><text x="582" y="84">C / T — retrain cost spread over the cycle</text>
+    <line x1="545" y1="104" x2="575" y2="104" stroke="var(--s2)" stroke-width="2" stroke-dasharray="6 3"/><text x="582" y="108">d · T / 2 — average decay loss in the cycle</text>
+    <line x1="545" y1="128" x2="575" y2="128" stroke="var(--s7)" stroke-width="3.5"/><text x="582" y="132">total per week</text>
+    <text x="545" y="170" class="lbl-strong">Read the flat bottom:</text>
+    <text x="545" y="188">anything from 5 to 10 weeks costs</text>
+    <text x="545" y="204">within 6% of the optimum. Having</text>
+    <text x="545" y="220">a schedule matters far more than</text>
+    <text x="545" y="236">which one; weekly and yearly both</text>
+    <text x="545" y="252">cost more than 3× the optimum.</text>
+  </g>
+</svg>
+<figcaption><strong>Figure 21.9 — Retraining is a two-cost trade-off.</strong> A fixed cost per retrain argues for retraining rarely; a decay loss that grows with the model's age argues for retraining often. Their sum has a flat minimum at T* = √(2C/d), so a sensible interval is easy to find and does not need to be precise — but the two extremes (constant retraining, never retraining) are both expensive.</figcaption>
+</figure>
+<pre class="code" data-lang="python"><code><span class="cm"># Retraining as a cost trade-off: fixed cost per retrain vs. value lost as the model ages</span>
+<span class="kw">import</span> numpy <span class="kw">as</span> np
+C = <span class="nu">3000.0</span>          <span class="cm"># € per retrain: engineering time + compute + review + rollout</span>
+d = <span class="nu">120.0</span>           <span class="cm"># decay: the model loses an extra €120/week of value for every week of age (measured from backfilled performance)</span>
+
+<span class="kw">def</span> <span class="fn">cost_per_week</span>(T):                      <span class="cm"># T = weeks between retrains</span>
+    <span class="kw">return</span> C / T + d * T / <span class="nu">2</span>               <span class="cm"># retrain cost spread over the cycle + average decay loss over the cycle</span>
+
+T_star = np.<span class="fn">sqrt</span>(<span class="nu">2</span> * C / d)
+<span class="fn">print</span>(<span class="st">f"optimal interval T* = sqrt(2C/d) = {T_star:.1f} weeks -&gt; {cost_per_week(T_star):,.0f} €/week\n"</span>)
+<span class="fn">print</span>(<span class="st">f"{'policy':14}{'T (weeks)':&gt;10}{'retrain €/wk':&gt;14}{'decay €/wk':&gt;12}{'total €/wk':&gt;12}"</span>)
+<span class="kw">for</span> name, T <span class="kw">in</span> [(<span class="st">"weekly"</span>, <span class="nu">1</span>), (<span class="st">"fortnightly"</span>, <span class="nu">2</span>), (<span class="st">"monthly"</span>, <span class="nu">4.33</span>), (<span class="st">"T*"</span>, T_star), (<span class="st">"quarterly"</span>, <span class="nu">13</span>), (<span class="st">"yearly"</span>, <span class="nu">52</span>)]:
+    <span class="fn">print</span>(<span class="st">f"{name:14}{T:10.1f}{C / T:14,.0f}{d * T / 2:12,.0f}{cost_per_week(T):12,.0f}"</span>)
+
+<span class="cm"># the triggered override: retrain NOW if the loss you are measuring exceeds what the fixed cost buys</span>
+L, H = <span class="nu">600.0</span>, <span class="nu">8</span>      <span class="cm"># monitoring says the live model is losing €600/week vs. a fresh one; next scheduled retrain is 8 weeks away</span>
+<span class="fn">print</span>(<span class="st">f"\nretrain early? expected saving {L}×{H} = {L * H:,.0f} € vs cost {C:,.0f} € -&gt; {'YES' if L * H &gt; C else 'no'}"</span>)
+<span class="out"># optimal interval T* = sqrt(2C/d) = 7.1 weeks -&gt; 849 €/week</span>
+<span class="out">#</span>
+<span class="out"># policy         T (weeks)  retrain €/wk  decay €/wk  total €/wk</span>
+<span class="out"># weekly               1.0         3,000          60       3,060</span>
+<span class="out"># fortnightly          2.0         1,500         120       1,620</span>
+<span class="out"># monthly              4.3           693         260         953</span>
+<span class="out"># T*                   7.1           424         424         849</span>
+<span class="out"># quarterly           13.0           231         780       1,011</span>
+<span class="out"># yearly              52.0            58       3,120       3,178</span>
+<span class="out">#</span>
+<span class="out"># retrain early? expected saving 600.0×8 = 4,800 € vs cost 3,000 € -&gt; YES</span></code></pre>
+<p>Two readings of the table. First, the optimum is flat: monthly and quarterly are both within 20% of T*, and the interval hardly matters between five and ten weeks — what matters is not being at either extreme. Second, the trigger rule at the bottom is the formal version of "scheduled with a triggered override" from the table above: monitoring gives you a live estimate of the loss rate L (backfilled performance versus a fresh candidate scored on the same weeks, or the drift alert as a proxy), and you retrain early exactly when L × (weeks until the next scheduled retrain) exceeds C. In the example, €600 a week for eight weeks is €4,800 against a €3,000 retrain, so the answer is yes; at €300 a week it would be no.</p>
+<div class="callout warn"><div class="title">Common mistake</div>
+<p><strong>Assuming d &gt; 0.</strong> Some problems are stationary — a physics-based sensor model, an OCR model on a fixed document type — and for them d is essentially zero, so every scheduled retrain is pure cost plus a fresh chance to ship a bug. Measure the decay before you automate the cure: plot backfilled performance against model age for the versions you have. If the slope is flat, retrain on <em>events</em> (new product, new region, new data source) rather than on a calendar. And remember that C includes the rollout ladder; a retrain you cannot afford to validate properly is not cheaper, it is riskier.</p>
+</div>
+</details>
+
+<details class="deepdive"><summary>Deep dive: shadow, canary, A/B — what each can and cannot detect <span class="time">8 min</span></summary>
+<div class="callout eli9"><div class="title">Explain it like I'm 9</div>
+<p>Trying a new bike: first you spin the wheels in the shop (shadow: does it work at all?). Then you ride it around the block (canary: nothing falls off with a real rider?). Then you and a friend race the old bike against the new one, twenty times, swapping bikes (A/B: is it actually faster?). Spinning the wheels cannot tell you it is faster; the race cannot tell you the brakes are loose before you ride it.</p>
+</div>
+<p><strong>Precisely.</strong> Each rung of the ladder exposes the candidate to more reality and answers a narrower, more expensive question. The mistake teams make is reading the answer to one question off a rung built for another — most often, reading a business result off a canary.</p>
+<div class="tbl-wrap">
+<table class="tbl">
+<thead><tr><th>Question</th><th>Shadow</th><th>Canary (1–5%)</th><th>A/B (by customer)</th></tr></thead>
+<tbody>
+<tr><td>Does it run, at what latency, under real inputs?</td><td><strong>Yes</strong> — at 0% risk</td><td>Yes</td><td>Yes</td></tr>
+<tr><td>Training–serving skew (served features ≠ offline features)?</td><td><strong>Yes</strong> — compare shadow outputs with offline recomputation</td><td>Yes</td><td>Yes</td></tr>
+<tr><td>How much does it disagree with production, and on whom?</td><td><strong>Yes</strong> — the list of flipped customers is your review sample</td><td>Only on the canary slice</td><td>Yes</td></tr>
+<tr><td>User-visible breakage (complaints, errors, timeouts under load)?</td><td>No — outputs are never used</td><td><strong>Yes</strong> — that is its purpose</td><td>Yes</td></tr>
+<tr><td>Does the business metric improve?</td><td>No</td><td><strong>No</strong> — too small and not randomised</td><td><strong>Yes</strong> — if pre-registered and powered</td></tr>
+<tr><td>Fairness gaps on real decisions?</td><td>Estimated only (no decisions)</td><td>No (sample too small)</td><td>Yes, as a guardrail</td></tr>
+<tr><td>Long-term and feedback effects (the model changes the data it will learn from)?</td><td>No</td><td>No</td><td>Only within the test's duration; needs a long-running holdout</td></tr>
+<tr><td>Interference (arms share inventory, budget or a social graph)?</td><td>No</td><td>No</td><td>No — needs a cluster- or time-randomised design</td></tr>
+</tbody>
+</table>
+</div>
+<p>The canary row deserves the arithmetic, because "the canary looked fine" is used as evidence for business value far more often than it can bear. Detecting a change in a proportion needs a sample that shrinks with the square of the effect:</p>
+<div class="callout math"><div class="title">The math (optional)</div>
+<div class="formula">n per arm ≈ 2 · (z<sub>1−α/2</sub> + z<sub>1−β</sub>)² · p(1 − p) / δ²</div>
+<p>p is the baseline rate (retention 0.80), δ the smallest change you want to detect (0.01 for one percentage point), α the false-positive rate (0.05 → z = 1.96), 1 − β the power (0.80 → z = 0.84). The factor 2 is because both arms are estimated. Halving δ quadruples n.</p>
+</div>
+<pre class="code" data-lang="python"><code><span class="cm"># What a canary can see versus what an A/B test needs: sample-size arithmetic</span>
+<span class="kw">import</span> numpy <span class="kw">as</span> np
+<span class="kw">from</span> scipy.stats <span class="kw">import</span> norm
+
+<span class="kw">def</span> <span class="fn">n_per_arm</span>(p, delta, alpha=<span class="nu">0.05</span>, power=<span class="nu">0.80</span>):
+    <span class="st">"""Rows per arm to detect a change of `delta` in a proportion `p` (two-sided, normal approximation)."""</span>
+    z = norm.<span class="fn">ppf</span>(<span class="nu">1</span> - alpha / <span class="nu">2</span>) + norm.<span class="fn">ppf</span>(power)
+    <span class="kw">return</span> <span class="fn">int</span>(np.<span class="fn">ceil</span>(<span class="nu">2</span> * z**<span class="nu">2</span> * p * (<span class="nu">1</span> - p) / delta**<span class="nu">2</span>))
+
+<span class="fn">print</span>(<span class="st">"retention 80% -&gt; 81% (1-point lift):    "</span>, <span class="st">f"{n_per_arm(0.80, 0.01):,} customers per arm"</span>)
+<span class="fn">print</span>(<span class="st">"retention 80% -&gt; 82% (2-point lift):    "</span>, <span class="st">f"{n_per_arm(0.80, 0.02):,} customers per arm"</span>)
+<span class="fn">print</span>(<span class="st">"error rate 0.5% -&gt; 1.0% (doubling):      "</span>, <span class="st">f"{n_per_arm(0.005, 0.005):,} requests per arm"</span>)
+
+weekly_requests, canary_share = <span class="nu">20_000</span>, <span class="nu">0.05</span>
+canary_n = <span class="fn">int</span>(weekly_requests * canary_share)
+z = norm.<span class="fn">ppf</span>(<span class="nu">0.975</span>) + norm.<span class="fn">ppf</span>(<span class="nu">0.80</span>)
+mde = z * np.<span class="fn">sqrt</span>(<span class="nu">2</span> * <span class="nu">0.80</span> * <span class="nu">0.20</span> / canary_n)      <span class="cm"># minimum detectable change in an 80% rate with canary_n rows per arm</span>
+<span class="fn">print</span>(<span class="st">f"\na 5% canary for one week sees {canary_n:,} requests: it can detect a retention change of about "</span>
+      <span class="st">f"±{mde:.1%} — useless for a 1-point lift, fine for a crash or a 2× error rate"</span>)
+<span class="out"># retention 80% -&gt; 81% (1-point lift):     25,117 customers per arm</span>
+<span class="out"># retention 80% -&gt; 82% (2-point lift):     6,280 customers per arm</span>
+<span class="out"># error rate 0.5% -&gt; 1.0% (doubling):       3,124 requests per arm</span>
+<span class="out">#</span>
+<span class="out"># a 5% canary for one week sees 1,000 requests: it can detect a retention change of about ±5.0% — useless for a 1-point lift, fine for a crash or a 2× error rate</span></code></pre>
+<p>A one-point retention lift — the kind that justifies a model project — needs about 25,000 customers <em>per arm</em>. A 5% canary of a 20,000-requests-a-week service sees 1,000 requests, which resolves a change of about five points: enough to notice a crash, a doubled error rate or a wildly different score distribution, and not remotely enough to see the lift you are shipping for. It is also not randomised by customer, so whatever it shows is confounded by who happens to hit the canary replica. Use the canary for what the table says it can see, then run the A/B test with the sample size the formula demands, randomised by customer, with the metric, duration and guardrails written down before it starts (Chapter 22 covers the statistics, including why peeking at the p-value every day inflates false positives).</p>
+<div class="callout pro"><div class="title">At work</div>
+<p>Shadow mode is the rung with the best ratio of information to risk, and the one most often skipped. Run it for at least one full weekly cycle, log both models' outputs side by side, and produce three artifacts before anyone talks about canaries: the agreement rate, the skew report (shadow features versus offline recomputation), and the list of the 50 customers whose decision would flip — reviewed by a human. If a candidate cannot survive that, no amount of A/B testing will save it.</p>
+</div>
+</details>
+
 <!-- ============================================================ -->
 <h2 id="s9">9. Governance, cost &amp; the maturity ladder</h2>
 
@@ -987,7 +1212,7 @@ pr, acc = dashboard(<span class="nu">89</span>)
   <text x="390" y="34" text-anchor="middle" class="lbl-strong" font-size="14">Climb one rung at a time; each rung must pay for itself</text>
   <text x="390" y="316" text-anchor="middle" class="lbl" font-size="11">Google's original taxonomy; the annotations are this author's opinion from watching teams over-build Level 2 for one model.</text>
 </svg>
-<figcaption><strong>Figure 21.9 — The maturity ladder.</strong> Level 0 is where every project starts and where most projects should not stay. Level 1 — a reproducible pipeline, a packaged bundle, validation, a scheduled retrain and basic monitoring — captures most of the value for most teams. Level 2 is justified by scale, frequency or regulation, not by ambition.</figcaption>
+<figcaption><strong>Figure 21.10 — The maturity ladder.</strong> Level 0 is where every project starts and where most projects should not stay. Level 1 — a reproducible pipeline, a packaged bundle, validation, a scheduled retrain and basic monitoring — captures most of the value for most teams. Level 2 is justified by scale, frequency or regulation, not by ambition.</figcaption>
 </figure>
 
 <div class="callout pro"><div class="title">At work: what your team actually needs first</div>
@@ -1016,6 +1241,8 @@ pr, acc = dashboard(<span class="nu">89</span>)
 <div class="callout key"><div class="title">Key idea</div>
 <p>The order of the runbook is the order of probability. In practice, most model incidents are <strong>data pipeline problems</strong> (a null flood, a unit change, a late table), a good share are <strong>deploy problems</strong> (wrong version, wrong config), and only a minority are the model itself or genuine drift. Look at the data first, the deploy second, the model last — and roll back before you look at any of them if decisions are on the line.</p>
 </div>
+
+<div class="callout lab"><div class="title">Lab</div><p>Open <code>labs/ch21_mlops.py</code> in VS Code and make the tests in <code>labs/tests/test_ch21.py</code> pass. You will build a version-checked model bundle, a schema validator that rejects bad batches, PSI and KS drift detectors, a delayed-label performance backfill and a rollback-able scoring function — the Level-1 toolkit from this chapter.</p></div>
 
 <!-- ============================================================ -->
 <h2 id="quiz">Quiz</h2>
@@ -1094,7 +1321,7 @@ pr, acc = dashboard(<span class="nu">89</span>)
 <div class="exercise"><div class="title">Exercise 21.1 — Make PSI lie</div>
 <p>Using the <code>psi</code> function from Section 7, construct a production sample that has the <em>same mean and standard deviation</em> as the reference but a PSI above 0.25 (hint: a mixture of two normals). Then construct one with a visibly different shape but PSI below 0.10 (hint: change only the tails beyond the reference's 1st and 99th percentiles). What does this tell you about relying on a single statistic?</p>
 <details class="answer"><summary>Show answer</summary>
-<p>A bimodal mixture, e.g. 50% N(85, 5) + 50% N(115, 5), has mean 100 and std ≈ 15.8 but empties the central bins and overfills two others: PSI ≈ 0.3–0.6. Conversely, moving 1% of the mass from the far tails to even further out leaves the ten quantile bins almost unchanged: PSI ≈ 0.01, although the maximum and the mean of the top 1% changed a lot. PSI sees binned proportions and nothing else; monitor summary statistics (mean, std, min/max, null rate) alongside it, and for important features look at the histogram.</p>
+<p>A bimodal mixture, e.g. 50% N(85, 5) + 50% N(115, 5), has mean 100 and std ≈ 15.8 but empties the central bins and overfills two others: PSI ≈ 0.9, well past the alert line. Conversely, pushing the 1% of rows beyond the reference's 1st and 99th percentiles 40 units further out changes <em>no</em> bin count at all, because the outer bins run to ±∞: PSI stays at the sampling-noise floor (≈ 0.001, the same as a fresh sample from the reference), although the maximum jumped from about 155 to about 195. PSI sees binned proportions and nothing else; monitor summary statistics (mean, std, min/max, null rate) alongside it, and for important features look at the histogram.</p>
 </details>
 </div>
 

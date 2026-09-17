@@ -330,6 +330,45 @@ tr, va = validation_curve(model, X, y, param_name=<span class="st">&quot;polynom
 <p>Modern flexible models (boosted trees, neural networks) live on the high-variance side by default. The practical craft of ML is therefore mostly <em>variance control</em>: regularization, early stopping, ensembling (Chapter 10 — averaging many high-variance models is a direct attack on the variance term), and getting more data. Bias problems are rarer and usually show up as "I need a better feature", which is Chapter 8.</p>
 </div>
 
+<details class="deepdive"><summary>Deep dive: the bias–variance decomposition, derived <span class="time">9 min</span></summary>
+<div class="callout eli9"><div class="title">Explain it like I'm 9</div>
+<p>Ask a hundred kids to guess the number of sweets in a jar after each looks at a different photo of it. Two things make the guesses wrong: all of them might lean too low because the photo hides the back of the jar (that is bias, the same for everyone), and each kid's guess wobbles depending on which photo they got (that is variance). And even if every guess were perfect, the jar might get one sweet added after the photo was taken (that is noise). Squared error adds those three up.</p>
+</div>
+<p><strong>Precisely.</strong> Fix a test input <em>x</em>. The observed target is <em>y</em> = <em>f</em>(<em>x</em>) + ε with noise ε of mean 0 and variance σ². The model's prediction <em>f̂</em>(<em>x</em>) depends on the random training set; write <em>f̄</em>(<em>x</em>) = E[<em>f̂</em>(<em>x</em>)] for its average over training sets. Then:</p>
+<div class="callout math"><div class="title">The math (optional)</div>
+<p><strong>Step 1, add and subtract f̄.</strong> y − f̂ = (f − f̄) + (f̄ − f̂) + ε. The three brackets are: the systematic gap (a fixed number for this x), the fluctuation of this particular fit around the average fit, and the noise.</p>
+<p><strong>Step 2, square and take expectations.</strong> E[(y − f̂)²] = E[(f − f̄)²] + E[(f̄ − f̂)²] + E[ε²] + 2·(cross terms).</p>
+<p><strong>Step 3, the cross terms vanish.</strong> (f − f̄) is a constant, and E[f̄ − f̂] = f̄ − E[f̂] = 0, so the first cross term is 0. ε is independent of the training set and has mean 0, so E[(f − f̄) ε] = 0 and E[(f̄ − f̂) ε] = E[f̄ − f̂] · E[ε] = 0.</p>
+<p><strong>Step 4, name the survivors.</strong> E[(f − f̄)²] = (f̄ − f)² = <strong>Bias²</strong>; E[(f̄ − f̂)²] = <strong>Var</strong>[f̂]; E[ε²] = <strong>σ²</strong>. Hence</p>
+<div class="formula">E[(y − f̂(x))²] = Bias[f̂(x)]² + Var[f̂(x)] + σ²</div>
+<p>Averaging over test inputs gives the same identity for the expected test MSE. Two remarks: the decomposition is exact for squared error and only approximate for other losses (for log-loss and 0/1 loss the pieces interact); and "E over training sets" is a thought experiment you can never run on real data, which is why the next code block runs it on simulated data instead.</p>
+</div>
+<pre class="code" data-lang="python"><code><span class="cm"># Bias², variance and noise, estimated by simulation: many training sets, the same test inputs</span>
+<span class="kw">import</span> numpy <span class="kw">as</span> np
+rng = np.random.default_rng(<span class="nu">0</span>)
+f = <span class="kw">lambda</span> x: np.sin(<span class="nu">2</span> * np.pi * x); sigma = <span class="nu">0.3</span>
+x_test = np.linspace(<span class="nu">0.05</span>, <span class="nu">0.95</span>, <span class="nu">50</span>); f_test = f(x_test)
+
+<span class="kw">def</span> <span class="fn">fit_and_predict</span>(degree, n=<span class="nu">30</span>):
+    x = rng.uniform(<span class="nu">0</span>, <span class="nu">1</span>, n); y = f(x) + rng.normal(<span class="nu">0</span>, sigma, n)          <span class="cm"># one random training set</span>
+    <span class="kw">return</span> np.polyval(np.polyfit(x, y, degree), x_test)                    <span class="cm"># its predictions at the test inputs</span>
+
+<span class="kw">for</span> degree <span class="kw">in</span> (<span class="nu">1</span>, <span class="nu">3</span>, <span class="nu">9</span>):
+    preds = np.array([fit_and_predict(degree) <span class="kw">for</span> _ <span class="kw">in</span> <span class="fn">range</span>(<span class="nu">500</span>)])       <span class="cm"># 500 training sets -&gt; 500 curves</span>
+    bias2 = np.mean((preds.mean(axis=<span class="nu">0</span>) - f_test) ** <span class="nu">2</span>)                    <span class="cm"># (average curve − truth)², averaged over x</span>
+    var   = np.mean(preds.var(axis=<span class="nu">0</span>))                                     <span class="cm"># scatter of the curves, averaged over x</span>
+    y_test = f_test + rng.normal(<span class="nu">0</span>, sigma, preds.shape)                    <span class="cm"># fresh noisy targets for every curve</span>
+    mse   = np.mean((preds - y_test) ** <span class="nu">2</span>)                                 <span class="cm"># the expected test error, measured directly</span>
+    <span class="fn">print</span>(<span class="st">f"degree {degree}:  bias² = {bias2:.3f}   variance = {var:.3f}   noise = {sigma**2:.3f}   "</span>
+          <span class="st">f"sum = {bias2 + var + sigma**2:.3f}   measured test MSE = {mse:.3f}"</span>)
+<span class="out"># degree 1:  bias² = 0.155   variance = 0.022   noise = 0.090   sum = 0.267   measured test MSE = 0.267</span>
+<span class="out"># degree 3:  bias² = 0.003   variance = 0.013   noise = 0.090   sum = 0.106   measured test MSE = 0.106</span>
+<span class="out"># degree 9:  bias² = 0.017   variance = 3.593   noise = 0.090   sum = 3.700   measured test MSE = 3.711</span></code></pre><p>Read the table against Figure 7.1. The straight line has large bias (0.155: its average curve is simply the wrong shape) and small variance (0.022: every training set gives nearly the same line). The cubic has almost no bias and modest variance, and its total, 0.106, sits just above the noise floor of 0.090, which is as good as any model can do. The degree-9 polynomial has small bias but a variance of 3.6: each training set produces a wildly different curve, and averaging 500 of them would give a fine estimate, which is exactly the idea behind bagging and random forests (Chapter 10). In every row the three pieces sum to the directly measured test MSE, as the algebra promises.</p>
+<div class="callout key"><div class="title">Key idea</div>
+<p>The decomposition explains why <em>ensembling</em> works: averaging many high-variance models leaves the bias untouched and divides the variance by (roughly) the number of independent models. It also explains why regularization is a trade, not a free lunch: it lowers variance by pulling every fit toward the same simpler answer, which raises bias. The best model is the one whose sum is smallest, not the one whose bias is zero.</p>
+</div>
+</details>
+
 <!-- ============================================================ -->
 <h2 id="s4">4. Diagnosis: learning curves and the recipe</h2>
 
@@ -439,7 +478,7 @@ sizes = np.array([<span class="nu">0.1</span>, <span class="nu">0.25</span>, <sp
 <div class="callout math"><div class="title">The math (optional)</div>
 <div class="formula">Loss<sub>lasso</sub>(w) = ∑<sub>i</sub> (y<sub>i</sub> − ŷ<sub>i</sub>)² + α ∑<sub>j</sub> |w<sub>j</sub>|</div>
 <div class="formula">Loss<sub>elastic</sub>(w) = ∑<sub>i</sub> (y<sub>i</sub> − ŷ<sub>i</sub>)² + α [ ρ ∑<sub>j</sub> |w<sub>j</sub>| + (1 − ρ) ∑<sub>j</sub> w<sub>j</sub>² ]</div>
-<p>Lasso replaces the squared penalty with the <strong>absolute value</strong> (the L1 norm). The consequence is dramatic: as α grows, coefficients do not merely shrink, they hit <em>exactly zero</em> one after another, so Lasso performs automatic feature selection. The absolute value has no derivative at zero, so there is no closed form; it is solved by coordinate descent. <strong>Elastic net</strong> mixes the two with a ratio <strong>ρ</strong> (<code>l1_ratio</code> in sklearn): it keeps Lasso's sparsity but, when several features are highly correlated, tends to keep them as a group rather than arbitrarily picking one — usually the safer choice on real business data.</p>
+<p>Lasso replaces the squared penalty with the <strong>absolute value</strong> (the L1 norm). The consequence is dramatic: as α grows, coefficients do not merely shrink, they hit <em>exactly zero</em> one after another, so Lasso performs automatic feature selection. The absolute value has no derivative at zero, so there is no closed form; it is solved by coordinate descent. (One caution when reading the code: scikit-learn's <code>Lasso</code> and <code>ElasticNet</code> divide the data term by 2n while <code>Ridge</code> does not, so an <code>alpha</code> of 1 means different strengths in different estimators; compare alpha values within one estimator, never across.) <strong>Elastic net</strong> mixes the two with a ratio <strong>ρ</strong> (<code>l1_ratio</code> in sklearn): it keeps Lasso's sparsity but, when several features are highly correlated, tends to keep them as a group rather than arbitrarily picking one — usually the safer choice on real business data.</p>
 </div>
 
 <h3>Why L1 makes zeros: the geometric picture</h3>
@@ -482,6 +521,34 @@ sizes = np.array([<span class="nu">0.1</span>, <span class="nu">0.25</span>, <sp
 </svg>
 <figcaption><strong>Figure 7.5 — A circle has no corners; a diamond does.</strong> The orange ellipses are equal-loss contours around the unpenalized fit. The blue region is the coefficient budget. For L2 the budget is a circle, and the ellipse touches it at a generic point where both weights are nonzero but shrunk. For L1 the budget is a diamond whose corners lie on the axes; ellipses hit corners far more often than edges, and at a corner one weight is exactly zero. In ten dimensions the diamond has corners, edges and faces where many weights vanish at once.</figcaption>
 </figure>
+
+<details class="deepdive"><summary>Deep dive: why L2 shrinks and L1 zeroes, in one dimension <span class="time">6 min</span></summary>
+<div class="callout eli9"><div class="title">Explain it like I'm 9</div>
+<p>Two ways to make a kid quieter. Ridge says "speak at two-thirds of your volume": everyone gets quieter, nobody goes silent. Lasso says "everyone talk 10 decibels lower": the loud kids get quieter, and the kids who were already whispering below 10 decibels go completely silent. Lasso creates silence; Ridge only ever turns things down.</p>
+</div>
+<p><strong>Precisely.</strong> Take one coefficient and pretend the data term is simply (w − w<sub>ols</sub>)², where w<sub>ols</sub> is the unpenalized estimate (this is exactly the situation for a standardized feature that is uncorrelated with the others, and a good approximation otherwise). Adding each penalty and setting the derivative to zero gives a closed form:</p>
+<div class="callout math"><div class="title">The math (optional)</div>
+<p><strong>Ridge:</strong> minimize (w − w<sub>ols</sub>)² + α w². Derivative: 2(w − w<sub>ols</sub>) + 2αw = 0 ⇒ <strong>w = w<sub>ols</sub> / (1 + α)</strong>. A multiplicative shrink: proportional, smooth, and never exactly zero unless w<sub>ols</sub> was.</p>
+<p><strong>Lasso:</strong> minimize (w − w<sub>ols</sub>)² + α|w|. For w &gt; 0 the derivative is 2(w − w<sub>ols</sub>) + α = 0 ⇒ w = w<sub>ols</sub> − α/2, valid only if that is still positive; symmetrically for w &lt; 0. If |w<sub>ols</sub>| ≤ α/2 neither branch is valid and the minimum sits at the kink, w = 0. Together: <strong>w = sign(w<sub>ols</sub>) · max(|w<sub>ols</sub>| − α/2, 0)</strong>, the <em>soft-thresholding</em> operator. A subtractive shrink: every coefficient loses the same amount, and anything smaller than that amount is set to exactly zero.</p>
+<p><strong>α</strong> is the penalty strength and <strong>w<sub>ols</sub></strong> the unpenalized coefficient; the factor ½ comes from the derivative of the square. The absolute value's kink at zero, where the derivative jumps from −α to +α, is what creates the dead zone; a smooth penalty like w² has no kink and no dead zone.</p>
+</div>
+<pre class="code" data-lang="python"><code><span class="cm"># One coefficient at a time: L2 divides, L1 subtracts a constant and clips at zero</span>
+<span class="kw">import</span> numpy <span class="kw">as</span> np
+w_ols = np.array([<span class="nu">3.0</span>, <span class="nu">1.0</span>, <span class="nu">0.3</span>, -<span class="nu">0.2</span>])                    <span class="cm"># unpenalised estimates of four coefficients</span>
+<span class="fn">print</span>(<span class="st">"alpha   ridge = w/(1+α)             lasso = sign(w)·max(|w| − α/2, 0)"</span>)
+<span class="kw">for</span> alpha <span class="kw">in</span> (<span class="nu">0.0</span>, <span class="nu">0.5</span>, <span class="nu">1.0</span>, <span class="nu">2.0</span>):
+    ridge = w_ols / (<span class="nu">1</span> + alpha)
+    lasso = np.sign(w_ols) * np.maximum(np.abs(w_ols) - alpha / <span class="nu">2</span>, <span class="nu">0</span>)
+    <span class="fn">print</span>(<span class="st">f"{alpha:4.1f}    {np.array2string(ridge, precision=2, floatmode='fixed'):26s} {np.array2string(lasso, precision=2, floatmode='fixed')}"</span>)
+<span class="out"># alpha   ridge = w/(1+α)             lasso = sign(w)·max(|w| − α/2, 0)</span>
+<span class="out">#  0.0    [ 3.00  1.00  0.30 -0.20]  [ 3.00  1.00  0.30 -0.20]</span>
+<span class="out">#  0.5    [ 2.00  0.67  0.20 -0.13]  [ 2.75  0.75  0.05 -0.00]</span>
+<span class="out">#  1.0    [ 1.50  0.50  0.15 -0.10]  [ 2.50  0.50  0.00 -0.00]</span>
+<span class="out">#  2.0    [ 1.00  0.33  0.10 -0.07]  [ 2.00  0.00  0.00 -0.00]</span></code></pre><p>Look at the two small coefficients, 0.3 and −0.2. Ridge at α = 2 turns them into 0.10 and −0.07: still there, still "a feature the model uses". Lasso zeroes both at α = 1 and the 1.0 coefficient at α = 2, while the big coefficient is merely reduced from 3.0 to 2.0. This is Figure 7.6 in miniature: Ridge's paths glide toward zero and never arrive; Lasso's paths hit zero one at a time, smallest first. With correlated features the one-dimensional picture is only approximate (coordinate descent iterates the soft threshold over the features, each time on the residual left by the others), which is why Lasso, faced with two near-copies of a feature, tends to keep one and zero the other, and why elastic net, which adds a little Ridge, spreads the weight instead.</p>
+<div class="callout warn"><div class="title">Common mistake</div>
+<p>Reading Lasso's zeros as "these features are irrelevant". A zeroed feature may simply be a slightly weaker copy of a kept one; change the sample and the roles can swap. Use Lasso's selection as a candidate list to be checked with domain knowledge and a stability check (refit on bootstrap samples and count how often each feature survives), not as a verdict.</p>
+</div>
+</details>
 
 <h3>The strength knob and the coefficient path</h3>
 
@@ -801,6 +868,61 @@ rs = cross_val_score(model, X, y, cv=rcv, scoring=<span class="st">&quot;accurac
 <p>To find out how good a goalkeeper is, you don't watch one penalty kick — the shooter might have slipped. You watch many kicks from many shooters and average. k-fold is "many kicks": every part of the data gets a turn at being the surprise.</p>
 </div>
 
+<details class="deepdive"><summary>Deep dive: why K-fold scores are correlated, and what the ± really means <span class="time">8 min</span></summary>
+<div class="callout eli9"><div class="title">Explain it like I'm 9</div>
+<p>Five judges score a cake. You would trust five independent opinions. But these five judges tasted mostly the same slices, and only one small slice each was different. If the batter was unusually sweet, all five say "too sweet" together. Their agreement does not mean the cake is reliably too sweet; it means they shared the same batter. K-fold's five scores share the same batter.</p>
+</div>
+<p><strong>Precisely.</strong> In 5-fold cross-validation, any two rounds share three of their four training folds: 75% of the rows that trained model 1 also trained model 2. The five scores are therefore positively correlated, not independent draws. The average of correlated numbers is still an unbiased estimate of "the score a model trained on 80% of this data would get", but its <em>variance</em> is larger than std/√k pretends, and there is a stronger result: no estimator computed from the k scores alone can be unbiased for that variance (Bengio and Grandvalet, 2004). The figure shows the overlap; the code measures the consequence.</p>
+<figure class="fig">
+<svg viewBox="0 0 760 230" role="img" aria-label="Two rounds of five-fold cross-validation drawn as rows of five blocks; the three training folds they share are highlighted, showing that 75 percent of the training rows are common to both rounds">
+  <text x="20" y="26" class="lbl-strong">Training sets of two rounds overlap in 3 of 4 folds</text>
+  <text x="20" y="66" class="lbl-strong">Round 1</text>
+  <rect x="90" y="48" width="110" height="28" rx="4" fill="var(--s2)" fill-opacity=".8" stroke="var(--s2)"/><text x="145" y="67" text-anchor="middle" class="lbl" fill="#fff" font-weight="700">validate</text>
+  <rect x="206" y="48" width="110" height="28" rx="4" fill="var(--s1)" fill-opacity=".3" stroke="var(--s1)"/><text x="261" y="67" text-anchor="middle" class="lbl">train</text>
+  <rect x="322" y="48" width="110" height="28" rx="4" fill="var(--s7)" fill-opacity=".35" stroke="var(--s7)" stroke-width="1.5"/><text x="377" y="67" text-anchor="middle" class="lbl-strong">train</text>
+  <rect x="438" y="48" width="110" height="28" rx="4" fill="var(--s7)" fill-opacity=".35" stroke="var(--s7)" stroke-width="1.5"/><text x="493" y="67" text-anchor="middle" class="lbl-strong">train</text>
+  <rect x="554" y="48" width="110" height="28" rx="4" fill="var(--s7)" fill-opacity=".35" stroke="var(--s7)" stroke-width="1.5"/><text x="609" y="67" text-anchor="middle" class="lbl-strong">train</text>
+  <text x="20" y="110" class="lbl-strong">Round 2</text>
+  <rect x="90" y="92" width="110" height="28" rx="4" fill="var(--s1)" fill-opacity=".3" stroke="var(--s1)"/><text x="145" y="111" text-anchor="middle" class="lbl">train</text>
+  <rect x="206" y="92" width="110" height="28" rx="4" fill="var(--s2)" fill-opacity=".8" stroke="var(--s2)"/><text x="261" y="111" text-anchor="middle" class="lbl" fill="#fff" font-weight="700">validate</text>
+  <rect x="322" y="92" width="110" height="28" rx="4" fill="var(--s7)" fill-opacity=".35" stroke="var(--s7)" stroke-width="1.5"/><text x="377" y="111" text-anchor="middle" class="lbl-strong">train</text>
+  <rect x="438" y="92" width="110" height="28" rx="4" fill="var(--s7)" fill-opacity=".35" stroke="var(--s7)" stroke-width="1.5"/><text x="493" y="111" text-anchor="middle" class="lbl-strong">train</text>
+  <rect x="554" y="92" width="110" height="28" rx="4" fill="var(--s7)" fill-opacity=".35" stroke="var(--s7)" stroke-width="1.5"/><text x="609" y="111" text-anchor="middle" class="lbl-strong">train</text>
+  <rect x="322" y="44" width="342" height="80" rx="6" fill="none" stroke="var(--s7)" stroke-width="1.5" stroke-dasharray="5 4"/>
+  <text x="680" y="88" class="lbl-strong" fill="var(--s7)">shared:</text>
+  <text x="680" y="104" class="lbl" fill="var(--s7)">3 of 4 folds</text>
+  <text x="20" y="160" class="lbl">Each pair of rounds shares 75% of its training rows (k−2 of k−1 folds in general). If the shared rows happen to be</text>
+  <text x="20" y="178" class="lbl">"easy" or "hard", every score moves together, so the spread of the k scores understates the wobble of their mean.</text>
+  <text x="20" y="208" class="lbl-strong">Only fresh data tells you the true wobble; std/√k is a lower bound on it, not an estimate of it.</text>
+</svg>
+<figcaption><strong>Figure 7.11 — K-fold scores share most of their training data.</strong> With k = 5, two rounds train on the same 60% of all rows (three folds), so their scores are positively correlated. The mean of the five scores is fine as an estimate; std/√k as its error bar is too optimistic, by an amount the simulation below measures.</figcaption>
+</figure>
+<pre class="code" data-lang="python"><code><span class="cm"># The k fold scores overlap in training data, so std/√k understates how much the CV mean really wobbles</span>
+<span class="kw">import</span> numpy <span class="kw">as</span> np
+<span class="kw">from</span> sklearn.linear_model <span class="kw">import</span> Ridge
+<span class="kw">from</span> sklearn.model_selection <span class="kw">import</span> KFold, cross_val_score
+
+rng = np.random.default_rng(<span class="nu">0</span>)
+w_true = rng.normal(size=<span class="nu">20</span>)                                  <span class="cm"># one fixed "world"</span>
+<span class="kw">def</span> <span class="fn">fresh_dataset</span>(n=<span class="nu">100</span>):
+    X = rng.normal(size=(n, <span class="nu">20</span>)); <span class="kw">return</span> X, X @ w_true + rng.normal(<span class="nu">0</span>, <span class="nu">2.0</span>, n)
+
+naive_se, cv_means = [], []
+<span class="kw">for</span> _ <span class="kw">in</span> <span class="fn">range</span>(<span class="nu">300</span>):                                          <span class="cm"># 300 fresh datasets from the same world</span>
+    X, y = fresh_dataset()
+    s = cross_val_score(Ridge(alpha=<span class="nu">1.0</span>), X, y, cv=KFold(<span class="nu">5</span>, shuffle=<span class="kw">True</span>, random_state=<span class="nu">0</span>), scoring=<span class="st">"r2"</span>)
+    cv_means.append(s.mean()); naive_se.append(s.std(ddof=<span class="nu">1</span>) / np.sqrt(<span class="nu">5</span>))
+<span class="fn">print</span>(<span class="st">f"error bar one CV run would report as std/√k : ± {np.mean(naive_se):.4f}"</span>)
+<span class="fn">print</span>(<span class="st">f"actual spread of the CV mean across datasets : ± {np.std(cv_means):.4f}"</span>)
+<span class="fn">print</span>(<span class="st">f"the naive bar is {np.std(cv_means) / np.mean(naive_se):.1f}x too small"</span>)
+<span class="out"># error bar one CV run would report as std/√k : ± 0.0581</span>
+<span class="out"># actual spread of the CV mean across datasets : ± 0.0745</span>
+<span class="out"># the naive bar is 1.3x too small</span></code></pre><p>Here the naive bar is about 30% too narrow; on smaller datasets and with more flexible models the factor is often 2 or more. Three practical rules follow. <strong>(1) Compare models on the same folds and look at the per-fold differences</strong> (a paired comparison): the shared-batter effect cancels when both models taste the same slices, so the std of the <em>differences</em> is a far better guide than the std of either model's scores. <strong>(2) Use repeated k-fold to shrink the fold-assignment noise</strong>, but do not divide by √(k·r) as if the k·r scores were independent; they overlap even more. Report the mean and the spread and say "spread across folds", not "standard error". <strong>(3) Keep a locked test set for the final number.</strong> It is the only fresh data you have, and its own interval (Chapter 3's SE = √(p(1−p)/n)) is honest because its rows never trained anything.</p>
+<div class="callout pro"><div class="title">At work</div>
+<p>When two candidate models differ by less than the spread of their per-fold scores, say so plainly ("we cannot distinguish them on this data") and pick the simpler or cheaper one. A leaderboard sorted to the third decimal on 5-fold scores is sorting noise, and the shared-training-data effect makes the noise look smaller than it is.</p>
+</div>
+</details>
+
 <h3>The family of splitters, and which one to use at work</h3>
 
 <p>Plain k-fold assumes rows are independent and identically distributed. Real business data usually breaks that assumption in one of two ways — <strong>groups</strong> (many rows per customer, patient, device) or <strong>time</strong> — and using the wrong splitter produces validation scores that are confidently, invisibly wrong.</p>
@@ -1068,6 +1190,8 @@ scores = cross_val_score(inner, X, y, cv=outer, scoring=<span class="st">&quot;r
 <div class="callout pro"><div class="title">At work</div>
 <p>Write the split into the codebase, not the notebook. A function that returns the same train/validation/test indices every time (seeded, stratified, grouped or time-based as the problem demands) and is imported by every experiment. Teams that "just split in the notebook" end up with every analyst on a different split, results that cannot be compared, and, eventually, a test set that somebody trained on. Chapter 21 turns this into a reproducibility checklist.</p>
 </div>
+
+<div class="callout lab"><div class="title">Lab</div><p>Open <code>labs/ch07_generalization.py</code> in VS Code and make the tests in <code>labs/tests/test_ch07.py</code> pass. You will diagnose bias versus variance from learning curves, tune a Ridge penalty with cross-validation inside a Pipeline, build grouped and time-aware splitters, and report a final number from a test set you touch exactly once.</p></div>
 
 <!-- ============================================================ -->
 <h2 id="quiz">Quiz</h2>

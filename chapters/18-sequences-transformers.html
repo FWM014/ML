@@ -232,7 +232,7 @@ c<sub>t</sub> = f<sub>t</sub> ⊙ c<sub>t−1</sub> + i<sub>t</sub> ⊙ tanh(W<s
 </div>
 
 <h3>What gates fixed, and what they did not</h3>
-<p>LSTMs and GRUs were the workhorses of sequence modelling for two decades: speech recognition, machine translation, the first good chatbots, and countless demand-forecasting systems. They fix the vanishing gradient <em>well enough</em>: dependencies over 100–500 steps become learnable. Two problems remain, and they are the reason you are about to meet the Transformer.</p>
+<p>LSTMs and GRUs were the workhorses of sequence modelling for the decade before 2017: speech recognition, machine translation, the first good chatbots, and countless demand-forecasting systems. They fix the vanishing gradient <em>well enough</em>: dependencies over 100–500 steps become learnable. Two problems remain, and they are the reason you are about to meet the Transformer.</p>
 
 <div class="grid2">
   <div class="card bad"><h4>Still sequential = slow</h4><p>h<sub>t</sub> depends on h<sub>t−1</sub>, so step t cannot start until step t−1 finishes. A GPU with 10,000 cores waits on a chain of 500 tiny operations. Training on a billion tokens is painfully slow, and that ceiling is what capped the size of models for years.</p></div>
@@ -687,7 +687,7 @@ out, w = head(x)
 <div class="formula">PE(pos, 2i) = sin( pos / 10000<sup>2i/d</sup> )   ,   PE(pos, 2i+1) = cos( pos / 10000<sup>2i/d</sup> )</div>
 
 <div class="callout math"><div class="title">The math (optional)</div>
-<p><strong>pos</strong> is the token's index (0, 1, 2, …). <strong>i</strong> indexes pairs of dimensions, from 0 to d/2 − 1. <strong>10000<sup>2i/d</sup></strong> is the wavelength: dimension pair 0 has wavelength 2π (changes every token), the last pair has wavelength 10000·2π (barely changes over a document). Each pair (sin, cos) at the same frequency is a point on a circle, so moving k positions ahead is a fixed rotation of that point — the model can learn "k tokens back" as a linear operation. That property is what RoPE later made explicit.</p>
+<p><strong>pos</strong> is the token's index (0, 1, 2, …). <strong>i</strong> indexes pairs of dimensions, from 0 to d/2 − 1. <strong>10000<sup>2i/d</sup></strong> is the wavelength: dimension pair 0 has wavelength 2π (changes every token), the last pair has wavelength ≈ 10000·2π (barely changes over a document). Each pair (sin, cos) at the same frequency is a point on a circle, so moving k positions ahead is a fixed rotation of that point — the model can learn "k tokens back" as a linear operation. That property is what RoPE later made explicit.</p>
 </div>
 
 <figure class="fig">
@@ -1381,7 +1381,7 @@ n = <span class="fn">sum</span>(p.numel() <span class="kw">for</span> p <span cl
     <text x="410" y="292" text-anchor="middle" class="lbl" font-size="11">"my invoice is" → wrong</text>
     <text x="410" y="318" text-anchor="middle" class="lbl-strong" font-size="11" fill="var(--s2)">use for: generation, chat, code,</text>
     <text x="410" y="334" text-anchor="middle" class="lbl-strong" font-size="11" fill="var(--s2)">summarization, any task as text</text>
-    <text x="410" y="352" text-anchor="middle" class="lbl" font-size="10">all modern LLMs are this</text>
+    <text x="410" y="352" text-anchor="middle" class="lbl" font-size="10">virtually all modern LLMs are this</text>
   </g>
   <!-- encoder-decoder -->
   <rect x="551" y="15" width="255" height="350" rx="10" class="fill-surface2" stroke="var(--s3)" stroke-width="2"/>
@@ -1459,10 +1459,10 @@ w = torch.softmax(masked, dim=-<span class="nu">1</span>)
 <div class="formula">Attention cost per layer ∝ n² · d       FFN cost per layer ∝ n · d²</div>
 
 <div class="callout math"><div class="title">The math (optional)</div>
-<p><strong>n</strong> is the number of tokens in the context, <strong>d</strong> the model width. Q Kᵀ is an (n × d)(d × n) multiply: n²d operations; multiplying the weights by V is another n²d. The FFN applies (d × 4d) and (4d × d) matrices to each of n tokens: 8nd² operations. Crossover is at n ≈ 8d: for d = 4096 that is ≈ 32k tokens — beyond that, attention is the bigger bill.</p>
+<p><strong>n</strong> is the number of tokens in the context, <strong>d</strong> the model width. Q Kᵀ is an (n × d)(d × n) multiply: n²d operations; multiplying the weights by V is another n²d. The FFN applies (d × 4d) and (4d × d) matrices to each of n tokens: 8nd² operations. Setting 2n²d = 8nd² gives the crossover n = 4d: for d = 4096 that is ≈ 16k tokens. Counting the Q, K, V and output projections too (another 4nd², so 12nd² of linear work per layer) moves it to n = 6d ≈ 25k tokens — beyond that, the quadratic term is the bigger bill.</p>
 </div>
 
-<p><strong>The KV cache.</strong> When a decoder generates text one token at a time, the keys and values of all previous tokens do not change (the mask means earlier tokens never see later ones). So an inference engine computes K and V for each token once and caches them; generating token n+1 costs one new query against n cached keys instead of recomputing everything. That cache is why LLM serving is memory-bound: for a 70B-parameter model with a 32k context, the cache for one conversation is several gigabytes, and it is the reason long conversations get slower and pricier, and why providers charge less for "cached" prompt tokens.</p>
+<p><strong>The KV cache.</strong> When a decoder generates text one token at a time, the keys and values of all previous tokens do not change (the mask means earlier tokens never see later ones). So an inference engine computes K and V for each token once and caches them; generating token n+1 costs one new query against n cached keys instead of recomputing everything. That cache is a large part of why LLM serving is memory-bound: for a 70B-parameter model with a 32k context, the cache for one conversation is ≈ 10 GB in fp16 even with grouped-query attention (several times that without it), and it is the reason long conversations get slower and pricier, and why providers charge less for "cached" prompt tokens.</p>
 
 <p><strong>Efficient attention.</strong> A large literature attacks the n² term: FlashAttention (exact attention, but computed in tiles so the n × n matrix never touches slow memory — now the default everywhere), sliding-window and sparse attention (each token attends to a local window plus a few global tokens), grouped-query attention (share K and V across heads to shrink the cache), and linear-attention or state-space variants (Mamba and relatives) that bring back an RNN-like recurrence with better scaling. For practitioners the summary is: exact attention with FlashAttention up to ~100k tokens is what you will actually use; the rest is worth knowing exists.</p>
 
@@ -1577,7 +1577,7 @@ idx = torch.tensor([[stoi[c] <span class="kw">for</span> c <span class="kw">in</
 <span class="out"># trained in ≈ 12s   (CPU-dependent)</span>
 <span class="out"># the quick brown fox jumps over the lazy dog. the quick brown fox jump</span></code></pre>
 
-<p>Three things to notice. The starting loss ≈ 3.6 is ln(29), the loss of guessing uniformly over 29 characters — always check that your first loss makes sense. The loss collapses because the data is trivially predictable; on real text a character model plateaus around 1.0–1.5 nats. And generation is the causal loop of Figure 18.3: predict, append, repeat — exactly what a chat model does, at 70 billion parameters instead of 20 thousand.</p>
+<p>Three things to notice. The starting loss ≈ 3.6 sits just above ln(28) ≈ 3.33, the loss of guessing uniformly over the 28 distinct characters (the randomly initialised head is not exactly uniform, so it starts slightly worse than chance) — always check that your first loss makes sense. The loss collapses because the data is trivially predictable; on real text a character model plateaus around 1.0–1.5 nats. And generation is the causal loop of Figure 18.3: predict, append, repeat — exactly what a chat model does, at 70 billion parameters instead of 14 thousand.</p>
 
 <div class="callout eli9"><div class="title">Explain it like I'm 9</div>
 <p>The model played a guessing game 200 times: "here are 24 letters; what comes next?" At first it guessed randomly. Each time, it got told the answer and nudged its numbers a little. After a few hundred rounds it knows the sentence by heart — and can finish it from just "the quick". A chat model plays the same game, but on the whole internet, and the game is much harder to memorize, so it has to learn the patterns instead.</p>
